@@ -131,6 +131,19 @@ App data is saved to `sdmc:/3ds_google_maps/`:
 - `favorites.txt` — saved favorite locations
 - `log.txt` — debug log (overwritten each launch)
 
+## Releases
+
+This repository includes a GitHub Actions workflow at `.github/workflows/release.yml` that builds `3ds_google_maps.3dsx` and attaches it to a GitHub release whenever you push a version tag that starts with `v`.
+
+To publish a release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+If you just want to confirm the project still builds in GitHub Actions, run the workflow manually from the **Actions** tab. Manual runs upload the `.3dsx` as a workflow artifact without creating a GitHub release.
+
 ---
 
 ## File Structure
