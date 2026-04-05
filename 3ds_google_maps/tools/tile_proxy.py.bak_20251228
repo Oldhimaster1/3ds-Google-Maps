@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""
+Simple tile proxy for 3DS Google Maps
+Fetches tiles from OpenStreetMap (HTTPS) and serves them over plain HTTP.
+Usage:
+  pip install flask requests
+  python tools/tile_proxy.py [port]
+
+Default port: 8000
+
+Note: Respect tile provider usage policies. This proxy is for local development only.
+"""
+from flask import Flask, Response, stream_with_context
+import requests
+import sys
+
+app = Flask(__name__)
+UPSTREAM = 'https://tile.openstreetmap.org'
+TIMEOUT = 10
+HEADERS = {
+    'User-Agent': '3DS-Google-Maps/1.0 (Nintendo 3DS homebrew; contact: github.com/your-repo)',
+    'Accept': 'image/png,image/*',
+    'Referer': 'https://www.openstreetmap.org/'
+}
+
+@app.route('/tiles/<int:z>/<int:x>/<int:y>.png')
+def tile(z, x, y):
+    upstream_url = f"{UPSTREAM}/{z}/{x}/{y}.png"
+    try:
+        r = requests.get(upstream_url, timeout=TIMEOUT, stream=True, headers=HEADERS)
+    except Exception as e:
+        return Response(f'Error fetching upstream: {e}', status=502)
+
+    def generate():
+        try:
+            for chunk in r.iter_content(chunk_size=4096):
+                if chunk:
+                    yield chunk
+        finally:
+            r.close()
+
+    return Response(stream_with_context(generate()), status=r.status_code, content_type=r.headers.get('Content-Type','image/png'))
+
+if __name__ == '__main__':
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+    app.run(host='0.0.0.0', port=port, threaded=True)

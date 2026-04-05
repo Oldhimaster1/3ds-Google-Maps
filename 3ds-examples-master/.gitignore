@@ -1,0 +1,35 @@
+cd "C:\Users\mslag\Music\3ds_google_maps"
+@"
+build/
+*.elf
+*.cia
+*.lst
+*.map
+*.3dsx
+backup/
+3ds_google_maps/
+3ds-examples-master/
+thirdparty/
+temp_copies/
+.venv/
+.vscode/
+tools/__pycache__/
+tools/.satellite_viewer_cache/
+discord_emojis/
+discord_emojis*/
+*.log
+*.bak
+*.bak_*
+*.bin
+*.zip
+map_debug_*
+_dirsize.txt
+_scan_sizes.ps1
+copied_*.txt
+deleted_*.txt
+found_*.txt
+found_*.csv
+verification_*.csv
+temp_copies_listing.csv
+123.png
+"@ | Out-File -Encoding utf8 .gitignore

@@ -1,0 +1,52 @@
+=== 3DS Google Maps Log Started ===
+WiFi connected successfully!
+Downloading tile: 10/300/384
+Opening context for: http://172.20.10.3:8000/tiles/10/300/384.png
+HTTP status: 200
+Successfully downloaded tile (48859 bytes)
+Downloading tile: 10/301/384
+Opening context for: http://172.20.10.3:8000/tiles/10/301/384.png
+HTTP status: 200
+Successfully downloaded tile (50959 bytes)
+Downloading tile: 10/302/384
+Opening context for: http://172.20.10.3:8000/tiles/10/302/384.png
+HTTP status: 200
+Successfully downloaded tile (40091 bytes)
+Downloading tile: 10/303/384
+Opening context for: http://172.20.10.3:8000/tiles/10/303/384.png
+HTTP status: 200
+Successfully downloaded tile (37530 bytes)
+Downloading tile: 10/300/385
+Opening context for: http://172.20.10.3:8000/tiles/10/300/385.png
+HTTP status: 200
+Successfully downloaded tile (47416 bytes)
+Downloading tile: 10/301/385
+Opening context for: http://172.20.10.3:8000/tiles/10/301/385.png
+HTTP status: 200
+Successfully downloaded tile (29733 bytes)
+Downloading tile: 10/302/385
+Opening context for: http://172.20.10.3:8000/tiles/10/302/385.png
+HTTP status: 200
+Successfully downloaded tile (23782 bytes)
+Downloading tile: 10/303/385
+Opening context for: http://172.20.10.3:8000/tiles/10/303/385.png
+HTTP status: 200
+Successfully downloaded tile (12615 bytes)
+Downloading tile: 10/300/386
+Opening context for: http://172.20.10.3:8000/tiles/10/300/386.png
+HTTP status: 200
+Successfully downloaded tile (48662 bytes)
+Downloading tile: 10/301/386
+Opening context for: http://172.20.10.3:8000/tiles/10/301/386.png
+HTTP status: 200
+Successfully downloaded tile (29143 bytes)
+Downloading tile: 10/302/386
+Opening context for: http://172.20.10.3:8000/tiles/10/302/386.png
+HTTP status: 200
+Successfully downloaded tile (1838 bytes)
+Downloading tile: 10/303/386
+Opening context for: http://172.20.10.3:8000/tiles/10/303/386.png
+HTTP status: 200
+Successfully downloaded tile (1460 bytes)
+
+=== 3DS Google Maps Log Ended ===
