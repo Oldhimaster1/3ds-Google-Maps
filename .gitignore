@@ -1,0 +1,25 @@
+# Build output
+build/
+*.3dsx
+*.elf
+*.lst
+*.d
+*.o
+*.a
+
+# Backup files
+*.bak
+*.bak_*
+
+# Old/example subfolders
+3ds_google_maps/
+3ds-examples-master/
+3ds_google_maps_works.3dsx
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Logs and SD card data
+*.txt
