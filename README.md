@@ -52,8 +52,8 @@ A fully-featured interactive maps application for Nintendo 3DS homebrew. Uses Op
 |-------|--------|
 | D-Pad | Pan map |
 | Circle Pad | Smooth pan |
-| L Button | Zoom in |
-| R Button | Zoom out |
+| X Button | Zoom in |
+| Y Button | Zoom out |
 | Touch screen drag | Pan map |
 | Touch bottom panel buttons | Search / Favorites / Recents / Route / GPS / Track / Menu |
 | A | Toggle GPS tracking |
