@@ -13,7 +13,7 @@ A fully-featured interactive maps application for Nintendo 3DS homebrew. Uses Op
 - **Touch panning** — drag on the bottom screen to pan the map
 - **D-pad navigation** — pan in any direction
 - **Circle pad** — smooth continuous pan
-- **L/R buttons** — zoom in/out
+- **X/Y buttons** — zoom in/out
 - **Crosshair** — red crosshair always marks the center of the map
 - **Night mode** — dark color overlay for night use
 - **Debug overlay** — shows zoom level, tile stats, FPS
