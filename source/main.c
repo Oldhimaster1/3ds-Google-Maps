@@ -91,6 +91,7 @@ typedef enum {
     SETTINGS_HIT_PROXY_TOGGLE,
     SETTINGS_HIT_CACHE_TOGGLE,
     SETTINGS_HIT_CLEAR_CACHE,
+    SETTINGS_HIT_DOWNLOAD_REGION,
     /* GPS tab */
     SETTINGS_HIT_TAB_GPS,
     SETTINGS_HIT_GPS_MODE_CLIENT,
@@ -226,6 +227,7 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch);
 static void apply_settings_hit(SettingsHitTarget hit);
 static bool point_in_rect(int px, int py, int x, int y, int w, int h);
 static bool is_recent_settings_hit(SettingsHitTarget hit, u64 now_ms);
+static void open_offline_download(void);
 
 static void ensure_app_data_dir(void) {
     mkdir("sdmc:/3ds_google_maps", 0777);
@@ -1429,7 +1431,8 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
         case SETTINGS_TAB_DATA:
             if (point_in_rect(touch->px, touch->py, 12, 86, 142, 58)) return SETTINGS_HIT_PROXY_TOGGLE;
             if (point_in_rect(touch->px, touch->py, 166, 86, 142, 58)) return SETTINGS_HIT_CACHE_TOGGLE;
-            if (point_in_rect(touch->px, touch->py, 12, 154, 296, 60)) return SETTINGS_HIT_CLEAR_CACHE;
+            if (point_in_rect(touch->px, touch->py, 12, 154, 142, 60)) return SETTINGS_HIT_CLEAR_CACHE;
+            if (point_in_rect(touch->px, touch->py, 166, 154, 142, 60)) return SETTINGS_HIT_DOWNLOAD_REGION;
             break;
         case SETTINGS_TAB_GPS:
             /* [Client] / [Server] source mode buttons (same position as tile source) */
@@ -1537,6 +1540,9 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             } else {
                 set_status_message("SD cache clear failed");
             }
+            break;
+        case SETTINGS_HIT_DOWNLOAD_REGION:
+            open_offline_download();
             break;
 
         /* ---- GPS tab -------------------------------------------------- */
@@ -1730,6 +1736,7 @@ static void render_settings_panel(void) {
         bool proxy_pressed = is_recent_settings_hit(SETTINGS_HIT_PROXY_TOGGLE, now_ms);
         bool cache_pressed = is_recent_settings_hit(SETTINGS_HIT_CACHE_TOGGLE, now_ms);
         bool clear_pressed = is_recent_settings_hit(SETTINGS_HIT_CLEAR_CACHE, now_ms);
+        bool dl_pressed    = is_recent_settings_hit(SETTINGS_HIT_DOWNLOAD_REGION, now_ms);
         bool proxy_enabled = network_get_proxy_enabled();
         bool cache_enabled = network_get_disk_cache_enabled();
         bool proxy_available = network_proxy_available();
@@ -1737,8 +1744,13 @@ static void render_settings_panel(void) {
         C2D_DrawRectSolid(12.0f, 86.0f, 0.2f, 142.0f, 58.0f,
                           proxy_available ? C2D_Color32f(0.12f, 0.15f, 0.19f, 1.0f) : C2D_Color32f(0.10f, 0.11f, 0.13f, 1.0f));
         C2D_DrawRectSolid(166.0f, 86.0f, 0.2f, 142.0f, 58.0f, C2D_Color32f(0.12f, 0.15f, 0.19f, 1.0f));
-        C2D_DrawRectSolid(12.0f, 154.0f, 0.2f, 296.0f, 60.0f,
+
+        /* Clear cache card (left) */
+        C2D_DrawRectSolid(12.0f, 154.0f, 0.2f, 142.0f, 60.0f,
                           clear_pressed ? C2D_Color32f(0.28f, 0.20f, 0.14f, 1.0f) : C2D_Color32f(0.12f, 0.15f, 0.19f, 1.0f));
+        /* Download region card (right) */
+        C2D_DrawRectSolid(166.0f, 154.0f, 0.2f, 142.0f, 60.0f,
+                          dl_pressed ? C2D_Color32f(0.14f, 0.22f, 0.30f, 1.0f) : C2D_Color32f(0.12f, 0.15f, 0.19f, 1.0f));
 
         draw_ui_text(24.0f, 100.0f, 0.44f, 0.44f,
                      proxy_available ? C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f) : C2D_Color32f(0.56f, 0.61f, 0.67f, 1.0f),
@@ -1759,9 +1771,12 @@ static void render_settings_panel(void) {
         draw_ui_text(114.0f, 108.0f, 0.34f, 0.34f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), C2D_AlignCenter, proxy_enabled ? "ON" : "OFF");
         draw_ui_text(268.0f, 108.0f, 0.34f, 0.34f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), C2D_AlignCenter, cache_enabled ? "ON" : "OFF");
 
-        draw_ui_text(24.0f, 168.0f, 0.44f, 0.44f, C2D_Color32f(0.97f, 0.98f, 1.0f, 1.0f), 0, "Clear SD tile cache");
-        snprintf(line, sizeof(line), "Last tile %lu KB   backend %s", (unsigned long)((network_get_last_tile_size_bytes() + 1023) / 1024), network_get_effective_tile_backend_name());
-        draw_ui_text(24.0f, 188.0f, 0.32f, 0.32f, C2D_Color32f(0.74f, 0.82f, 0.90f, 1.0f), 0, line);
+        draw_ui_text(24.0f, 166.0f, 0.40f, 0.40f, C2D_Color32f(0.97f, 0.98f, 1.0f, 1.0f), 0, "Clear SD");
+        draw_ui_text(24.0f, 184.0f, 0.40f, 0.40f, C2D_Color32f(0.97f, 0.98f, 1.0f, 1.0f), 0, "tile cache");
+        draw_ui_text(178.0f, 166.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "Download");
+        draw_ui_text(178.0f, 184.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "region");
+        snprintf(line, sizeof(line), "backend %s", network_get_effective_tile_backend_name());
+        draw_ui_text(12.0f, 222.0f, 0.30f, 0.30f, C2D_Color32f(0.56f, 0.62f, 0.70f, 1.0f), 0, line);
     } else { /* SETTINGS_TAB_GPS */
         bool client_mode   = (gps_get_source_mode() == GPS_SOURCE_NMEA_CLIENT);
         bool server_mode   = (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER);
@@ -2412,6 +2427,213 @@ static void open_cache_stats(void) {
     }
     end_bottom_console_ui(NULL);
 }
+
+/* -------- Offline region download ---------------------------------------- */
+
+static int count_region_tiles(int min_zoom, int max_zoom,
+                              double lat_min, double lon_min,
+                              double lat_max, double lon_max) {
+    int total = 0;
+    for (int z = min_zoom; z <= max_zoom; z++) {
+        int tx_min, ty_min, tx_max, ty_max;
+        lat_lon_to_tile(lat_max, lon_min, z, &tx_min, &ty_min);
+        lat_lon_to_tile(lat_min, lon_max, z, &tx_max, &ty_max);
+        int n = 1 << z;
+        if (tx_min < 0) tx_min = 0;
+        if (ty_min < 0) ty_min = 0;
+        if (tx_max >= n) tx_max = n - 1;
+        if (ty_max >= n) ty_max = n - 1;
+        total += (tx_max - tx_min + 1) * (ty_max - ty_min + 1);
+    }
+    return total;
+}
+
+static void open_offline_download(void) {
+    double lat = map_state.lat;
+    double lon = map_state.lon;
+    int zoom = map_state.zoom;
+
+    /* Calculate viewport bounds in lat/lon with 2-tile padding */
+    int cpx, cpy;
+    lat_lon_to_pixel(lat, lon, zoom, &cpx, &cpy);
+
+    int pad_px = 256 * 2;  /* 2 tiles of padding */
+    int tl_px = cpx - SCREEN_WIDTH_TOP / 2 - pad_px;
+    int tl_py = cpy - SCREEN_HEIGHT_TOP / 2 - pad_px;
+    int br_px = cpx + SCREEN_WIDTH_TOP / 2 + pad_px;
+    int br_py = cpy + SCREEN_HEIGHT_TOP / 2 + pad_px;
+
+    double total_pixels = (double)(1 << zoom) * 256.0;
+
+    /* pixel → lon */
+    double lon_min = (double)tl_px / total_pixels * 360.0 - 180.0;
+    double lon_max = (double)br_px / total_pixels * 360.0 - 180.0;
+
+    /* pixel → lat (inverse Mercator) */
+    double lat_max = atan(sinh(M_PI * (1.0 - 2.0 * (double)tl_py / total_pixels))) * 180.0 / M_PI;
+    double lat_min = atan(sinh(M_PI * (1.0 - 2.0 * (double)br_py / total_pixels))) * 180.0 / M_PI;
+
+    if (lat_min < -85.05) lat_min = -85.05;
+    if (lat_max >  85.05) lat_max =  85.05;
+    if (lon_min < -180.0) lon_min = -180.0;
+    if (lon_max >  180.0) lon_max =  180.0;
+
+    /* Default zoom range */
+    int min_zoom = zoom - 2;
+    int max_zoom = zoom + 2;
+    if (min_zoom < 1)  min_zoom = 1;
+    if (max_zoom > 16) max_zoom = 16;
+
+    log_write("[OFFLINE] Region download: center %.4f,%.4f z%d  bounds lat[%.4f,%.4f] lon[%.4f,%.4f]\n",
+              lat, lon, zoom, lat_min, lat_max, lon_min, lon_max);
+
+    /* ---- Confirmation screen ---- */
+    begin_bottom_console_ui();
+    bool confirmed = false;
+
+    while (aptMainLoop() && !g_should_exit) {
+        int total_tiles = count_region_tiles(min_zoom, max_zoom,
+                                             lat_min, lon_min, lat_max, lon_max);
+        consoleClear();
+        printf("\x1b[0;0H");
+        printf("=== Download Region for Offline ===\n\n");
+        printf("Center: %.4f, %.4f  Zoom: %d\n", lat, lon, zoom);
+        printf("Area: viewport + 2 tiles padding\n\n");
+        printf("Zoom range: %d  to  %d\n", min_zoom, max_zoom);
+        printf("Total tiles: %d\n\n", total_tiles);
+        if (total_tiles > 2000)
+            printf("WARNING: large download!\n\n");
+        printf("L/R = adjust min zoom\n");
+        printf("UP/DOWN = adjust max zoom\n");
+        printf("A = start download   B = cancel\n");
+
+        hidScanInput();
+        u32 kDown = hidKeysDown();
+
+        if (kDown & KEY_B) break;
+        if (kDown & KEY_START) { g_should_exit = true; break; }
+        if (kDown & KEY_A)    { confirmed = true; break; }
+        if (kDown & KEY_DLEFT)  { if (min_zoom > 1) min_zoom--; }
+        if (kDown & KEY_DRIGHT) { if (min_zoom < max_zoom) min_zoom++; }
+        if (kDown & KEY_DUP)    { if (max_zoom < 16) max_zoom++; }
+        if (kDown & KEY_DDOWN)  { if (max_zoom > min_zoom) max_zoom--; }
+
+        svcSleepThread(60000000LL);
+    }
+
+    if (!confirmed) {
+        end_bottom_console_ui("Download cancelled");
+        return;
+    }
+
+    /* ---- Download loop ---- */
+    void *curl = network_alloc_tile_curl();
+    if (!curl) {
+        end_bottom_console_ui("Failed to init downloader");
+        return;
+    }
+
+    int total_tiles = count_region_tiles(min_zoom, max_zoom,
+                                         lat_min, lon_min, lat_max, lon_max);
+    int done = 0, downloaded = 0, skipped = 0, failed = 0;
+    bool cancelled = false;
+    u64 start_ms = osGetTime();
+
+    log_write("[OFFLINE] Starting download: %d tiles, zoom %d-%d\n",
+              total_tiles, min_zoom, max_zoom);
+
+    for (int z = min_zoom; z <= max_zoom && !cancelled; z++) {
+        int tx_min, ty_min, tx_max, ty_max;
+        lat_lon_to_tile(lat_max, lon_min, z, &tx_min, &ty_min);
+        lat_lon_to_tile(lat_min, lon_max, z, &tx_max, &ty_max);
+        int n = 1 << z;
+        if (tx_min < 0) tx_min = 0;
+        if (ty_min < 0) ty_min = 0;
+        if (tx_max >= n) tx_max = n - 1;
+        if (ty_max >= n) ty_max = n - 1;
+
+        for (int tx = tx_min; tx <= tx_max && !cancelled; tx++) {
+            for (int ty = ty_min; ty <= ty_max && !cancelled; ty++) {
+                /* Progress display */
+                consoleClear();
+                printf("\x1b[0;0H");
+                printf("=== Downloading Offline Tiles ===\n\n");
+                printf("Progress: %d / %d\n", done, total_tiles);
+                printf("Zoom %d: tile (%d, %d)\n\n", z, tx, ty);
+                printf("New: %d  Cached: %d  Failed: %d\n\n", downloaded, skipped, failed);
+
+                u64 elapsed = osGetTime() - start_ms;
+                if (done > 0 && elapsed > 0) {
+                    u64 eta_s = ((elapsed / done) * (total_tiles - done)) / 1000ULL;
+                    printf("Elapsed: %llus   ETA: ~%llus\n", elapsed / 1000ULL, eta_s);
+                }
+
+                /* Text progress bar */
+                int bar_w = 36;
+                int filled = total_tiles > 0 ? (done * bar_w / total_tiles) : 0;
+                printf("[");
+                for (int i = 0; i < bar_w; i++)
+                    printf(i < filled ? "#" : "-");
+                printf("]\n\n");
+                printf("Press B to cancel\n");
+
+                /* Check for cancel */
+                hidScanInput();
+                u32 kDown = hidKeysDown();
+                if (kDown & KEY_B) { cancelled = true; break; }
+                if (kDown & KEY_START) { g_should_exit = true; cancelled = true; break; }
+
+                /* Download this tile (saves to disk cache automatically) */
+                u8 *buf = NULL;
+                u32 size = 0;
+                bool ok = download_tile_with_curl(tx, ty, z, curl, &buf, &size);
+                if (ok) {
+                    if (network_get_last_tile_was_cache_hit())
+                        skipped++;
+                    else
+                        downloaded++;
+                    free(buf);
+                } else {
+                    failed++;
+                }
+                done++;
+            }
+        }
+    }
+
+    network_free_tile_curl(curl);
+
+    log_write("[OFFLINE] Done: %d downloaded, %d cached, %d failed, cancelled=%d\n",
+              downloaded, skipped, failed, cancelled);
+
+    /* ---- Summary screen ---- */
+    consoleClear();
+    printf("\x1b[0;0H");
+    if (cancelled)
+        printf("=== Download Cancelled ===\n\n");
+    else
+        printf("=== Download Complete ===\n\n");
+    printf("New tiles downloaded: %d\n", downloaded);
+    printf("Already cached: %d\n", skipped);
+    printf("Failed: %d\n\n", failed);
+    u64 total_sec = (osGetTime() - start_ms) / 1000ULL;
+    printf("Time: %llus\n\n", total_sec);
+    printf("Press A or B to continue\n");
+
+    while (aptMainLoop() && !g_should_exit) {
+        hidScanInput();
+        u32 kDown = hidKeysDown();
+        if (kDown & (KEY_A | KEY_B)) break;
+        if (kDown & KEY_START) { g_should_exit = true; break; }
+        svcSleepThread(60000000LL);
+    }
+
+    char msg[96];
+    snprintf(msg, sizeof(msg), "Offline: %d new, %d cached", downloaded, skipped);
+    end_bottom_console_ui(msg);
+}
+
+/* ------------------------------------------------------------------------- */
 
 static void open_recents(void) {
     if (g_recent_count <= 0) {

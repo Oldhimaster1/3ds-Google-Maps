@@ -1,4 +1,5 @@
 #include "network.h"
+#include "tilepack.h"
 #include "logging.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,11 @@ static char g_proxy_base_url[256] = PROXY_BASE_URL;
 static u32 last_tile_download_ms = 0;
 static u32 last_tile_size_bytes = 0;
 static bool last_tile_cache_hit = false;
+
+/* Offline tile packs — one per source type */
+static TilePack g_tilepack_street;
+static TilePack g_tilepack_sat;
+static bool g_tilepacks_loaded = false;
 
 /* =========================================================================
  * libcurl + mbedTLS HTTPS client
@@ -203,6 +209,22 @@ bool download_tile_with_curl(int tile_x, int tile_y, int zoom, void *curl_handle
         last_tile_download_ms = 0;
         last_tile_size_bytes  = *size;
         return true;
+    }
+
+    /* 1b) Offline tile pack — single binary file, binary search lookup */
+    {
+        TilePack *pack = (tile_source == TILE_SOURCE_SATELLITE)
+                         ? &g_tilepack_sat : &g_tilepack_street;
+        size_t tp_size = 0;
+        u8 *tp_buf = tilepack_read_tile(pack, zoom, tile_x, tile_y, &tp_size);
+        if (tp_buf) {
+            *buffer = tp_buf;
+            *size   = (u32)tp_size;
+            last_tile_cache_hit  = true;
+            last_tile_download_ms = 0;
+            last_tile_size_bytes  = (u32)tp_size;
+            return true;
+        }
     }
 
     /* 2) Build the tile URL */
@@ -529,12 +551,27 @@ bool network_init(void) {
         }
     }
 
+    /* Load offline tile packs if present on the SD card.
+     * These are single binary files produced by tools/download_region.py
+     * and are MUCH faster to transfer than thousands of individual tiles. */
+    if (!g_tilepacks_loaded) {
+        memset(&g_tilepack_street, 0, sizeof(g_tilepack_street));
+        memset(&g_tilepack_sat,    0, sizeof(g_tilepack_sat));
+        tilepack_open(&g_tilepack_street, TILE_CACHE_ROOT "/street.tilepack");
+        tilepack_open(&g_tilepack_sat,    TILE_CACHE_ROOT "/sat.tilepack");
+        g_tilepacks_loaded = true;
+    }
+
     network_initialized = true;
     return true;
 }
 
 void network_cleanup(void) {
     if (!network_initialized) return;
+
+    tilepack_close(&g_tilepack_street);
+    tilepack_close(&g_tilepack_sat);
+    g_tilepacks_loaded = false;
 
     net_curl_cleanup();
     acExit();

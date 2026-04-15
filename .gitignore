@@ -14,12 +14,53 @@ build/
 # Old/example subfolders
 3ds_google_maps/
 3ds-examples-master/
-3ds_google_maps_works.3dsx
+3ds_google_maps_src/
 
 # Python
 .venv/
 __pycache__/
 *.pyc
 
-# Logs and SD card data
+# Logs and data
 *.txt
+*.csv
+*.tilepack
+
+# Archives
+*.zip
+
+# Debug / test artifacts
+*.bin
+map_debug_*
+123.png
+icon.png
+test_tile.png
+
+# Unrelated directories
+discord_emojis/
+discord_emojis_ruby/
+discord_emojis*.zip
+thirdparty/
+backup/
+http_test/
+.vscode/
+
+# Misc scripts
+_scan_sizes.ps1
+
+# Debug logs
+*.log
+
+# Non-project tools (only keep tile_proxy.py, generate_cert.py, download_region.py)
+tools/.satellite_viewer_cache/
+tools/analyze_mhtml*.py
+tools/build_openssl_3ds.sh
+tools/check_animated*.py
+tools/download_satellite_zoom.py
+tools/extract_emojis.py
+tools/extract_ruby_emojis.py
+tools/oracle_proxy.py
+tools/satellite_viewer.py
+
+# stb_image duplicate in include/
+include/stb_image.c
