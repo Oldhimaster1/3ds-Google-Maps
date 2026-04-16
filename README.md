@@ -208,8 +208,6 @@ Satellite JPEG tiles take 1-2 seconds to decode on the old 3DS's 268 MHz ARM11. 
 
 The tilepack format is straightforward: 16-byte header ("3DTP", version, tile count, data offset), then a sorted index of 20-byte entries (zoom, x, y, offset, size), then the raw tile data concatenated. The reader loads the full index into RAM and does binary search. A LightLock protects the file reads so multiple threads can look up tiles concurrently.
 
-The QR encoder is about 335 lines of C with no dependencies. It handles byte mode, EC level L, versions 1-4. A typical GPS URL like `https://192.168.1.100:8443` is 28 characters, which fits in version 2 (25x25 modules).
-
 ---
 
 ## License
