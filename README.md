@@ -49,11 +49,8 @@ You need Python 3. Then:
 # Satellite tiles, 10 km around NYC, zoom 10-14
 python tools/download_region.py --lat 40.7128 --lon -74.006 --radius-km 10 --zoom 10-14
 
-# Street tiles for South Carolina, bounding box
-python tools/download_region.py --bbox 32.03,-83.36,35.22,-78.54 --zoom 6-13 --street
-
 # Bigger region, more workers, skip the confirmation prompt
-python tools/download_region.py --lat 35.5 --lon -80.0 --radius-km 200 --zoom 6-12 -w 16 -y
+python tools/download_region.py --lat 50.0 --lon -80.0 --radius-km 200 --zoom 6-12 -w 16 -y
 ```
 
 Output goes to `./3ds_google_maps/tiles/` by default, matching the SD card layout. Copy it over:
