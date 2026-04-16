@@ -28,7 +28,7 @@ v2.0 added offline tile caching. You can download a whole region on your PC, pac
 |-------|--------|
 | D-Pad | Pan the map |
 | Circle Pad | Smooth analog pan |
-| L / R | Zoom in / out |
+| X / Y | Zoom in / out |
 | Touch drag | Pan the map |
 | Bottom panel buttons | Search, Favorites, Recents, Route, GPS, Track, Menu |
 | A | Toggle GPS tracking |
