@@ -154,7 +154,7 @@ sdmc:/3ds_google_maps/
   tiles/                 — cached tiles (auto-created)
   tiles/sat.tilepack     — offline satellite pack (optional)
   tiles/street.tilepack  — offline street pack (optional)
-  favorites.txt          — saved locations
+  favorites.txt          — saved locations (auto-created)
   log.txt                — debug log (overwritten each launch)
 ```
 
