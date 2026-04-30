@@ -90,7 +90,7 @@ The 3DS has no GPS, but your phone does.
 
 The certificate is self-signed (compiled into the binary), so your browser will show a security warning. Tap through it ("Advanced", then "Proceed").
 
-Both devices need to be on the same WiFi network.
+Both devices need to be on the same WiFi network or either connect the 3ds to your phones hotspot.
 
 **iPhone users:** Safari has been unreliable with the self-signed cert and geolocation on this setup. Use Google Chrome on your iPhone instead, it works much better.
 
