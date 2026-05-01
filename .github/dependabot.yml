@@ -1,9 +1,12 @@
-name: CI
-
-on: [push]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Hello from GitHub Actions!"
+version: 2
+updates:
+  # Example for GitHub Actions (remove if not using Actions):
+  # - package-ecosystem: "github-actions"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  # Example for npm (if you use Node.js):
+  # - package-ecosystem: "npm"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
