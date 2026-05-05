@@ -1,0 +1,71 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got an idea? Great! Please keep in mind the hardware constraints — the Old 3DS runs at 268 MHz with ~64 MB RAM shared with the OS. Features that work fine on a phone may need significant rethinking to work well here.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: Describe what you'd like to see added or changed, in one or two sentences.
+      placeholder: e.g. "Add a compass overlay on the top screen that rotates based on device orientation."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What Problem Does This Solve?
+      description: What's the use case? Why would this be useful for 3DS map users?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How do you imagine this working? If you have ideas about implementation, share them here. Not required — even a vague idea is fine.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which Area Does This Affect?
+      description: Pick the part of the app most relevant to your request.
+      options:
+        - Map display / rendering
+        - Tile sources (OSM, satellite, etc.)
+        - Offline tilepacks
+        - GPS / phone bridge
+        - Search & routing
+        - Favorites
+        - Settings UI
+        - Build system / tooling
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Have You Tested Feasibility on Hardware?
+      description: Have you tried anything related to this on your 3DS already?
+      options:
+        - "Yes — it works / is partially working"
+        - "Yes — I hit a hardware limitation"
+        - "No — just an idea"
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything Else?
+      description: Links, references, screenshots, or any other context that might help.
+    validations:
+      required: false

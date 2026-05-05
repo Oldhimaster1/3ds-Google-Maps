@@ -1,0 +1,105 @@
+name: Bug Report
+description: Report something that isn't working correctly on your 3DS
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out as much as you can — especially the `log.txt` from your SD card, which is the only debug output available on hardware.
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: 3DS Model
+      description: Which device are you running this on?
+      options:
+        - Old 3DS
+        - Old 3DS XL
+        - 2DS
+        - New 3DS
+        - New 3DS XL
+        - New 2DS XL
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App Version / Commit
+      description: Which version of the app are you running? (check the release tag or the commit SHA you built from)
+      placeholder: e.g. v2.0 or commit abc1234
+    validations:
+      required: false
+
+  - type: dropdown
+    id: tile_mode
+    attributes:
+      label: Tile Mode
+      description: Were you using live WiFi tiles or an offline tilepack?
+      options:
+        - Live tiles over WiFi
+        - Offline tilepack (.tilepack file on SD card)
+        - Both / switching between them
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: gps_mode
+    attributes:
+      label: GPS Mode (if relevant)
+      description: Were you using GPS when the bug occurred?
+      options:
+        - Not using GPS
+        - HTTPS Server (phone browser QR code)
+        - NMEA Client
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: What did you do to trigger the bug?
+      placeholder: |
+        1. Open the app
+        2. Go to Settings → GPS tab
+        3. Tap Server
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened? (crash, freeze, wrong display, etc.)
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: log.txt Contents
+      description: |
+        Paste the contents of `sdmc:/3ds_google_maps/log.txt` here. This is the most important thing for diagnosing on-device issues — please don't skip it if you can get to the SD card.
+      render: text
+      placeholder: Paste log.txt here...
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything Else?
+      description: Screenshots, additional context, things you already tried, etc.
+    validations:
+      required: false
