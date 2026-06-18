@@ -10,7 +10,7 @@ v2.0 added offline tile caching. You can download a whole region on your PC, pac
 
 ## Features
 
-**Map display.** Top screen is the map, bottom screen is controls. Touch drag to pan, D-pad or Circle Pad also work. L/R to zoom (levels 1-18). There's a crosshair at center, optional night mode, and a debug overlay if you want to see zoom level and cache stats.
+**Map display.** Top screen is the map, bottom screen is controls. Touch drag to pan, D-pad or Circle Pad also work. X/Y to zoom (levels 1-18). There's a crosshair at center, optional night mode, and a debug overlay if you want to see zoom level and cache stats.
 
 **Tile sources.** Three options: OpenStreetMap streets (decoded with libpng), Esri satellite imagery (decoded with stb_image on worker threads), and Esri World Street Map. Switch between them in settings. Every tile you view gets cached to the SD card, and the 64 most recent stay in RAM.
 
