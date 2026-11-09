@@ -4,7 +4,7 @@
 
 ## Publishing details
 
-Create a prerelease titled **On-device downloads for offline maps** using tag `v2.1.0-preview.1` at commit `59a356bf7956003fc947969b4400a64b9a1dbeb9`. Use the preview release notes as the body. Attach the tested `3ds_google_maps.cia`, `3ds_google_maps.3dsx`, `SHA256SUMS`, and `maps-for-nintendo-3ds-intro.mp4`. Check the public asset hashes after publishing and point the repository-root README to the tagged downloads.
+Create a prerelease titled **On-device downloads for offline maps** using tag `v2.1.0-preview.1` at the commit pinned in the [preview manifest](../../.github/release/preview.json). Use the preview release notes as the body. Attach the tested `3ds_google_maps.cia`, `3ds_google_maps.3dsx`, `SHA256SUMS`, and `maps-for-nintendo-3ds-intro.mp4`. Check the public asset hashes after publishing and point the repository-root README to the tagged downloads.
 
 ## Listing and announcement copy
 
@@ -26,4 +26,4 @@ Maps for Nintendo 3DS is a dual-screen homebrew map viewer with street and satel
 
 ### Community announcement, after publishing
 
-See a map region download to the 3DS and reopen after the tile server stops. [Watch the demo](https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.1.0-preview.1/maps-for-nintendo-3ds-intro.mp4). The preview adds named offline packs, pause and resume, coverage checks, and phone GPS accuracy. [Download or read the setup guide](https://github.com/Oldhimaster1/3ds-Google-Maps). If you try it on physical hardware, please share your console model and what worked.
+See a map region download to the 3DS and reopen after the tile server stops. [Watch the demo](../media/maps-for-nintendo-3ds-intro.mp4?raw=true). The preview adds named offline packs, pause and resume, coverage checks, and phone GPS accuracy. [Download or read the setup guide](https://github.com/Oldhimaster1/3ds-Google-Maps). If you try it on physical hardware, please share your console model and what worked.

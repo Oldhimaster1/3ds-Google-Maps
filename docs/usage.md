@@ -8,6 +8,8 @@ The top screen displays the map. The touch panel opens **Search**, **Favorites**
 
 In **Menu → View**, choose **Street** or **Sat** and adjust night mode or the debug overlay. Press **Select** in that tab for per-tile SD, network, decode, and GPU upload timings. In **Menu → Data**, manage the optional LAN proxy, browsing cache, and offline packs. Clearing the browsing cache preserves saved packs.
 
+When using the default search service, choose **A** to prefer places near the map center or **X** to search everywhere.
+
 ## Tile sources
 
 Live browsing and the named offline download source are configured separately. The default Street layer uses OpenStreetMap’s standard raster tile service. Its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) prohibits offline bulk downloads. The default [Esri World Imagery service](https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer?f=pjson) reports export disabled. Use a source that permits offline downloads.
