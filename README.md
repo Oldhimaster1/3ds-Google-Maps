@@ -1,263 +1,85 @@
-# 3DS Google Maps
+# Maps for Nintendo 3DS
 
-Interactive map viewer for the Nintendo 3DS. Pulls OpenStreetMap and Esri satellite tiles over HTTPS, does GPS tracking through your phone, has place search, route planning, favorites, and a settings UI. Everything runs directly on the handheld, no proxy needed.
+Browse street maps and satellite imagery, search for places, and plan routes. Download map regions directly to your 3DS for offline use, or pair your phone to display your GPS position.
 
-Tile downloads use libcurl with mbedTLS for TLS 1.2 (the 3DS's built-in HTTP service only does TLS 1.0, which most tile servers reject now). Satellite tiles are JPEGs that take 1-2 seconds to decode on the old 3DS CPU, so that work happens on background threads to keep the map from freezing.
+[Download .cia](#cia--home-menu) · [Download .3dsx][public-3dsx] · [Installation guide](#install)
 
-v2.0 added offline tile caching. You can download a whole region on your PC, pack it into a single file, and copy it to the SD card. The map then works without WiFi.
+> The public download is **v2.0**. This branch previews **On-device downloads for offline maps**. The new CIA is pending production branding verification.
 
----
+<p>
+  <img src="docs/media/maps-for-nintendo-3ds-hero.png" width="432" alt="Golden Gate Bridge imagery on the top screen, with map controls on the touch screen">
+</p>
 
-## Features
+*Golden Gate Bridge in Azahar. Imagery from USDA and USGS The National Map.*
 
-**Map display.** Top screen is the map, bottom screen is controls. Touch drag to pan, D-pad or Circle Pad also work. X/Y to zoom (levels 1-18). There's a crosshair at center, optional night mode, and a debug overlay if you want to see zoom level and cache stats.
+[Offline map preview (GIF)](docs/media/maps-for-nintendo-3ds-preview.gif?raw=true) · [Full introduction video (MP4)](docs/media/maps-for-nintendo-3ds-intro.mp4?raw=true)
 
-**Tile sources.** Three options: OpenStreetMap streets (decoded with libpng), Esri satellite imagery (decoded with stb_image on worker threads), and Esri World Street Map. Switch between them in settings. Every tile you view gets cached to the SD card, and the 64 most recent stay in RAM.
+## Install
 
-**Offline tilepacks.** Create named packs from the current map or an active route
-right on the 3DS. Pause and resume across launches. Preview coverage, check
-tile images, and remove packs individually.
+### .3dsx · Homebrew Launcher
 
-**GPS via phone.** The 3DS runs a TLS server on port 8443. Open the URL on your phone's browser, grant location permission, and your GPS coordinates stream to the 3DS every second. A QR code shows on the top screen so you don't have to type anything. There's also an NMEA TCP client mode if you use an app like GPS2IP.
+1. Download [`3ds_google_maps.3dsx`][public-3dsx].
+2. Copy it to `sdmc:/3ds/3ds_google_maps/3ds_google_maps.3dsx`.
+3. Open **Homebrew Launcher**, then select **3ds_google_maps**. The named offline pack workflow below requires the [candidate built from this branch](docs/usage.md#build-from-source).
 
-**Search and routing.** Place search via Nominatim, route planning via OSRM, reverse geocoding ("Identify" button tells you what's at map center). You can save favorite locations. There's basic panorama support too, but it needs the debug proxy running.
+### .cia · HOME Menu
 
----
+A CIA needs a 3DS with [custom firmware](https://3ds.hacks.guide/) and a title installer such as [FBI](https://github.com/Steveice10/FBI). Once a verified CIA is published, copy it to the SD card and choose **Install CIA** in FBI. The title will appear on the HOME Menu. The [current public release][public-release] provides the Homebrew Launcher build.
 
-## Controls
+## Try offline maps
 
-| Input | Action |
-|-------|--------|
-| D-Pad | Pan the map |
-| Circle Pad | Smooth analog pan |
-| X / Y | Zoom in / out |
-| Touch drag | Pan the map |
-| Bottom panel buttons | Search, Favorites, Recents, Route, GPS, Track, Menu |
-| A | Toggle GPS tracking |
-| B | Close settings / go back |
-| START | Exit the app |
+1. Connect the 3DS to Wi-Fi. Tap **Search** or press **Select**, then look up a familiar place. Choose **A** to prefer results near the map center, or **X** to search everywhere when using the default search service.
+2. Open **Menu → Data → Offline regions**. Press **L** for **Tile source** and enter a raster tile URL that permits offline downloads for the selected layer. The [tile source guide](docs/usage.md#tile-sources) includes a USGS imagery example for the contiguous United States.
+3. Press **Y** for **New pack**. Start with a narrow zoom range and check the size estimate. Press **A** to name and download the pack, or **Select** for **Quick save**. **B** pauses a transfer. Select the paused pack and press **A** to resume.
+4. Once the pack is ready, press **Start** to exit, switch off Wi-Fi, and reopen the app. In **Offline regions**, select the pack and press **A** to preview it. Browse the saved area at the zoom levels you downloaded.
 
----
+Planning a new route requires a connection. With a route on screen, press **X** on the new pack screen to save a corridor of map tiles along it. This saves map coverage for the trip. Route calculation still uses the online routing service, and the route line itself does not persist with the pack.
 
-## Offline map caching
+## Use phone GPS
 
-If you want to use the map without WiFi, or just want tiles to load instantly, you can pre-download a region on your PC.
+Connect the phone and 3DS to the same Wi-Fi network, or connect the 3DS to the phone’s hotspot if it permits local connections. On the 3DS, open **Menu → GPS** and tap **Server**. Scan the pairing QR on the top screen with the phone, open the local page, and allow location access. Keep the page open while using GPS. Press **A** on the map to toggle following your position.
 
-### Quick start
+The local GPS page uses a self-signed HTTPS certificate. Some browser setups will block the page or location access. See [GPS setup and troubleshooting](docs/usage.md#phone-gps) for what to check. The GPS QR pairs a phone to the running app.
 
-You need Python 3. Then:
+## Explore
 
-```bash
-# Satellite tiles, 10 km around NYC, zoom 10-14
-python tools/download_region.py --lat 40.7128 --lon -74.006 --radius-km 10 --zoom 10-14
+**Lower Manhattan** · Follow the waterfront and street grid.
 
-# Bigger region, more workers, skip the confirmation prompt
-python tools/download_region.py --lat 50.0 --lon -80.0 --radius-km 200 --zoom 6-12 -w 16 -y
-```
+<img src="docs/media/lower-manhattan.png" width="330" alt="Lower Manhattan street map showing The Battery, Broadway and the waterfront above the 3DS touch controls">
 
-Output goes to `./3ds_google_maps/tiles/` by default, matching the SD card layout. Copy it over:
+**A route to City Hall Park** · The route overlay follows the streets from The Battery.
 
-```
-SD card:
-  sdmc:/3ds_google_maps/tiles/sat.tilepack      ← satellite tiles
-  sdmc:/3ds_google_maps/tiles/street.tilepack    ← street map tiles
-```
+<img src="docs/media/manhattan-route.png" width="330" alt="Yellow route line from The Battery toward City Hall Park, with Route active on the touch screen">
 
-The app finds these on startup. Re-run the script for more areas and it merges new tiles into the existing pack.
+**A saved Golden Gate region** · The map reopens after the test tile server stops.
 
-### Download and manage packs on the 3DS
+<img src="docs/media/offline-golden-gate.png" width="330" alt="Golden Gate Bridge imagery visible from the saved pack after a cold relaunch in Azahar">
 
-1. Choose the street or satellite layer, then open **Menu → Data → Offline regions**.
-2. Press **L** to enter a tile service URL for the selected layer. Use a service
-   that permits offline downloading. Supply a URL template such as
-   `https://your-server.example/{z}/{x}/{y}.png`. A base URL also works for
-   servers using extensionless `/z/x/y` paths. An existing compatible LAN
-   proxy works as a fallback. The public OSM standard tile service cannot be
-   used for offline downloads.
-3. Press **Y**, adjust the zoom range, and choose the current area or **X** to
-   select a corridor around an active route. The screen estimates size before
-   you start. Press **A** to name the pack, or **Select** to use an automatic name.
-4. Press **B** during transfer to pause. Select the paused pack and press **A**
-   to continue even after restarting the app. Completed tiles stay on the SD
-   card. Resuming requires the same configured endpoint.
-5. Press **R** to show coverage on the map. Green means an exact tile is in an
-   installed pack and amber means there is no pack tile at that zoom. Press
-   **A** on an installed pack to preview it, **Select** to check image readability,
-   or **X** twice to remove it.
+*All captures are from Azahar. The demo uses USGS topographic maps and USDA/USGS imagery through a test endpoint. Search and routing data © OpenStreetMap contributors. These captures do not establish physical console performance.*
 
-The 3DS writes the pack directly to `sdmc:/3ds_google_maps/regions/`. It can load
-up to 12 named packs of up to 4,096 tiles each alongside the two legacy packs.
-Clearing the browsing cache preserves packs. Both packs and cached tiles can be
-read with Wi-Fi off.
+| Control | Action |
+| --- | --- |
+| Circle Pad / D-Pad | Pan the map |
+| **X** / **Y** | Zoom in / out |
+| **Select** | Search |
+| **L** | Identify the map center |
+| **R** | Open settings |
+| **B** / **A** on the map | Connect GPS / toggle GPS follow |
+| **Start** | Exit and save the current view |
 
-### Why one file instead of individual tiles?
+Use the touch panel for favorites, recents, and routing. Context-specific controls appear on the bottom screen. [Full controls and troubleshooting](docs/usage.md)
 
-Copying 15,000 small PNGs to a FAT32 SD card takes over an hour. A single `.tilepack` file transfers in under a minute. The app reads it with a binary search index, so lookups are O(log n).
+## Compatibility and issues
 
-### Deduplication
+The candidate `.3dsx` was built with devkitARM and exercised in Azahar. Physical Old 3DS testing is pending. See the [verification record](docs/release/verification.md) for the exact coverage.
 
-The download tool hashes each tile with SHA-256 and only stores unique ones. Ocean tiles, empty land, etc. are all identical, so for coastal regions this cuts file size by 20-50%.
+When [reporting an issue](https://github.com/Oldhimaster1/3ds-Google-Maps/issues/new/choose), include the console model or emulator version, app version or commit, and steps to reproduce it. For a tile problem, say which layer and provider you were using. Remove private locations, addresses, and pairing URLs before attaching logs or captures.
 
-### Tile source permissions
+## Providers and development
 
-Public browsing layers and offline sources are configured separately. Use an endpoint
-that authorizes offline use. The public OpenStreetMap standard raster service
-prohibits bulk downloads, and the public Esri World Imagery service reports that
-export is disabled. Check the terms for your provider before using the optional
-desktop downloader as well.
+The default street layer uses [OpenStreetMap](https://www.openstreetmap.org/copyright) and the default imagery layer uses [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9). Search uses [Nominatim](https://nominatim.org/) and route calculation uses [OSRM](https://project-osrm.org/). Offline packs use the tile source you configure. Provider terms apply separately from the app’s [MIT license](LICENSE).
 
----
+[Build instructions, SD layout, and tilepack format](docs/usage.md#build-from-source) · [Contributing](CONTRIBUTING.md) · [Third-party licenses](THIRD_PARTY_LICENSES.md)
 
-## GPS phone bridge
-
-The 3DS has no GPS, but your phone does.
-
-1. Open Settings, go to the GPS tab, tap **Server**
-2. A QR code appears on the top screen
-3. Scan it with your phone, it opens a webpage
-4. Allow location permission when the browser asks
-5. Your phone starts sending coordinates to the 3DS every second
-6. The map follows your position in real time
-
-The certificate is self-signed (compiled into the binary), so your browser will show a security warning. Tap through it ("Advanced", then "Proceed").
-
-Both devices need to be on the same WiFi network or either connect the 3ds to your phones hotspot.
-
-**iPhone users:** Safari has been unreliable with the self-signed cert and geolocation on this setup. Use Google Chrome on your iPhone instead, it works much better.
-
----
-
-For NMEA client mode, optionally place a one-line `gps.cfg` in
-`sdmc:/3ds_google_maps/` with the phone's IPv4 address and TCP port separated
-by a space, for example `172.20.10.1 23`. Fixes expire after ten seconds without
-a valid update.
-
-## Building from source
-
-### Prerequisites
-
-Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) with the 3DS toolchain, then the required libraries:
-
-```bash
-dkp-pacman -S 3ds-dev
-dkp-pacman -S 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson
-```
-
-### Build
-
-In the devkitPro MSYS2 shell:
-
-```bash
-export DEVKITPRO=/opt/devkitpro
-export DEVKITARM=/opt/devkitpro/devkitARM
-export PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH
-
-cd /path/to/3ds_google_maps
-make
-```
-
-On Windows (devkitPro at `C:\devkitPro`):
-
-```bash
-export DEVKITPRO=/c/devkitPro
-export DEVKITARM=/c/devkitPro/devkitARM
-export PATH=/c/devkitPro/devkitARM/bin:/c/devkitPro/tools/bin:$PATH
-cd /c/path/to/3ds_google_maps
-make
-```
-
-Output: `3ds_google_maps.3dsx`
-
-### Libraries linked
-
-```
--lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lpng -ljansson -lz -lcitro2d -lcitro3d -lctru -lm
-```
-
----
-
-In Settings → View, press **Select** to see the most recent successful tile's
-SD, network, decode, and GPU upload timings. The app restores the map center,
-zoom, map layer, night mode, GPS source, cache setting and coverage setting on
-the next launch after a normal exit.
-
-## Installation
-
-1. Copy `3ds_google_maps.3dsx` to `sdmc:/3ds/3ds_google_maps/` on the SD card
-2. (Optional) Copy `.tilepack` files to `sdmc:/3ds_google_maps/tiles/`
-3. Launch from the Homebrew Launcher
-4. WiFi is needed for live tile downloads and GPS, but tilepacks work offline
-
-### SD card paths
-
-```
-sdmc:/3ds_google_maps/
-  tiles/                 — cached tiles (auto-created)
-  tiles/sat.tilepack     — offline satellite pack (optional)
-  tiles/street.tilepack  — offline street pack (optional)
-  favorites.txt          — saved locations (auto-created)
-  regions/               — named packs and paused downloads
-  session.cfg            — last map view and settings
-  offline-{sat,street}.cfg — optional tile URLs entered on the 3DS
-  log.txt                — debug log (overwritten each launch)
-```
-
----
-
-## File structure
-
-```
-source/
-  main.c          — main loop, UI, settings, input, offline download modal
-  network.c       — tile downloads (libcurl HTTPS, httpc HTTP fallback), disk cache, tilepack lookup
-  map_tiles.c     — tile coordinate math, RAM cache, decode pipeline, prefetch, rendering
-  gps.c           — GPS mode dispatch (NMEA client vs HTTPS server)
-  gps_server.c    — HTTPS GPS server (mbedTLS, serves HTML page, receives POST /location)
-  tilepack.c      — .tilepack reader, binary search index, thread-safe reads
-  qrcode.c        — QR encoder, byte mode, EC level L, versions 1-4
-  simple_png.c    — PNG loader via libpng, outputs Morton-tiled ABGR for GPU
-  logging.c       — writes to sdmc:/3ds_google_maps/log.txt
-  stb_image.c     — stb_image build unit for JPEG decode
-
-include/
-  tilepack.h        — tilepack format spec and read API
-  network.h         — download API, TileSource enum
-  map_tiles.h       — tile cache and rendering API
-  gps.h             — GPS init/cleanup/fix API
-  gps_server.h      — GPS server API
-  gps_server_cert.h — embedded DER cert + RSA-2048 key (valid 2026-2036)
-  qrcode.h          — qr_encode()
-  logging.h         — log_write()
-  simple_png.h      — PNG loader
-  stb_image_all.h   — stb_image v2.30
-  stb_image.h       — stb_image public header
-
-tools/
-  download_region.py — bulk tile downloader, outputs .tilepack (run on PC)
-  tile_proxy.py      — debug proxy for tile requests (dev only)
-  generate_cert.py   — generated the embedded TLS cert (already done, don't re-run)
-
-Makefile             — devkitARM build config
-```
-
----
-
-## Technical notes
-
-The 3DS's built-in `httpc` only speaks TLS 1.0, which modern tile servers reject. libcurl with mbedTLS handles TLS 1.2. OpenSSL was tried early on but its PRNG can't seed on 3DS hardware (there's no entropy source it recognizes), so mbedTLS is the only option. It uses `sslcGenerateRandomData()` from the 3DS SSL system service.
-
-Satellite JPEG tiles take 1-2 seconds to decode on the old 3DS's 268 MHz ARM11. Worker threads handle all the decoding (stb_image for JPEG, libpng for PNG, both outputting Morton-tiled ABGR). The main thread only does the GPU upload, which takes about 10 ms.
-
-`socInit()` (the 3DS network service) can only be called once per session. `network.c` calls it first. The GPS server tries to call it too, but if it fails (because it's already initialized), it just continues. This is intentional.
-
-The tilepack format is straightforward: 16-byte header ("3DTP", version, tile count, data offset), then a sorted index of 20-byte entries (zoom, x, y, offset, size), then the raw tile data concatenated. The reader loads the full index into RAM and does binary search. A LightLock protects the file reads so multiple threads can look up tiles concurrently.
-
----
-
-## License
-
-Built for educational and homebrew purposes. Map data from OpenStreetMap contributors under the Open Database License.
-
-## Disclaimer
-
-Live tile downloads need an internet connection. With offline tilepacks, the map works without any network access.
+[public-release]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.0
+[public-3dsx]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.0/3ds_google_maps.3dsx
