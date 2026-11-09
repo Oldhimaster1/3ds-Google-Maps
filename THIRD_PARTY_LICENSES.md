@@ -3,6 +3,9 @@
 This project links against or includes the following third-party libraries.
 Their licenses and required notices are reproduced below.
 
+The bundled Explore imagery and elevation assets have separate licenses and
+attribution. See [Explore data credits](docs/explore.md#data-credits-and-regeneration).
+
 -----
 
 ## libcurl

@@ -16,6 +16,7 @@
 #include "stb_image.h"
 #include "qrcode.h"
 #include "region.h"
+#include "explore.h"
 #include <jansson.h>
 #include <zlib.h>
 
@@ -75,6 +76,7 @@ typedef enum {
     SETTINGS_TAB_TILES,
     SETTINGS_TAB_DATA,
     SETTINGS_TAB_GPS,
+    SETTINGS_TAB_EXPLORE,
     SETTINGS_TAB_COUNT
 } SettingsTab;
 
@@ -100,7 +102,11 @@ typedef enum {
     SETTINGS_HIT_TAB_GPS,
     SETTINGS_HIT_GPS_MODE_CLIENT,
     SETTINGS_HIT_GPS_MODE_SERVER,
-    SETTINGS_HIT_GPS_START_STOP
+    SETTINGS_HIT_GPS_START_STOP,
+    SETTINGS_HIT_TAB_EXPLORE,
+    SETTINGS_HIT_GLOBE,
+    SETTINGS_HIT_TERRAIN,
+    SETTINGS_HIT_STREET_EXPLORER
 } SettingsHitTarget;
 
 #define MAX_RECENTS 10
@@ -142,21 +148,12 @@ static uint8_t g_qr_modules[QR_MAX_MODULES * QR_MAX_MODULES];
 static int g_qr_size = 0;
 static bool g_qr_valid = false;
 
-typedef struct {
-    bool active;
-    C2D_Image image;
-    int tex_w;
-    int tex_h;
-    int img_w;
-    int img_h;
-    double center_lat;
-    double center_lon;
-    float yaw_deg;
-    float pitch_deg;
-    u64 last_ms;
-} PanoState;
-
-static PanoState g_pano = {0};
+static ExploreMode g_explore_mode;
+static C3D_RenderTarget *g_explore_right;
+static unsigned g_street_stop;
+static bool g_explore_gyro;
+static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
+static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
 
 // Smooth camera state.
 static double g_target_lat = 0.0;
@@ -210,9 +207,9 @@ static void open_route_to_address(void);
 static bool geocode_pick(const char* query, GeocodeResult* out);
 static bool parse_route_json(const char* json, u32 json_size);
 static void render_route_overlay(double center_lat, double center_lon, int zoom, int screen_width, int screen_height);
-static void open_panorama_at_center(void);
-static void render_panorama(void);
-static void update_panorama_input(void);
+static void close_explore(void);
+static void render_explore(void);
+static void update_explore(void);
 static void jump_to_location(double lat, double lon);
 static bool favorites_load(void);
 static bool favorites_save(void);
@@ -326,149 +323,6 @@ static void end_bottom_console_ui(const char* status_message) {
     }
 }
 
-static void pano_free(void) {
-    if (g_pano.image.tex) {
-        C3D_TexDelete(g_pano.image.tex);
-        free(g_pano.image.tex);
-        g_pano.image.tex = NULL;
-    }
-    if (g_pano.image.subtex) {
-        free((void*)g_pano.image.subtex);
-        g_pano.image.subtex = NULL;
-    }
-    memset(&g_pano, 0, sizeof(g_pano));
-}
-
-static unsigned char* rgba_to_tiled_rgba8(const unsigned char* rgba, int w, int h, int* out_tex_w, int* out_tex_h) {
-    if (!rgba || w <= 0 || h <= 0) return NULL;
-
-    int tex_w = (w + 7) & ~7;
-    int tex_h = (h + 7) & ~7;
-    if (out_tex_w) *out_tex_w = tex_w;
-    if (out_tex_h) *out_tex_h = tex_h;
-
-    // Pad to multiples of 8 so our 8x8 Morton tiling works.
-    unsigned char* padded = (unsigned char*)calloc((size_t)tex_w * (size_t)tex_h * 4, 1);
-    if (!padded) return NULL;
-
-    for (int y = 0; y < h; y++) {
-        memcpy(padded + (size_t)y * (size_t)tex_w * 4, rgba + (size_t)y * (size_t)w * 4, (size_t)w * 4);
-    }
-
-    unsigned char* tiled = (unsigned char*)malloc((size_t)tex_w * (size_t)tex_h * 4);
-    if (!tiled) {
-        free(padded);
-        return NULL;
-    }
-
-    for (int y = 0; y < tex_h; y++) {
-        for (int x = 0; x < tex_w; x++) {
-            int src_idx = (y * tex_w + x) * 4;
-
-            int tile_x = x >> 3;
-            int tile_y = y >> 3;
-            int in_tile_x = x & 7;
-            int in_tile_y = y & 7;
-
-            int morton =
-                ((in_tile_x & 1) << 0) | ((in_tile_y & 1) << 1) |
-                ((in_tile_x & 2) << 1) | ((in_tile_y & 2) << 2) |
-                ((in_tile_x & 4) << 2) | ((in_tile_y & 4) << 3);
-
-            int tiles_per_row = tex_w >> 3;
-            int tile_offset = (tile_y * tiles_per_row + tile_x) * 64;
-            int dst_idx = (tile_offset + morton) * 4;
-
-            tiled[dst_idx + 0] = padded[src_idx + 3];
-            tiled[dst_idx + 1] = padded[src_idx + 2];
-            tiled[dst_idx + 2] = padded[src_idx + 1];
-            tiled[dst_idx + 3] = padded[src_idx + 0];
-        }
-    }
-
-    free(padded);
-    return tiled;
-}
-
-static bool pano_load_from_proxy(double lat, double lon) {
-    if (!is_connected()) {
-        printf("No WiFi; can't load pano.\n");
-        return false;
-    }
-
-    char url[512];
-    snprintf(url, sizeof(url), PROXY_BASE_URL "/pano?lat=%.6f&lon=%.6f", lat, lon);
-
-    u8* buf = NULL;
-    u32 size = 0;
-    if (!download_url(url, &buf, &size) || !buf || size < 16) {
-        if (buf) free(buf);
-        return false;
-    }
-
-    int w = 0, h = 0, comp = 0;
-    unsigned char* rgba = stbi_load_from_memory((const unsigned char*)buf, (int)size, &w, &h, &comp, 4);
-    free(buf);
-    if (!rgba || w <= 0 || h <= 0) {
-        if (rgba) stbi_image_free(rgba);
-        printf("Pano decode failed.\n");
-        return false;
-    }
-
-    int tex_w = 0, tex_h = 0;
-    unsigned char* tiled = rgba_to_tiled_rgba8(rgba, w, h, &tex_w, &tex_h);
-    stbi_image_free(rgba);
-    if (!tiled) {
-        printf("Pano tiling failed.\n");
-        return false;
-    }
-
-    C3D_Tex* tex = (C3D_Tex*)malloc(sizeof(C3D_Tex));
-    if (!tex) {
-        free(tiled);
-        return false;
-    }
-
-    if (!C3D_TexInit(tex, tex_w, tex_h, GPU_RGBA8)) {
-        free(tex);
-        free(tiled);
-        return false;
-    }
-    C3D_TexUpload(tex, tiled);
-    free(tiled);
-
-    C3D_TexSetFilter(tex, GPU_LINEAR, GPU_LINEAR);
-    C3D_TexSetWrap(tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-
-    Tex3DS_SubTexture* st = (Tex3DS_SubTexture*)malloc(sizeof(Tex3DS_SubTexture));
-    if (!st) {
-        C3D_TexDelete(tex);
-        free(tex);
-        return false;
-    }
-
-    st->width = tex_w;
-    st->height = tex_h;
-    st->left = 0.0f;
-    st->top = 1.0f;
-    st->right = (float)w / (float)tex_w;
-    st->bottom = 1.0f - ((float)h / (float)tex_h);
-
-    pano_free();
-    g_pano.image.tex = tex;
-    g_pano.image.subtex = st;
-    g_pano.tex_w = tex_w;
-    g_pano.tex_h = tex_h;
-    g_pano.img_w = w;
-    g_pano.img_h = h;
-    g_pano.center_lat = lat;
-    g_pano.center_lon = lon;
-    g_pano.yaw_deg = 0.0f;
-    g_pano.pitch_deg = 0.0f;
-    g_pano.last_ms = osGetTime();
-    g_pano.active = true;
-    return true;
-}
 
 static bool parse_latlon(const char* s, double* out_lat, double* out_lon) {
     if (!s || !out_lat || !out_lon) return false;
@@ -791,10 +645,11 @@ int main(int argc, char* argv[]) {
         // Update GPS if connected
         gps_update();
 
-        if (g_pano.active) {
-            update_panorama_input();
+        if (g_explore_mode) {
+            update_explore();
             if (g_should_exit) break;
-            render_panorama();
+            if (g_explore_mode) render_explore();
+            else render_map();
             continue;
         }
 
@@ -835,6 +690,7 @@ int main(int argc, char* argv[]) {
     save_session();
 
 cleanup:
+    if (g_explore_mode) close_explore();
     free(g_route_geometry);
     // Cleanup
     gps_cleanup();
@@ -1123,194 +979,196 @@ static bool handle_touch_button_action(TouchAction action) {
     }
 }
 
-static void open_panorama_at_center(void) {
-    if (!network_has_proxy()) {
-        set_status_message("Panorama needs proxy");
-        return;
+static void close_explore(void) {
+    if (g_explore_gyro) HIDUSER_DisableGyroscope();
+    g_explore_gyro = false;
+    g_explore_mode = EXPLORE_NONE;
+    g_explore_dive_ms = 0;
+    explore_unload();
+    if (g_explore_right) {
+        C3D_RenderTargetDelete(g_explore_right);
+        g_explore_right = NULL;
     }
-
-    begin_bottom_console_ui();
-    consoleClear();
-    printf("Loading panorama at map center...\n");
-    printf("Center: %.6f, %.6f\n\n", map_state.lat, map_state.lon);
-    printf("B = cancel   START = exit\n");
-
-    // Enable gyro (fails harmlessly on some hardware).
-    HIDUSER_EnableGyroscope();
-
-    if (!pano_load_from_proxy(map_state.lat, map_state.lon)) {
-        consoleClear();
-        printf("No pano found (or proxy error).\n\n");
-        printf("Tip: ensure proxy has MAPILLARY_ACCESS_TOKEN set.\n\n");
-        printf("Press B to return\n");
-        while (aptMainLoop() && !g_should_exit) {
-            hidScanInput();
-            u32 kd = hidKeysDown();
-            if (kd & KEY_START) {
-                g_should_exit = true;
-                end_bottom_console_ui(NULL);
-                return;
-            }
-            if (kd & KEY_B) {
-                end_bottom_console_ui("Panorama unavailable");
-                return;
-            }
-            svcSleepThread(60000000LL);
-        }
-        end_bottom_console_ui(NULL);
-        return;
-    }
-
-    end_bottom_console_ui("Panorama loaded");
-    set_status_message("Panorama loaded");
+    gfxSet3D(false);
+    C2D_Prepare();
 }
 
-static void update_panorama_input(void) {
-    hidScanInput();
-    u32 kDown = hidKeysDown();
-    u32 kHeld = hidKeysHeld();
-
-    if (kDown || kHeld) {
-        g_last_interaction_ms = osGetTime();
-    }
-
-    if (kDown & KEY_START) {
-        g_should_exit = true;
+static void open_explore(ExploreMode mode) {
+    double d0 = hypot(map_state.lat - explore_street_places[0].lat,
+                      map_state.lon - explore_street_places[0].lon);
+    double d1 = hypot(map_state.lat - explore_street_places[1].lat,
+                      map_state.lon - explore_street_places[1].lon);
+    g_street_stop = d1 < d0;
+    if (!explore_load(mode, g_street_stop)) {
+        set_status_message("Could not load Explore scene");
         return;
     }
-    if (kDown & KEY_B) {
-        pano_free();
-        HIDUSER_DisableGyroscope();
-        set_status_message("Closed panorama");
-        return;
-    }
-
-    // Manual tweak (Circle Pad) for systems without gyro / comfort.
-    circlePosition cp;
-    hidCircleRead(&cp);
-    g_pano.yaw_deg += (float)cp.dx * 0.05f;
-    g_pano.pitch_deg -= (float)cp.dy * 0.05f;
-
-    // Gyro look-around: integrate angular rate.
-    u64 now = osGetTime();
-    float dt = (float)(now - g_pano.last_ms) / 1000.0f;
-    if (dt < 0.0f) dt = 0.0f;
-    if (dt > 0.2f) dt = 0.2f;
-    g_pano.last_ms = now;
-
-    angularRate gyro;
-    hidGyroRead(&gyro);
-    // Empirical scaling; adjust if needed.
-    const float sens = 0.0035f;
-    g_pano.yaw_deg += (float)gyro.z * dt * (1.0f / sens);
-    g_pano.pitch_deg += (float)gyro.x * dt * (1.0f / sens);
-
-    // Clamp pitch and wrap yaw.
-    if (g_pano.pitch_deg > 85.0f) g_pano.pitch_deg = 85.0f;
-    if (g_pano.pitch_deg < -85.0f) g_pano.pitch_deg = -85.0f;
-    while (g_pano.yaw_deg >= 360.0f) g_pano.yaw_deg -= 360.0f;
-    while (g_pano.yaw_deg < 0.0f) g_pano.yaw_deg += 360.0f;
+    g_explore_mode = mode;
+    g_explore_yaw = mode == EXPLORE_GLOBE ? C3D_AngleFromDegrees((float)map_state.lon) :
+                    mode == EXPLORE_TERRAIN ? .58f : 0;
+    g_explore_pitch = mode == EXPLORE_GLOBE ?
+        C3D_AngleFromDegrees(fmaxf(-89, fminf(89, map_state.lat))) :
+        mode == EXPLORE_TERRAIN ? .74f : 0;
+    g_explore_distance = g_explore_goal = mode == EXPLORE_TERRAIN ? 3.6f : 3.9f;
+    g_explore_last_ms = osGetTime();
+    if (mode == EXPLORE_TERRAIN)
+        g_explore_right = C2D_CreateScreenTarget(GFX_TOP, GFX_RIGHT);
+    close_menu(NULL);
 }
 
-static void render_panorama(void) {
-    if (!g_pano.active || !g_pano.image.tex || !g_pano.image.subtex) {
-        return;
-    }
-
-    // Choose an equirectangular view window.
-    const float hfov_deg = 90.0f;
-    const float vfov_deg = 60.0f;
-
-    float center_u = g_pano.yaw_deg / 360.0f;
-    float center_v = 0.5f - (g_pano.pitch_deg / 180.0f);
-    float half_u = (hfov_deg / 360.0f) * 0.5f;
-    float half_v = (vfov_deg / 180.0f) * 0.5f;
-
-    float u0 = center_u - half_u;
-    float u1 = center_u + half_u;
-    float v0 = center_v - half_v;
-    float v1 = center_v + half_v;
-
-    if (v0 < 0.0f) v0 = 0.0f;
-    if (v1 > 1.0f) v1 = 1.0f;
-
-    // Start rendering frame
-    C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-    C2D_TargetClear(top_screen, C2D_Color32f(0.0f, 0.0f, 0.0f, 1.0f));
-    C2D_SceneBegin(top_screen);
-
-    // We need to handle horizontal wrap manually.
-    Tex3DS_SubTexture* st = (Tex3DS_SubTexture*)g_pano.image.subtex;
-
-    // Convert v into the project's flipped texture convention.
-    float top = 1.0f - v0;
-    float bottom = 1.0f - v1;
-    if (top < bottom) {
-        float tmp = top;
-        top = bottom;
-        bottom = tmp;
-    }
-
-    if (u0 >= 0.0f && u1 <= 1.0f) {
-        st->left = u0;
-        st->right = u1;
-        st->top = top;
-        st->bottom = bottom;
-        C2D_DrawImageAt(g_pano.image, 0.0f, 0.0f, 0.0f, NULL,
-                        (float)SCREEN_WIDTH_TOP, (float)SCREEN_HEIGHT_TOP);
+static void explore_show_map(void) {
+    double lat, lon;
+    int zoom;
+    if (g_explore_mode == EXPLORE_GLOBE) {
+        lat = g_explore_pitch * (180.0 / M_PI);
+        lon = g_explore_yaw * (180.0 / M_PI);
+        zoom = 2;
     } else {
-        // Wrap: draw right segment then left segment.
-        float u0w = u0;
-        float u1w = u1;
-        while (u0w < 0.0f) { u0w += 1.0f; u1w += 1.0f; }
-        while (u0w > 1.0f) { u0w -= 1.0f; u1w -= 1.0f; }
-
-        // Segment A: [u0w, 1]
-        float a0 = u0w;
-        float a1 = 1.0f;
-        // Segment B: [0, u1w-1]
-        float b0 = 0.0f;
-        float b1 = u1w - 1.0f;
-        if (b1 < 0.0f) b1 = u1w;
-
-        float a_frac = (a1 - a0) / (u1 - u0);
-        if (a_frac < 0.0f) a_frac = 0.0f;
-        if (a_frac > 1.0f) a_frac = 1.0f;
-
-        float a_w = (float)SCREEN_WIDTH_TOP * a_frac;
-        float b_w = (float)SCREEN_WIDTH_TOP - a_w;
-
-        st->left = a0;
-        st->right = a1;
-        st->top = top;
-        st->bottom = bottom;
-        C2D_DrawImageAt(g_pano.image, 0.0f, 0.0f, 0.0f, NULL, a_w, (float)SCREEN_HEIGHT_TOP);
-
-        st->left = b0;
-        st->right = b1;
-        st->top = top;
-        st->bottom = bottom;
-        C2D_DrawImageAt(g_pano.image, a_w, 0.0f, 0.0f, NULL, b_w, (float)SCREEN_HEIGHT_TOP);
+        const ExplorePlace *place = g_explore_mode == EXPLORE_TERRAIN ?
+            &explore_terrain_place : &explore_street_places[g_street_stop];
+        lat = place->lat;
+        lon = place->lon;
+        zoom = g_explore_mode == EXPLORE_TERRAIN ? 11 : 17;
     }
+    close_explore();
+    map_state.gps_tracking = false;
+    set_camera_target(lat, lon, zoom, true);
+    g_map_fade_ms = osGetTime();
+}
 
-    C2D_TargetClear(bottom_screen, C2D_Color32f(0.03f, 0.04f, 0.06f, 1.0f));
+static float explore_axis(int value) {
+    return abs(value) < 13 ? 0 : fmaxf(-1, fminf(1, value / 145.0f));
+}
+
+static void update_explore(void) {
+    hidScanInput();
+    u32 keys = hidKeysDown(), held = hidKeysHeld();
+    if (keys & (KEY_B | KEY_START)) {
+        close_explore();
+        if (keys & KEY_START) g_should_exit = true;
+        return;
+    }
+    u64 now = osGetTime();
+    float dt = fminf(.05f, (now - g_explore_last_ms) * .001f);
+    g_explore_last_ms = now;
+    if (g_explore_dive_ms) {
+        float t = (now - g_explore_dive_ms) / 430.0f;
+        if (t >= 1) explore_show_map();
+        else g_explore_distance = g_explore_goal + (1.12f - g_explore_goal) * t * t;
+        return;
+    }
+    circlePosition stick;
+    hidCircleRead(&stick);
+    float x = explore_axis(stick.dx), y = explore_axis(stick.dy);
+    if (g_explore_mode != EXPLORE_STREET) {
+        x = fmaxf(-1, fminf(1, x + !!(held & KEY_DRIGHT) - !!(held & KEY_DLEFT)));
+        y = fmaxf(-1, fminf(1, y + !!(held & KEY_DUP) - !!(held & KEY_DDOWN)));
+    }
+    float turn = g_explore_mode == EXPLORE_GLOBE && g_explore_goal < 2 ? .72f : 1.7f;
+    g_explore_yaw += x * turn * dt;
+    g_explore_pitch += y * turn * dt;
+    if (g_explore_mode == EXPLORE_STREET) {
+        if (keys & (KEY_L | KEY_R | KEY_DLEFT | KEY_DRIGHT)) {
+            unsigned next = g_street_stop ^ 1;
+            if (explore_load(EXPLORE_STREET, next)) {
+                g_street_stop = next;
+                g_explore_yaw = g_explore_pitch = 0;
+            } else set_status_message("Could not open next street stop");
+        }
+        if (keys & KEY_X) {
+            if (g_explore_gyro) {
+                HIDUSER_DisableGyroscope();
+                g_explore_gyro = false;
+            } else g_explore_gyro = R_SUCCEEDED(HIDUSER_EnableGyroscope());
+        }
+        if (g_explore_gyro) {
+            angularRate gyro;
+            hidGyroRead(&gyro);
+            float scale = 0;
+            if (R_SUCCEEDED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&scale)) && scale > 0) {
+                float to_radians = C3D_AngleFromDegrees(1) * dt / scale;
+                if (fabsf(gyro.z / scale) > 2) g_explore_yaw += gyro.z * to_radians;
+                if (fabsf(gyro.x / scale) > 2) g_explore_pitch += gyro.x * to_radians;
+            }
+        }
+    } else {
+        float minimum = g_explore_mode == EXPLORE_TERRAIN ? 1.65f : 1.45f;
+        if (keys & KEY_X) {
+            if (g_explore_mode == EXPLORE_GLOBE && g_explore_goal <= minimum) {
+                g_explore_goal = g_explore_distance;
+                g_explore_dive_ms = now;
+            } else g_explore_goal = fmaxf(minimum, g_explore_goal * .73f);
+        }
+        if (keys & KEY_Y) g_explore_goal = fminf(5.2f, g_explore_goal / .73f);
+        g_explore_distance += (g_explore_goal - g_explore_distance) * fminf(1, dt * 12);
+    }
+    g_explore_yaw = remainderf(g_explore_yaw, 2 * (float)M_PI);
+    float low = g_explore_mode == EXPLORE_TERRAIN ? .32f : -1.5533f;
+    float high = g_explore_mode == EXPLORE_TERRAIN ? 1.36f : 1.5533f;
+    g_explore_pitch = fmaxf(low, fminf(high, g_explore_pitch));
+    if (keys & KEY_A) {
+        if (g_explore_mode == EXPLORE_GLOBE) {
+            g_explore_goal = g_explore_distance;
+            g_explore_dive_ms = now;
+        } else explore_show_map();
+    }
+}
+
+static void render_explore(void) {
+    float slider = g_explore_right ? osGet3DSliderState() : 0;
+    bool stereo = slider > .005f;
+    if (gfxIs3D() != stereo) gfxSet3D(stereo);
+    if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW)) return;
+    float fov = C3D_AngleFromDegrees(g_explore_mode == EXPLORE_STREET ? 55 : 40);
+    float eye = stereo ? slider * .065f : 0;
+    explore_draw(top_screen, g_explore_yaw, g_explore_pitch, g_explore_distance, fov, -eye);
+    if (stereo)
+        explore_draw(g_explore_right, g_explore_yaw, g_explore_pitch, g_explore_distance, fov, eye);
+    C2D_Prepare();
+    if (g_explore_dive_ms) {
+        C2D_SceneBegin(top_screen);
+        float fade = fmaxf(0, fminf(1, ((float)(osGetTime() - g_explore_dive_ms) - 250) / 180));
+        C2D_DrawRectSolid(0, 0, 1, 400, 240, C2D_Color32f(0, 0, 0, fade));
+    }
+    C2D_TargetClear(bottom_screen, C2D_Color32(13, 18, 26, 255));
     C2D_SceneBegin(bottom_screen);
     C2D_TextBufClear(g_ui_text_buf);
-    draw_ui_text(12.0f, 12.0f, 0.62f, 0.62f, C2D_Color32f(0.96f, 0.97f, 0.99f, 1.0f), 0, "Panorama");
-
-    {
-        char line[96];
-        snprintf(line, sizeof(line), "Center %.5f, %.5f", g_pano.center_lat, g_pano.center_lon);
-        draw_ui_text(12.0f, 38.0f, 0.38f, 0.38f, C2D_Color32f(0.77f, 0.84f, 0.91f, 1.0f), 0, line);
-        snprintf(line, sizeof(line), "Yaw %3.0f  Pitch %3.0f", g_pano.yaw_deg, g_pano.pitch_deg);
-        draw_ui_text(12.0f, 60.0f, 0.46f, 0.46f, C2D_Color32f(0.92f, 0.94f, 0.97f, 1.0f), 0, line);
+    u32 white = C2D_Color32(238, 246, 253, 255), dim = C2D_Color32(164, 190, 211, 255);
+    u32 accent = C2D_Color32(113, 215, 235, 255);
+    const char *title = g_explore_mode == EXPLORE_GLOBE ? "World globe" :
+                        g_explore_mode == EXPLORE_TERRAIN ? "Terrain in 3D" : "Street View Explorer";
+    char coordinates[58];
+    snprintf(coordinates, sizeof(coordinates), "%.2f, %.2f",
+             g_explore_pitch * (180.0 / M_PI), g_explore_yaw * (180.0 / M_PI));
+    const char *place = g_explore_mode == EXPLORE_STREET ? explore_street_places[g_street_stop].name :
+                        g_explore_mode == EXPLORE_TERRAIN ? explore_terrain_place.name : coordinates;
+    C2D_DrawRectSolid(0, 0, .1f, 320, 55, C2D_Color32(25, 37, 53, 255));
+    C2D_DrawRectSolid(0, 53, .2f, 320, 2, accent);
+    draw_ui_text(12, 9, .58f, .58f, white, 0, title);
+    draw_ui_text(12, 34, .40f, .40f, dim, 0, place);
+    if (g_explore_mode == EXPLORE_STREET) {
+        draw_ui_text(14, 76, .44f, .44f, white, 0, "Circle Pad  Look around");
+        draw_ui_text(14, 101, .44f, .44f, white, 0,
+                     g_street_stop ? "L / R  Nearby stop (2 of 2)" : "L / R  Nearby stop (1 of 2)");
+        draw_ui_text(14, 127, .40f, .40f, accent, 0,
+                     g_explore_gyro ? "X  Gyro ON" : "X  Gyro OFF");
+        draw_ui_text(14, 162, .36f, .36f, dim, 0, "G. Edward Johnson / CC BY 4.0");
+    } else {
+        draw_ui_text(14, 76, .44f, .44f, white, 0, "Circle Pad / D-Pad  Rotate");
+        draw_ui_text(14, 101, .44f, .44f, white, 0, "X / Y  Zoom in / out");
+        draw_ui_text(14, 127, .40f, .40f, accent, 0,
+                     g_explore_mode == EXPLORE_GLOBE ? "Zoom in fully to enter the map" :
+                     stereo ? "3D slider  Stereo active" : "Raise 3D slider on supported systems");
+        draw_ui_text(14, 162, .36f, .36f, dim, 0,
+                     g_explore_mode == EXPLORE_GLOBE ? "NASA / GSFC Blue Marble" : "USGS 3DEP  |  2.2x vertical exaggeration");
     }
-
-    C2D_DrawRectSolid(12.0f, 96.0f, 0.2f, 296.0f, 56.0f, C2D_Color32f(0.16f, 0.22f, 0.30f, 1.0f));
-    C2D_DrawRectSolid(12.0f, 96.0f, 0.3f, 296.0f, 6.0f, C2D_Color32f(0.62f, 0.78f, 0.94f, 1.0f));
-    draw_ui_text(160.0f, 118.0f, 0.50f, 0.50f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), C2D_AlignCenter, "B: Back");
-    draw_ui_text(160.0f, 180.0f, 0.38f, 0.38f, C2D_Color32f(0.73f, 0.82f, 0.92f, 1.0f), C2D_AlignCenter, "START: Exit");
-
+    C2D_DrawRectSolid(0, 184, .1f, 320, 56, C2D_Color32(23, 32, 45, 255));
+    draw_ui_text(14, 196, .44f, .44f, dim, 0, "A  Open map     B  Back");
+    if (g_debug_overlay) {
+        char fps[24];
+        snprintf(fps, sizeof(fps), "%lu FPS", (unsigned long)g_fps);
+        draw_ui_text(306, 196, .4f, .4f, accent, C2D_AlignRight, fps);
+    }
     C3D_FrameEnd(0);
 }
 
@@ -1407,6 +1265,12 @@ void render_map(void) {
             C2D_DrawRectSolid(0.0f, 0.0f, 0.95f, (float)SCREEN_WIDTH_TOP, (float)SCREEN_HEIGHT_TOP,
                               C2D_Color32f(0.0f, 0.0f, 0.0f, 0.35f));
         }
+        if (g_map_fade_ms) {
+            u64 elapsed = osGetTime() - g_map_fade_ms;
+            if (elapsed < 240)
+                C2D_DrawRectSolid(0, 0, 1, 400, 240, C2D_Color32f(0, 0, 0, 1 - elapsed / 240.0f));
+            else g_map_fade_ms = 0;
+        }
     }
 
     C2D_TargetClear(bottom_screen, C2D_Color32f(0.05f, 0.07f, 0.10f, 1.0f));
@@ -1470,11 +1334,12 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
     /* Close button — top-right header area */
     if (point_in_rect(touch->px, touch->py, 246, 10, 62, 24)) return SETTINGS_HIT_CLOSE;
 
-    /* 4 tabs: x = 8 + i*76, w = 72, y = 50, h = 24 */
-    if (point_in_rect(touch->px, touch->py,   8, 50, 72, 24)) return SETTINGS_HIT_TAB_VIEW;
-    if (point_in_rect(touch->px, touch->py,  84, 50, 72, 24)) return SETTINGS_HIT_TAB_TILES;
-    if (point_in_rect(touch->px, touch->py, 160, 50, 72, 24)) return SETTINGS_HIT_TAB_DATA;
-    if (point_in_rect(touch->px, touch->py, 236, 50, 72, 24)) return SETTINGS_HIT_TAB_GPS;
+    static const SettingsHitTarget tabs[] = {
+        SETTINGS_HIT_TAB_VIEW, SETTINGS_HIT_TAB_TILES, SETTINGS_HIT_TAB_DATA,
+        SETTINGS_HIT_TAB_GPS, SETTINGS_HIT_TAB_EXPLORE
+    };
+    for (int i = 0; i < SETTINGS_TAB_COUNT; i++)
+        if (point_in_rect(touch->px, touch->py, 8 + i * 61, 50, 59, 24)) return tabs[i];
 
     switch (g_settings_tab) {
         case SETTINGS_TAB_VIEW:
@@ -1494,6 +1359,11 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
             if (point_in_rect(touch->px, touch->py, 166, 86, 142, 58)) return SETTINGS_HIT_CACHE_TOGGLE;
             if (point_in_rect(touch->px, touch->py, 12, 154, 142, 60)) return SETTINGS_HIT_CLEAR_CACHE;
             if (point_in_rect(touch->px, touch->py, 166, 154, 142, 60)) return SETTINGS_HIT_DOWNLOAD_REGION;
+            break;
+        case SETTINGS_TAB_EXPLORE:
+            if (point_in_rect(touch->px, touch->py, 12, 86, 296, 39)) return SETTINGS_HIT_GLOBE;
+            if (point_in_rect(touch->px, touch->py, 12, 132, 296, 39)) return SETTINGS_HIT_TERRAIN;
+            if (point_in_rect(touch->px, touch->py, 12, 178, 296, 39)) return SETTINGS_HIT_STREET_EXPLORER;
             break;
         case SETTINGS_TAB_GPS:
             /* [Client] / [Server] source mode buttons (same position as tile source) */
@@ -1530,6 +1400,18 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             break;
         case SETTINGS_HIT_TAB_GPS:
             g_settings_tab = SETTINGS_TAB_GPS;
+            break;
+        case SETTINGS_HIT_TAB_EXPLORE:
+            g_settings_tab = SETTINGS_TAB_EXPLORE;
+            break;
+        case SETTINGS_HIT_GLOBE:
+            open_explore(EXPLORE_GLOBE);
+            break;
+        case SETTINGS_HIT_TERRAIN:
+            open_explore(EXPLORE_TERRAIN);
+            break;
+        case SETTINGS_HIT_STREET_EXPLORER:
+            open_explore(EXPLORE_STREET);
             break;
         case SETTINGS_HIT_TILE_STREET:
             if (network_get_tile_source() != TILE_SOURCE_STREET) {
@@ -1678,12 +1560,13 @@ static void apply_settings_hit(SettingsHitTarget hit) {
 }
 
 static void render_settings_panel(void) {
-    static const char* tab_names[SETTINGS_TAB_COUNT] = { "View", "Tiles", "Data", "GPS" };
+    static const char* tab_names[SETTINGS_TAB_COUNT] = { "View", "Tiles", "Data", "GPS", "Explore" };
     static const char* tab_hints[SETTINGS_TAB_COUNT] = {
         "Style and live overlays",
         "Tile loading behavior",
         "Network and storage",
-        "GPS source and server"
+        "GPS source and server",
+        "Globe, terrain and street-level photos"
     };
     u64 now_ms = osGetTime();
     char line[128];
@@ -1706,9 +1589,8 @@ static void render_settings_panel(void) {
         draw_ui_text(277.0f, 16.0f, 0.40f, 0.40f, text, C2D_AlignCenter, "Close");
     }
 
-    /* 4 tabs: x = 8 + i*76, w = 72 */
     for (int i = 0; i < SETTINGS_TAB_COUNT; i++) {
-        float x = 8.0f + (float)i * 76.0f;
+        float x = 8.0f + (float)i * 61.0f;
         bool selected = (i == g_settings_tab);
         bool pressed = (i == SETTINGS_TAB_VIEW  && is_recent_settings_hit(SETTINGS_HIT_TAB_VIEW,  now_ms)) ||
                        (i == SETTINGS_TAB_TILES && is_recent_settings_hit(SETTINGS_HIT_TAB_TILES, now_ms)) ||
@@ -1716,8 +1598,8 @@ static void render_settings_panel(void) {
                        (i == SETTINGS_TAB_GPS   && is_recent_settings_hit(SETTINGS_HIT_TAB_GPS,   now_ms));
         u32 fill = selected ? C2D_Color32f(0.28f, 0.48f, 0.66f, 1.0f)
                             : (pressed ? C2D_Color32f(0.24f, 0.29f, 0.35f, 1.0f) : C2D_Color32f(0.15f, 0.18f, 0.22f, 1.0f));
-        C2D_DrawRectSolid(x, 50.0f, 0.2f, 72.0f, 24.0f, fill);
-        draw_ui_text(x + 36.0f, 56.0f, 0.38f, 0.38f,
+        C2D_DrawRectSolid(x, 50.0f, 0.2f, 59.0f, 24.0f, fill);
+        draw_ui_text(x + 29.5f, 56.0f, 0.38f, 0.38f,
                      selected ? C2D_Color32f(0.97f, 0.99f, 1.0f, 1.0f) : C2D_Color32f(0.80f, 0.86f, 0.92f, 1.0f),
                      C2D_AlignCenter,
                      tab_names[i]);
@@ -1838,6 +1720,18 @@ static void render_settings_panel(void) {
         draw_ui_text(178.0f, 184.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "regions");
         snprintf(line, sizeof(line), "backend %s", network_get_effective_tile_backend_name());
         draw_ui_text(12.0f, 222.0f, 0.30f, 0.30f, C2D_Color32f(0.56f, 0.62f, 0.70f, 1.0f), 0, line);
+    } else if (g_settings_tab == SETTINGS_TAB_EXPLORE) {
+        static const char *names[] = {"World globe", "Terrain in 3D", "Street View Explorer"};
+        static const char *details[] = {"Rotate Earth and zoom into the map",
+                                       "Grand Canyon with 3D slider support",
+                                       "Two nearby 360-degree stops in Bethesda"};
+        for (int i = 0; i < 3; i++) {
+            float y = 86 + i * 46;
+            C2D_DrawRectSolid(12, y, .2f, 296, 39, C2D_Color32(30, 42, 58, 255));
+            C2D_DrawRectSolid(12, y, .3f, 3, 39, C2D_Color32(113, 215, 235, 255));
+            draw_ui_text(24, y + 4, .45f, .45f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
+            draw_ui_text(24, y + 22, .34f, .34f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
+        }
     } else { /* SETTINGS_TAB_GPS */
         bool client_mode   = (gps_get_source_mode() == GPS_SOURCE_NMEA_CLIENT);
         bool server_mode   = (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER);

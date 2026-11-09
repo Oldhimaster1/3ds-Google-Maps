@@ -2,6 +2,9 @@
 
 [Back to the project README](../README.md)
 
+Open **R → Explore** to browse the world globe, stereoscopic Grand Canyon
+terrain, or two nearby street-level panoramas. See [Explore controls and data credits](explore.md).
+
 ## Map and settings
 
 The top screen displays the map. The touch panel opens **Search**, **Favorites**, **Recents**, **Route**, **Identify**, **GPS**, **Track**, and **Menu**. Use the D-Pad or Circle Pad to pan, **X/Y** to change zoom, and **Start** to exit. You can drag in the upper area of the touch panel to pan. The app saves the view, layer, night mode, GPS mode, and related settings when it exits normally.
