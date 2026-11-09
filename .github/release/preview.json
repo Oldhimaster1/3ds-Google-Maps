@@ -1,6 +1,6 @@
 {
   "tag": "v2.1.0-preview.1",
-  "commit": "59a356bf7956003fc947969b4400a64b9a1dbeb9",
+  "commit": "a80b5dfb35c0c4ab630073bb301f090dab6055fc",
   "binaries": {
     "3ds_google_maps.cia": {
       "blob": "fd29925df28a46ace2ca66ceefb389e0722300f9",
@@ -11,5 +11,5 @@
       "sha256": "fb33796f2d7ffbb89e81616f22ce6efc539f608797fc473c4cb7a2cf453973c0"
     }
   },
-  "intro_sha256": "de5e9c0fdee2a19e8193f11bf4ec0bb256f97784698e4f231646c5b98f4d458d"
+  "intro_sha256": "d0dfc71d86a831eb154dfb488049ad20ed3f0e8b31660e9a2220cb58e1d19cae"
 }
