@@ -129,7 +129,7 @@ void tilepack_close(TilePack *pack)
     pack->data_offset = 0;
 }
 
-uint8_t *tilepack_read_tile(TilePack *pack, int zoom, int x, int y, size_t *out_size)
+const TilePackEntry *tilepack_find(const TilePack *pack, int zoom, int x, int y)
 {
     if (!pack || !pack->index || !pack->fp || pack->tile_count == 0)
         return NULL;
@@ -157,6 +157,12 @@ uint8_t *tilepack_read_tile(TilePack *pack, int zoom, int x, int y, size_t *out_
         }
     }
 
+    return found;
+}
+
+
+uint8_t *tilepack_read_tile(TilePack *pack, int zoom, int x, int y, size_t *out_size) {
+    const TilePackEntry *found = tilepack_find(pack, zoom, x, y);
     if (!found) return NULL;
 
     /* Sanity check tile size (1 MB cap, same as disk cache) */

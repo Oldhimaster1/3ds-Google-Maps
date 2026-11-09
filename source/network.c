@@ -1,5 +1,6 @@
 #include "network.h"
 #include "tilepack.h"
+#include "region.h"
 #include "logging.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +32,11 @@ static _Atomic bool last_tile_cache_hit = false;
 static TilePack g_tilepack_street;
 static TilePack g_tilepack_sat;
 static bool g_tilepacks_loaded = false;
+static struct {
+    TilePack pack;
+    TileSource source;
+    char path[REGION_PATH_LIMIT];
+} named_packs[REGION_PACK_LIMIT];
 
 /* =========================================================================
  * libcurl + mbedTLS HTTPS client
@@ -203,15 +209,17 @@ void network_free_tile_curl(void *curl_handle) {
 }
 
 bool fetch_map_tile(int tile_x, int tile_y, int zoom, void *curl_handle, bool online, TileSource source,
-                             u8 **buffer, u32 *size, bool *offline_hit) {
+                             u8 **buffer, u32 *size, bool *offline_hit, TileTiming *timing) {
     if (!network_initialized) return false;
     if (offline_hit) *offline_hit = false;
+    u64 local_start = osGetTime();
 
     /* 1) SD card tile cache — instant, no network */
     LightLock_Lock(&tile_io_lock);
     bool disk_hit = load_tile_from_disk(source, tile_x, tile_y, zoom, buffer, size);
     LightLock_Unlock(&tile_io_lock);
     if (disk_hit) {
+        if (timing) { timing->sd_ms = osGetTime() - local_start; timing->local = true; }
         if (offline_hit) *offline_hit = true;
         last_tile_cache_hit  = true;
         last_tile_download_ms = 0;
@@ -226,8 +234,12 @@ bool fetch_map_tile(int tile_x, int tile_y, int zoom, void *curl_handle, bool on
         size_t tp_size = 0;
         LightLock_Lock(&tile_io_lock);
         u8 *tp_buf = tilepack_read_tile(pack, zoom, tile_x, tile_y, &tp_size);
+        for (unsigned i = 0; !tp_buf && i < REGION_PACK_LIMIT; i++)
+            if (named_packs[i].source == source)
+                tp_buf = tilepack_read_tile(&named_packs[i].pack, zoom, tile_x, tile_y, &tp_size);
         LightLock_Unlock(&tile_io_lock);
         if (tp_buf) {
+            if (timing) { timing->sd_ms = osGetTime() - local_start; timing->local = true; }
             *buffer = tp_buf;
             *size   = (u32)tp_size;
             if (offline_hit) *offline_hit = true;
@@ -238,6 +250,7 @@ bool fetch_map_tile(int tile_x, int tile_y, int zoom, void *curl_handle, bool on
         }
     }
 
+    if (timing) timing->sd_ms = osGetTime() - local_start;
     if (!online) return false;
 
     /* 2) Build the tile URL */
@@ -283,13 +296,16 @@ bool fetch_map_tile(int tile_x, int tile_y, int zoom, void *curl_handle, bool on
     }
 
     u64 t1 = osGetTime();
+    if (timing) timing->network_ms = t1 - t0;
     last_tile_download_ms = (u32)(t1 - t0);
     last_tile_size_bytes  = ok ? *size : 0;
 
     if (ok) {
+        u64 write_start = osGetTime();
         LightLock_Lock(&tile_io_lock);
         bool saved = save_tile_to_disk(source, tile_x, tile_y, zoom, *buffer, *size, offline_hit != NULL);
         LightLock_Unlock(&tile_io_lock);
+        if (timing) timing->sd_ms += osGetTime() - write_start;
         if (offline_hit && !saved) {
             free(*buffer);
             *buffer = NULL;
@@ -301,7 +317,7 @@ bool fetch_map_tile(int tile_x, int tile_y, int zoom, void *curl_handle, bool on
 }
 
 bool download_tile_with_curl(int x, int y, int zoom, void *curl, u8 **buffer, u32 *size) {
-    return fetch_map_tile(x, y, zoom, curl, is_connected(), tile_source, buffer, size, NULL);
+    return fetch_map_tile(x, y, zoom, curl, is_connected(), tile_source, buffer, size, NULL, NULL);
 }
 
 bool network_get_offline_pack(TileSource source, OfflinePackInfo *info) {
@@ -330,6 +346,133 @@ bool network_remove_offline_pack(TileSource source) {
     if (!removed) tilepack_open(pack, path);
     LightLock_Unlock(&tile_io_lock);
     return removed;
+}
+
+unsigned network_region_count(void) {
+    unsigned count = 0;
+    for (unsigned i = 0; i < REGION_PACK_LIMIT; i++) if (named_packs[i].path[0]) count++;
+    return count;
+}
+
+bool network_install_region(const char *path, TileSource source) {
+    if (strlen(path) >= REGION_PATH_LIMIT) return false;
+    for (unsigned i = 0; i < REGION_PACK_LIMIT; i++) {
+        if (!strcmp(named_packs[i].path, path)) return true;
+    }
+    for (unsigned i = 0; i < REGION_PACK_LIMIT; i++) {
+        if (named_packs[i].path[0]) continue;
+        LightLock_Lock(&tile_io_lock);
+        bool ok = tilepack_open(&named_packs[i].pack, path);
+        if (ok && named_packs[i].pack.tile_count > REGION_LIMIT) {
+            tilepack_close(&named_packs[i].pack);
+            ok = false;
+        }
+        if (ok) {
+            named_packs[i].source = source;
+            snprintf(named_packs[i].path, sizeof(named_packs[i].path), "%s", path);
+        }
+        LightLock_Unlock(&tile_io_lock);
+        return ok;
+    }
+    return false;
+}
+
+bool network_remove_region(const char *path) {
+    for (unsigned i = 0; i < REGION_PACK_LIMIT; i++) {
+        if (strcmp(named_packs[i].path, path)) continue;
+        LightLock_Lock(&tile_io_lock);
+        tilepack_close(&named_packs[i].pack);
+        bool removed = unlink(path) == 0;
+        if (!removed) tilepack_open(&named_packs[i].pack, path);
+        if (removed) named_packs[i].path[0] = 0;
+        LightLock_Unlock(&tile_io_lock);
+        return removed;
+    }
+    return unlink(path) == 0;
+}
+
+bool network_pack_covers(int x, int y, int z) {
+    TilePack *legacy = tile_source == TILE_SOURCE_SATELLITE ? &g_tilepack_sat : &g_tilepack_street;
+    if (tilepack_find(legacy, z, x, y)) return true;
+    for (unsigned i = 0; i < REGION_PACK_LIMIT; i++)
+        if (named_packs[i].source == tile_source && tilepack_find(&named_packs[i].pack, z, x, y))
+            return true;
+    return false;
+}
+
+static int transfer_progress(void *context, curl_off_t total, curl_off_t now,
+                             curl_off_t upload_total, curl_off_t upload_now) {
+    (void)total; (void)now; (void)upload_total; (void)upload_now;
+    return atomic_load((atomic_bool *)context);
+}
+
+bool network_request(void *handle, const char *url, size_t limit, atomic_bool *cancel,
+                     u8 **buffer, u32 *size) {
+    if (!handle || !url || !limit) return false;
+    CURL *curl = handle;
+    struct curl_buf data = { NULL, 0, limit };
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, cancel ? 0L : 1L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, transfer_progress);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel);
+    CURLcode code = curl_easy_perform(curl);
+    long status = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+    if (code != CURLE_OK || status != 200 || !data.size) {
+        free(data.data);
+        return false;
+    }
+    *buffer = data.data;
+    *size = data.size;
+    return true;
+}
+
+bool network_region_endpoint(TileSource source, char *endpoint, size_t size) {
+    const char *path = source == TILE_SOURCE_SATELLITE ?
+        "sdmc:/3ds_google_maps/offline-sat.cfg" : "sdmc:/3ds_google_maps/offline-street.cfg";
+    FILE *f = fopen(path, "r");
+    if (f) {
+        bool ok = fgets(endpoint, size, f) != NULL;
+        fclose(f);
+        if (!ok) return false;
+        endpoint[strcspn(endpoint, "\r\n")] = 0;
+        return (!strncmp(endpoint, "https://", 8) || !strncmp(endpoint, "http://", 7)) &&
+               !strstr(endpoint, "tile.openstreetmap.org");
+    }
+    if (network_get_proxy_enabled()) {
+        int n = snprintf(endpoint, size, "%s%s/{z}/{x}/{y}.png", network_get_proxy_base_url(),
+                         source == TILE_SOURCE_SATELLITE ? "/sat" : "");
+        return n > 0 && (size_t)n < size;
+    }
+    return false;
+}
+
+bool network_region_url(const char *endpoint, int x, int y, int z, char *url, size_t size) {
+    size_t used = 0;
+    if (!endpoint || !*endpoint || !size) return false;
+    if (!strchr(endpoint, '{')) {
+        if (strchr(endpoint, '?') || strchr(endpoint, '#')) return false;
+        int n = snprintf(url, size, "%s%s%d/%d/%d", endpoint,
+                         endpoint[strlen(endpoint) - 1] == '/' ? "" : "/", z, x, y);
+        return n > 0 && (size_t)n < size;
+    }
+    unsigned replaced = 0;
+    while (*endpoint) {
+        if (used + 1 >= size) return false;
+        if (*endpoint == '{') {
+            char axis = endpoint[1];
+            if (!axis || endpoint[2] != '}' || (axis != 'x' && axis != 'y' && axis != 'z')) return false;
+            int n = snprintf(url + used, size - used, "%d", axis == 'x' ? x : axis == 'y' ? y : z);
+            if (n < 0 || (size_t)n >= size - used) return false;
+            used += n;
+            replaced |= axis == 'x' ? 1 : axis == 'y' ? 2 : 4;
+            endpoint += 3;
+        } else url[used++] = *endpoint++;
+    }
+    url[used] = 0;
+    return replaced == 7;
 }
 
 bool network_has_proxy(void) {
@@ -594,6 +737,23 @@ bool network_init(void) {
         memset(&g_tilepack_sat,    0, sizeof(g_tilepack_sat));
         tilepack_open(&g_tilepack_street, TILE_CACHE_ROOT "/street.tilepack");
         tilepack_open(&g_tilepack_sat,    TILE_CACHE_ROOT "/sat.tilepack");
+        DIR *dir = opendir(REGION_DIR);
+        if (dir) {
+            struct dirent *entry;
+            while ((entry = readdir(dir)) != NULL && network_region_count() < REGION_PACK_LIMIT) {
+                const char *name = entry->d_name;
+                size_t len = strlen(name);
+                if (len < 13 || len >= REGION_NAME_LIMIT + 14 || strcmp(name + len - 9, ".tilepack")) continue;
+                TileSource source;
+                if (!strncmp(name, "sat-", 4)) source = TILE_SOURCE_SATELLITE;
+                else if (!strncmp(name, "str-", 4)) source = TILE_SOURCE_STREET;
+                else continue;
+                char path[REGION_PATH_LIMIT];
+                snprintf(path, sizeof(path), "%s/%.*s", REGION_DIR, REGION_NAME_LIMIT + 13, name);
+                network_install_region(path, source);
+            }
+            closedir(dir);
+        }
         g_tilepacks_loaded = true;
     }
 
@@ -604,6 +764,10 @@ bool network_init(void) {
 void network_cleanup(void) {
     if (!network_initialized) return;
 
+    for (unsigned i = 0; i < REGION_PACK_LIMIT; i++) {
+        tilepack_close(&named_packs[i].pack);
+        named_packs[i].path[0] = 0;
+    }
     tilepack_close(&g_tilepack_street);
     tilepack_close(&g_tilepack_sat);
     g_tilepacks_loaded = false;

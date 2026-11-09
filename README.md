@@ -14,7 +14,9 @@ v2.0 added offline tile caching. You can download a whole region on your PC, pac
 
 **Tile sources.** Three options: OpenStreetMap streets (decoded with libpng), Esri satellite imagery (decoded with stb_image on worker threads), and Esri World Street Map. Switch between them in settings. Every tile you view gets cached to the SD card, and the 64 most recent stay in RAM.
 
-**Offline tilepacks.** Run `tools/download_region.py` on your PC to bulk-download tiles, then copy one `.tilepack` file to the SD card. Way faster than transferring thousands of individual PNGs over FAT32. The app also has a "Download Region" button in settings if you want to grab tiles for your current view directly on the 3DS, though the PC tool is better for large areas.
+**Offline tilepacks.** Create named packs from the current map or an active route
+right on the 3DS. Pause and resume across launches. Preview coverage, check
+tile images, and remove packs individually.
 
 **GPS via phone.** The 3DS runs a TLS server on port 8443. Open the URL on your phone's browser, grant location permission, and your GPS coordinates stream to the 3DS every second. A QR code shows on the top screen so you don't have to type anything. There's also an NMEA TCP client mode if you use an app like GPS2IP.
 
@@ -63,13 +65,30 @@ SD card:
 
 The app finds these on startup. Re-run the script for more areas and it merges new tiles into the existing pack.
 
-### Managing packs on the 3DS
+### Download and manage packs on the 3DS
 
-Open **Menu → Data → Offline regions**. Use Left/Right to select the street or
-satellite pack, A to preview a location in it, X twice to remove that pack, or
-Y to download the current area to the SD cache. The manager shows installed
-pack size, tile count, and zoom range. Clearing the browsing cache leaves
-tilepack files intact. Both tilepacks and cached tiles can be read with Wi-Fi off.
+1. Choose the street or satellite layer, then open **Menu → Data → Offline regions**.
+2. Press **L** to enter a tile service URL for the selected layer. Use a service
+   that permits offline downloading. Supply a URL template such as
+   `https://your-server.example/{z}/{x}/{y}.png`. A base URL also works for
+   servers using extensionless `/z/x/y` paths. An existing compatible LAN
+   proxy works as a fallback. The public OSM standard tile service cannot be
+   used for offline downloads.
+3. Press **Y**, adjust the zoom range, and choose the current area or **X** to
+   select a corridor around an active route. The screen estimates size before
+   you start. Press **A** to name the pack, or **Select** to use an automatic name.
+4. Press **B** during transfer to pause. Select the paused pack and press **A**
+   to continue even after restarting the app. Completed tiles stay on the SD
+   card. Resuming requires the same configured endpoint.
+5. Press **R** to show coverage on the map. Green means an exact tile is in an
+   installed pack and amber means there is no pack tile at that zoom. Press
+   **A** on an installed pack to preview it, **Select** to check image readability,
+   or **X** twice to remove it.
+
+The 3DS writes the pack directly to `sdmc:/3ds_google_maps/regions/`. It can load
+up to 12 named packs of up to 4,096 tiles each alongside the two legacy packs.
+Clearing the browsing cache preserves packs. Both packs and cached tiles can be
+read with Wi-Fi off.
 
 ### Why one file instead of individual tiles?
 
@@ -79,9 +98,13 @@ Copying 15,000 small PNGs to a FAT32 SD card takes over an hour. A single `.tile
 
 The download tool hashes each tile with SHA-256 and only stores unique ones. Ocean tiles, empty land, etc. are all identical, so for coastal regions this cuts file size by 20-50%.
 
-### Why Esri and not OpenStreetMap?
+### Tile source permissions
 
-OpenStreetMap's tile usage policy doesn't allow bulk downloading. The download tool uses Esri servers (World Imagery for satellite, World Street Map for streets). Normal interactive browsing on the 3DS still uses OSM tiles, which is fine under their policy.
+Public browsing layers and offline sources are configured separately. Use an endpoint
+that authorizes offline use. The public OpenStreetMap standard raster service
+prohibits bulk downloads, and the public Esri World Imagery service reports that
+export is disabled. Check the terms for your provider before using the optional
+desktop downloader as well.
 
 ---
 
@@ -117,7 +140,7 @@ Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) with the 3DS too
 
 ```bash
 dkp-pacman -S 3ds-dev
-dkp-pacman -S 3ds-curl 3ds-mbedtls 3ds-libpng
+dkp-pacman -S 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson
 ```
 
 ### Build
@@ -148,10 +171,15 @@ Output: `3ds_google_maps.3dsx`
 ### Libraries linked
 
 ```
--lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lpng -lz -lcitro2d -lcitro3d -lctru -lm
+-lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lpng -ljansson -lz -lcitro2d -lcitro3d -lctru -lm
 ```
 
 ---
+
+In Settings → View, press **Select** to see the most recent successful tile's
+SD, network, decode, and GPU upload timings. The app restores the map center,
+zoom, map layer, night mode, GPS source, cache setting and coverage setting on
+the next launch after a normal exit.
 
 ## Installation
 
@@ -168,6 +196,9 @@ sdmc:/3ds_google_maps/
   tiles/sat.tilepack     — offline satellite pack (optional)
   tiles/street.tilepack  — offline street pack (optional)
   favorites.txt          — saved locations (auto-created)
+  regions/               — named packs and paused downloads
+  session.cfg            — last map view and settings
+  offline-{sat,street}.cfg — optional tile URLs entered on the 3DS
   log.txt                — debug log (overwritten each launch)
 ```
 

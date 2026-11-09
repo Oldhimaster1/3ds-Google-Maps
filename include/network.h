@@ -1,5 +1,6 @@
 #ifndef NETWORK_H
 #define NETWORK_H
+#include <stdatomic.h>
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -33,6 +34,16 @@ typedef struct {
     long bytes;
 } OfflinePackInfo;
 
+#define REGION_PACK_LIMIT 12
+unsigned network_region_count(void);
+bool network_install_region(const char *path, TileSource source);
+bool network_remove_region(const char *path);
+bool network_pack_covers(int x, int y, int z);
+bool network_request(void *handle, const char *url, size_t limit, atomic_bool *cancel,
+                     u8 **buffer, u32 *size);
+bool network_region_endpoint(TileSource source, char *endpoint, size_t size);
+bool network_region_url(const char *endpoint, int x, int y, int z, char *url, size_t size);
+
 bool network_get_offline_pack(TileSource source, OfflinePackInfo *info);
 bool network_remove_offline_pack(TileSource source);
 
@@ -46,7 +57,12 @@ bool network_socket_service_ready(void);
 // TLS connection alive so only the first tile per thread pays handshake cost.
 void *network_alloc_tile_curl(void);
 void  network_free_tile_curl(void *curl_handle);
-bool fetch_map_tile(int x, int y, int zoom, void *curl, bool online, TileSource source, u8 **buffer, u32 *size, bool *offline_hit);
+typedef struct {
+    unsigned sd_ms, network_ms, decode_ms, upload_ms;
+    bool local;
+} TileTiming;
+
+bool fetch_map_tile(int x, int y, int zoom, void *curl, bool online, TileSource source, u8 **buffer, u32 *size, bool *offline_hit, TileTiming *timing);
 bool  download_tile_with_curl(int tile_x, int tile_y, int zoom, void *curl_handle, u8 **buffer, u32 *size);
 
 // SD tile cache toggle

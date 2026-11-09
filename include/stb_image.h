@@ -5,6 +5,7 @@
 
 // Function declarations for stb_image
 unsigned char *stbi_load_from_memory(const unsigned char *buffer, int len, int *x, int *y, int *channels_in_file, int desired_channels);
+int stbi_info_from_memory(const unsigned char *buffer, int len, int *x, int *y, int *comp);
 void stbi_image_free(void *retval_from_stbi_load);
 const char *stbi_failure_reason(void);
 

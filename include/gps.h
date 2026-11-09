@@ -34,6 +34,13 @@ void gps_update(void);
 bool gps_has_fix(void);
 
 /* Retrieve last fix in decimal degrees (returns false if no fix). */
+typedef struct {
+    double lat, lon, accuracy_m;
+    unsigned age_ms;
+} GpsFix;
+bool gps_get_fix(GpsFix *fix);
+void gps_inject_fix_with_accuracy(double lat, double lon, double accuracy);
+
 bool gps_get_position(double *lat, double *lon);
 
 /*

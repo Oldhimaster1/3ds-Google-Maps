@@ -42,6 +42,7 @@ static double current_lat = 0.0;
 static double current_lon = 0.0;
 static bool has_fix = false;
 static u64 fix_time;
+static double fix_accuracy = -1;
 static bool discard_sentence;
 
 /* LightLock protects current_lat / current_lon / has_fix so the HTTPS server
@@ -122,7 +123,7 @@ GpsSourceMode gps_get_source_mode(void) {
     return g_source_mode;
 }
 
-void gps_inject_fix(double lat, double lon) {
+void gps_inject_fix_with_accuracy(double lat, double lon, double accuracy) {
     ensure_fix_lock();
     LightLock_Lock(&g_fix_lock);
     if (!isfinite(lat) || !isfinite(lon) || fabs(lat) > 90 || fabs(lon) > 180) {
@@ -130,10 +131,15 @@ void gps_inject_fix(double lat, double lon) {
         return;
     }
     fix_time = osGetTime();
+    fix_accuracy = isfinite(accuracy) && accuracy >= 0 ? accuracy : -1;
     current_lat = lat;
     current_lon = lon;
     has_fix     = true;
     LightLock_Unlock(&g_fix_lock);
+}
+
+void gps_inject_fix(double lat, double lon) {
+    gps_inject_fix_with_accuracy(lat, lon, -1);
 }
 
 void gps_clear_fix(void) {
@@ -343,16 +349,23 @@ bool gps_has_fix(void) {
     return gps_get_position(NULL, NULL);
 }
 
-bool gps_get_position(double *lat, double *lon) {
+bool gps_get_fix(GpsFix *fix) {
     ensure_fix_lock();
     LightLock_Lock(&g_fix_lock);
-    if (!has_fix || osGetTime() - fix_time > 10000) {
-        LightLock_Unlock(&g_fix_lock);
-        return false;
+    u64 age = osGetTime() - fix_time;
+    bool valid = has_fix && age <= 10000;
+    if (valid && fix) {
+        *fix = (GpsFix){ current_lat, current_lon, fix_accuracy, (unsigned)age };
     }
-    if (lat) *lat = current_lat;
-    if (lon) *lon = current_lon;
     LightLock_Unlock(&g_fix_lock);
+    return valid;
+}
+
+bool gps_get_position(double *lat, double *lon) {
+    GpsFix fix;
+    if (!gps_get_fix(&fix)) return false;
+    if (lat) *lat = fix.lat;
+    if (lon) *lon = fix.lon;
     return true;
 }
 

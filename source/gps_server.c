@@ -28,6 +28,7 @@
 #include <stdatomic.h>
 #include <sys/select.h>
 #include <math.h>
+#include <jansson.h>
 #include "gps_server.h"
 #include "gps.h"
 #include "gps_server_cert.h"   /* embedded cert + key as C arrays */
@@ -219,38 +220,17 @@ static bool read_exact(mbedtls_ssl_context *ssl, char *buf, int len)
  * Minimal JSON parser for {"lat":<float>,"lon":<float>,...}.
  * Does NOT require a full JSON library.
  */
-static bool parse_location_json(const char *body, double *lat, double *lon)
-{
-    if (!body || !lat || !lon) return false;
-
-    const char *p;
-    char *end;
-
-    /* lat */
-    p = strstr(body, "\"lat\"");
-    if (!p) return false;
-    p = strchr(p, ':');
-    if (!p) return false;
-    p++;
-    while (*p == ' ' || *p == '\t') p++;
-    *lat = strtod(p, &end);
-    if (end == p) return false;
-
-    /* lon */
-    p = strstr(body, "\"lon\"");
-    if (!p) return false;
-    p = strchr(p, ':');
-    if (!p) return false;
-    p++;
-    while (*p == ' ' || *p == '\t') p++;
-    *lon = strtod(p, &end);
-    if (end == p) return false;
-
-    /* sanity bounds */
-    if (*lat < -90.0  || *lat > 90.0)  return false;
-    if (*lon < -180.0 || *lon > 180.0) return false;
-
-    return true;
+static bool parse_location_json(const char *body, double *lat, double *lon, double *accuracy) {
+    json_t *root = json_loads(body, JSON_REJECT_DUPLICATES, NULL);
+    json_t *y = json_object_get(root, "lat"), *x = json_object_get(root, "lon");
+    json_t *acc = json_object_get(root, "acc");
+    *lat = json_number_value(y);
+    *lon = json_number_value(x);
+    *accuracy = json_is_number(acc) ? json_number_value(acc) : -1;
+    bool ok = json_is_number(y) && json_is_number(x) &&
+              isfinite(*lat) && isfinite(*lon) && fabs(*lat) <= 90 && fabs(*lon) <= 180;
+    json_decref(root);
+    return ok;
 }
 
 /* =========================================================================
@@ -306,9 +286,9 @@ static void handle_client(mbedtls_ssl_context *ssl)
             char body[257];
             if (read_exact(ssl, body, body_len)) {
                 body[body_len] = '\0';
-                double lat = 0.0, lon = 0.0;
-                if (parse_location_json(body, &lat, &lon) && isfinite(lat) && isfinite(lon)) {
-                    gps_inject_fix(lat, lon);
+                double lat, lon, accuracy;
+                if (parse_location_json(body, &lat, &lon, &accuracy)) {
+                    gps_inject_fix_with_accuracy(lat, lon, accuracy);
                     s_fix_count++;
                 }
             }

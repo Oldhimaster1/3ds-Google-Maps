@@ -108,6 +108,7 @@ typedef struct {
     u32 generation;
     u8  *decoded_pixels;  /* Morton-tiled ABGR 256x256x4, NULL on failure */
     bool ok;
+    TileTiming timing;
 } DLResult;
 
 #define DL_QUEUE_SIZE 32
@@ -126,6 +127,13 @@ static LightEvent dl_work_event;
 static Thread     dl_thread_handles[DL_NUM_THREADS];
 static bool dl_thread_running;
 static u32 dl_generation;
+static TileTiming last_timing;
+static bool has_timing;
+
+bool map_tiles_get_timing(TileTiming *timing) {
+    if (has_timing && timing) *timing = last_timing;
+    return has_timing;
+}
 static void      *dl_curl[DL_NUM_THREADS];  /* persistent curl handle per thread */
 
 static bool worker_running(void) {
@@ -144,7 +152,6 @@ static void download_worker(void *arg) {
     log_write("[THREAD %d] curl handle=%p\n", thread_id, dl_curl[thread_id]);
     while (worker_running()) {
         LightEvent_Wait(&dl_work_event);
-        log_write("[THREAD %d] woke up\n", thread_id);
         while (worker_running()) {
             /* Dequeue one request */
             LightLock_Lock(&dl_req_lock);
@@ -156,17 +163,17 @@ static void download_worker(void *arg) {
             DLRequest req = dl_req_q[dl_req_head & DL_QUEUE_MASK];
             dl_req_head++;
             LightLock_Unlock(&dl_req_lock);
-            log_write("[THREAD %d] dequeued tile z=%d x=%d y=%d\n", thread_id, req.zoom, req.tile_x, req.tile_y);
 
             /* Download raw tile bytes using persistent handle (no GPU ops here) */
             u8 *buffer = NULL;
             u32 size = 0;
+            TileTiming timing = {0};
             bool ok = fetch_map_tile(req.tile_x, req.tile_y, req.zoom,
-                                     dl_curl[thread_id], req.online, req.source, &buffer, &size, NULL);
-            log_write("[THREAD %d] tile z=%d x=%d y=%d ok=%d size=%lu\n", thread_id, req.zoom, req.tile_x, req.tile_y, (int)ok, size);
+                                     dl_curl[thread_id], req.online, req.source, &buffer, &size, NULL, &timing);
 
             /* Decode on worker thread — JPEG decode + Morton conversion are the
              * bottleneck (~1-2 s on O3DS ARM11).  Only GPU ops need main thread. */
+            u64 decode_start = osGetTime();
             u8 *decoded_pixels = NULL;
             if (ok && buffer && size >= 4) {
                 bool is_jpeg = (buffer[0] == 0xFF && buffer[1] == 0xD8);
@@ -195,6 +202,8 @@ static void download_worker(void *arg) {
                 buffer = NULL;
             }
 
+            timing.decode_ms = osGetTime() - decode_start;
+
             /* Push result to main thread */
             while (worker_running()) {
                 LightLock_Lock(&dl_res_lock);
@@ -207,6 +216,7 @@ static void download_worker(void *arg) {
                         .generation     = req.generation,
                         .decoded_pixels = decoded_pixels,
                         .ok             = ok,
+                        .timing         = timing,
                 };
                 dl_res_tail++;
                 decoded_pixels = NULL;   /* ownership transferred */
@@ -351,7 +361,11 @@ void map_tiles_process_downloads(void) {
             res.slot->tile_y == res.tile_y &&
             res.slot->zoom   == res.zoom) {
             if (res.ok && res.decoded_pixels) {
+                u64 upload_start = osGetTime();
                 C2D_Image img = create_image_from_decoded(res.decoded_pixels);
+                res.timing.upload_ms = osGetTime() - upload_start;
+                last_timing = res.timing;
+                has_timing = true;
                 if (img.tex) {
                     res.slot->image = img;
                     res.slot->valid = true;
@@ -397,6 +411,11 @@ static bool draw_zoom_fallback(int x, int y, int zoom, int screen_x, int screen_
         }
     }
     return drawn;
+}
+
+static bool show_coverage;
+void map_tiles_set_coverage(bool enabled) {
+    show_coverage = enabled;
 }
 
 void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset_y, 
@@ -489,6 +508,11 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
                                     C2D_Color32f(1.0f, 0.0f, 0.0f, 0.8f));
                     C2D_DrawRectSolid(render_x + 10, render_y + TILE_SIZE - 14, 0.1f, TILE_SIZE - 20, 4,
                                     C2D_Color32f(1.0f, 0.0f, 0.0f, 0.8f));
+                }
+                if (show_coverage) {
+                    bool covered = network_pack_covers(tile_x, tile_y, zoom);
+                    u32 tint = covered ? C2D_Color32(30, 225, 158, 52) : C2D_Color32(255, 171, 56, 48);
+                    C2D_DrawRectSolid(render_x, render_y, .25f, TILE_SIZE, TILE_SIZE, tint);
                 }
             }
         }

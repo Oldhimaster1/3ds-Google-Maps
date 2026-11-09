@@ -6,6 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include <ctype.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include "map_tiles.h"
@@ -14,6 +15,9 @@
 #include "logging.h"
 #include "stb_image.h"
 #include "qrcode.h"
+#include "region.h"
+#include <jansson.h>
+#include <zlib.h>
 
 #define SCREEN_WIDTH_TOP    400
 #define SCREEN_HEIGHT_TOP   240
@@ -119,6 +123,9 @@ static u64 g_last_place_ms = 0;
 static char g_status_message[96] = {0};
 static u64 g_status_message_ms = 0;
 static bool g_debug_overlay = false;
+static bool g_show_coverage;
+static const char *g_request_label;
+static void (*g_bottom_modal)(void);
 static u32 g_fps = 0;
 static u64 g_fps_last_ms = 0;
 static u32 g_fps_frames = 0;
@@ -157,13 +164,12 @@ static double g_target_lon = 0.0;
 static int g_target_zoom = 0;
 static u64 g_last_zoom_step_ms = 0;
 
-typedef struct {
-    double lat;
-    double lon;
-} RoutePoint;
+typedef RegionPoint RoutePoint;
 
 #define MAX_ROUTE_POINTS 256
 static RoutePoint g_route[MAX_ROUTE_POINTS];
+static RoutePoint *g_route_geometry;
+static unsigned g_route_geometry_count;
 static int g_route_count = 0;
 static bool g_route_active = false;
 static char g_route_next_text[80] = {0};
@@ -190,8 +196,7 @@ typedef struct {
     char name[96];
 } GeocodeResult;
 
-static const char* skip_ws(const char* p, const char* end);
-static bool extract_json_string_field(const char* start, const char* end, const char* key, char* out, size_t out_size);
+static bool json_coord(json_t *value, double limit, double *out);
 static int parse_geocode_results_json(const char* json, u32 json_size, GeocodeResult* out_results, int max_results);
 static bool parse_reverse_geocode_json(const char* json, u32 json_size, GeocodeResult* out_result);
 static void open_address_search(void);
@@ -486,8 +491,8 @@ static bool parse_latlon(const char* s, double* out_lat, double* out_lon) {
     while (*end2 == ' ' || *end2 == '\t' || *end2 == '\r' || *end2 == '\n') end2++;
     if (*end2 != '\0') return false;
 
-    if (lat < -90.0 || lat > 90.0) return false;
-    if (lon < -180.0 || lon > 180.0) return false;
+    if (!isfinite(lat) || lat < -90.0 || lat > 90.0) return false;
+    if (!isfinite(lon) || lon < -180.0 || lon > 180.0) return false;
 
     *out_lat = lat;
     *out_lon = lon;
@@ -671,6 +676,47 @@ static void jump_to_location(double lat, double lon) {
     g_last_interaction_ms = osGetTime();
 }
 
+#define SESSION_PATH "sdmc:/3ds_google_maps/session.cfg"
+
+static void load_session(void) {
+    FILE *f = fopen(SESSION_PATH, "r");
+    if (!f) f = fopen(SESSION_PATH ".bak", "r");
+    if (!f) return;
+    unsigned version, source, night, cache, coverage, gps_mode;
+    int zoom;
+    double lat, lon;
+    int fields = fscanf(f, "%u %lf %lf %d %u %u %u %u %u",
+                        &version, &lat, &lon, &zoom, &source, &night, &cache, &coverage, &gps_mode);
+    fclose(f);
+    if (fields != 9 || version != 1 || !isfinite(lat) || fabs(lat) > 90 ||
+        !isfinite(lon) || fabs(lon) > 180 || zoom < 1 || zoom > 18 ||
+        source > 1 || night > 1 || cache > 1 || coverage > 1 || gps_mode > 1) return;
+    network_set_tile_source((TileSource)source);
+    network_set_disk_cache_enabled(cache);
+    gps_set_source_mode((GpsSourceMode)gps_mode);
+    g_night_mode = night;
+    g_show_coverage = coverage;
+    set_camera_target(lat, lon, zoom, true);
+}
+
+static void save_session(void) {
+    ensure_app_data_dir();
+    FILE *f = fopen(SESSION_PATH ".tmp", "w");
+    if (!f) return;
+    bool written = fprintf(f, "1 %.9f %.9f %d %u %u %u %u %u\n",
+                           g_target_lat, g_target_lon, g_target_zoom,
+                           (unsigned)network_get_tile_source(), (unsigned)g_night_mode,
+                           (unsigned)network_get_disk_cache_enabled(), (unsigned)g_show_coverage,
+                           (unsigned)gps_get_source_mode()) > 0;
+    int closed = fclose(f);
+    if (!written || closed != 0) return;
+    if (access(SESSION_PATH, F_OK) == 0) {
+        unlink(SESSION_PATH ".bak");
+        if (rename(SESSION_PATH, SESSION_PATH ".bak") != 0) return;
+    }
+    if (rename(SESSION_PATH ".tmp", SESSION_PATH) == 0) unlink(SESSION_PATH ".bak");
+}
+
 int main(int argc, char* argv[]) {
     // Initialize services
     gfxInitDefault();
@@ -722,6 +768,7 @@ int main(int argc, char* argv[]) {
 
     ensure_app_data_dir();
     favorites_load();
+    load_session();
     set_status_message("Ready");
 
     g_last_interaction_ms = osGetTime();
@@ -785,7 +832,10 @@ int main(int argc, char* argv[]) {
         render_map();
     }
 
+    save_session();
+
 cleanup:
+    free(g_route_geometry);
     // Cleanup
     gps_cleanup();
     map_tiles_cleanup();
@@ -844,6 +894,10 @@ void update_input(void) {
     }
 
     if (g_screen_mode == APP_SCREEN_SETTINGS) {
+        if (g_settings_tab == SETTINGS_TAB_VIEW && (kDown & KEY_SELECT)) {
+            open_cache_stats();
+            return;
+        }
         if (kDown & KEY_B) {
             close_menu("Closed settings");
             return;
@@ -1301,12 +1355,30 @@ void pan_map(int dx, int dy) {
     g_target_lon = fmod(g_target_lon + dx * 360.0 / world + 540.0, 360.0) - 180.0;
 }
 
+static void draw_gps_fix(void) {
+    GpsFix fix;
+    if (!gps_get_fix(&fix)) return;
+    int zoom = map_state.zoom, world = (1 << zoom) * TILE_SIZE;
+    int cx, cy, px, py;
+    lat_lon_to_pixel(map_state.lat, map_state.lon, zoom, &cx, &cy);
+    lat_lon_to_pixel(fmax(-85.0511, fmin(85.0511, fix.lat)), fix.lon, zoom, &px, &py);
+    int dx = (px - cx + world + world / 2) % world - world / 2;
+    float x = SCREEN_WIDTH_TOP / 2 + dx, y = SCREEN_HEIGHT_TOP / 2 + py - cy;
+    double meters_per_pixel = 40075016.686 * cos(fix.lat * M_PI / 180) / world;
+    float radius = fix.accuracy_m < 0 || meters_per_pixel <= 0 ? 0 :
+                   fmin(600, fix.accuracy_m / meters_per_pixel);
+    if (x + radius < -6 || x - radius > 406 || y + radius < -6 || y - radius > 246) return;
+    if (radius >= 4) C2D_DrawCircleSolid(x, y, .66f, radius, C2D_Color32(71, 169, 244, 54));
+    C2D_DrawCircleSolid(x, y, .67f, 5, C2D_Color32(248, 252, 255, 255));
+    C2D_DrawCircleSolid(x, y, .68f, 3.5f, C2D_Color32(50, 157, 241, 255));
+}
+
 void render_map(void) {
     // Start rendering frame
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
     
     // Show QR code on top screen when GPS server is running in settings
-    bool show_qr = (g_screen_mode == APP_SCREEN_SETTINGS &&
+    bool show_qr = (!g_bottom_modal && g_screen_mode == APP_SCREEN_SETTINGS &&
                     g_settings_tab == SETTINGS_TAB_GPS &&
                     g_qr_valid);
 
@@ -1323,11 +1395,13 @@ void render_map(void) {
         }
         C2D_SceneBegin(top_screen);
 
+        map_tiles_set_coverage(g_show_coverage);
         map_tiles_render(map_state.lat, map_state.lon, map_state.zoom, 
                         map_state.offset_x, map_state.offset_y, 
                         SCREEN_WIDTH_TOP, SCREEN_HEIGHT_TOP, true);
 
         render_route_overlay(map_state.lat, map_state.lon, map_state.zoom, SCREEN_WIDTH_TOP, SCREEN_HEIGHT_TOP);
+        draw_gps_fix();
 
         if (g_night_mode) {
             C2D_DrawRectSolid(0.0f, 0.0f, 0.95f, (float)SCREEN_WIDTH_TOP, (float)SCREEN_HEIGHT_TOP,
@@ -1338,7 +1412,9 @@ void render_map(void) {
     C2D_TargetClear(bottom_screen, C2D_Color32f(0.05f, 0.07f, 0.10f, 1.0f));
     C2D_SceneBegin(bottom_screen);
     C2D_TextBufClear(g_ui_text_buf);
-    if (g_screen_mode == APP_SCREEN_SETTINGS) {
+    if (g_bottom_modal) {
+        g_bottom_modal();
+    } else if (g_screen_mode == APP_SCREEN_SETTINGS) {
         render_settings_panel();
     } else {
         render_bottom_panel();
@@ -1845,6 +1921,7 @@ static void render_settings_panel(void) {
     }
 
     draw_ui_text(160.0f, 222.0f, 0.32f, 0.32f, C2D_Color32f(0.66f, 0.76f, 0.86f, 1.0f), C2D_AlignCenter,
+                 g_settings_tab == SETTINGS_TAB_VIEW ? "SELECT: tile timings   B: close" :
                  "Touch cards to change settings   B to close");
 }
 
@@ -1883,24 +1960,22 @@ static void render_bottom_panel(void) {
              (unsigned long)g_fps);
     draw_ui_text(12.0f, 32.0f, 0.42f, 0.42f, C2D_Color32f(0.73f, 0.82f, 0.92f, 1.0f), 0, line);
 
-    if (g_debug_overlay) {
-        u32 last_ms = network_get_last_tile_download_ms();
-        u32 last_bytes = network_get_last_tile_size_bytes();
-        unsigned long kib = (unsigned long)((last_bytes + 1023) / 1024);
-        if (network_get_last_tile_was_cache_hit()) {
-            snprintf(line, sizeof(line), "Tile %lu KiB  SD cache", kib);
-        } else if (last_ms > 0 && last_bytes > 0) {
-            unsigned long kib_per_s = (unsigned long)((last_bytes * 1000ULL) / (1024ULL * last_ms));
-            snprintf(line, sizeof(line), "Tile %lu KiB  %lu ms  %lu KiB/s", kib, (unsigned long)last_ms, kib_per_s);
-        } else {
-            snprintf(line, sizeof(line), "Tile debug waiting for download");
-        }
+    if (g_request_label) {
+        snprintf(line, sizeof(line), "%s   B: Cancel", g_request_label);
+    } else if (g_debug_overlay) {
+        TileTiming timing;
+        if (map_tiles_get_timing(&timing))
+            snprintf(line, sizeof(line), "SD %u  Net %u  Decode %u  GPU %u ms",
+                     timing.sd_ms, timing.network_ms, timing.decode_ms, timing.upload_ms);
+        else snprintf(line, sizeof(line), "Waiting for a tile timing sample");
     } else if (g_status_message[0] && (now_ms - g_status_message_ms) < 2200) {
         snprintf(line, sizeof(line), "Status: %.32s", g_status_message);
-    } else if (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER && gps_is_connected()) {
-        char svr_url[56];
-        gps_get_server_url(svr_url, sizeof(svr_url));
-        snprintf(line, sizeof(line), "GPS %s  fixes:%u", svr_url, gps_get_server_fix_count());
+    } else if (gps_is_connected() || map_state.gps_tracking) {
+        GpsFix fix;
+        if (!gps_get_fix(&fix)) snprintf(line, sizeof(line), "Waiting for GPS fix");
+        else if (fix.accuracy_m >= 0)
+            snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy %.0f m", fix.age_ms / 1000.0, fix.accuracy_m);
+        else snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy unavailable", fix.age_ms / 1000.0);
     } else if (g_route_active) {
         snprintf(line, sizeof(line), "Route: %.34s", g_route_next_text[0] ? g_route_next_text : "Active");
     } else if (g_last_place_name[0]) {
@@ -1910,7 +1985,7 @@ static void render_bottom_panel(void) {
     }
     draw_ui_text(12.0f, 62.0f, 0.42f, 0.42f, C2D_Color32f(0.90f, 0.92f, 0.95f, 1.0f), 0, line);
 
-    snprintf(small, sizeof(small), g_debug_overlay ? "Touch here to drag map   Debug ON" : "Touch here to drag map");
+    snprintf(small, sizeof(small), g_show_coverage ? "Green: saved  Amber: no pack tile" : "Touch here to drag map");
     C2D_DrawRectSolid(10.0f, 72.0f, 0.2f, 300.0f, 16.0f, C2D_Color32f(0.16f, 0.21f, 0.27f, 1.0f));
     draw_ui_text(160.0f, 75.0f, 0.36f, 0.36f, C2D_Color32f(0.84f, 0.89f, 0.94f, 1.0f), C2D_AlignCenter, small);
 
@@ -2039,6 +2114,134 @@ static void open_favorites(void) {
     end_bottom_console_ui(NULL);
 }
 
+typedef struct {
+    const char *url;
+    atomic_bool done, cancel;
+    bool ok;
+    u8 *bytes;
+    u32 size;
+} MapRequest;
+
+static void request_worker(void *arg) {
+    MapRequest *request = arg;
+    void *curl = network_alloc_tile_curl();
+    request->ok = network_request(curl, request->url, 1024 * 1024,
+                                  &request->cancel, &request->bytes, &request->size);
+    network_free_tile_curl(curl);
+    atomic_store(&request->done, true);
+}
+
+static bool wait_for_request(const char *url, const char *label, u8 **buffer, u32 *size) {
+    MapRequest request = { .url = url };
+    Thread thread = threadCreate(request_worker, &request, 64 * 1024, 0x31, -2, false);
+    if (!thread) return false;
+    g_request_label = label;
+    while (!atomic_load(&request.done) && aptMainLoop()) {
+        hidScanInput();
+        u32 keys = hidKeysDown();
+        if (keys & KEY_START) g_should_exit = true;
+        if (keys & (KEY_B | KEY_START)) atomic_store(&request.cancel, true);
+        if (atomic_load(&request.cancel)) g_request_label = "Cancelling...";
+        gps_update();
+        circlePosition pad;
+        hidCircleRead(&pad);
+        int dx = circle_pad_axis_to_pan(pad.dx), dy = circle_pad_axis_to_pan(pad.dy);
+        if (dx || dy) {
+            map_state.gps_tracking = false;
+            pan_map(dx, -dy);
+        }
+        update_camera_smooth();
+        map_tiles_process_downloads();
+        render_map();
+    }
+    g_request_label = NULL;
+    if (!atomic_load(&request.done)) atomic_store(&request.cancel, true);
+    threadJoin(thread, U64_MAX);
+    threadFree(thread);
+    if (atomic_load(&request.cancel) || !request.ok) {
+        free(request.bytes);
+        set_status_message(atomic_load(&request.cancel) ? "Request cancelled" : "Network request failed");
+        return false;
+    }
+    *buffer = request.bytes;
+    *size = request.size;
+    return true;
+}
+
+static void build_search_url(char *url, size_t size, const char *encoded, bool near) {
+    if (network_get_proxy_enabled()) {
+        snprintf(url, size, "%s/geocode?q=%s", network_get_proxy_base_url(), encoded);
+        return;
+    }
+    int used = snprintf(url, size,
+        "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=%s", encoded);
+    if (near && used > 0 && (size_t)used < size) {
+        double span = fmax(0.02, 360.0 / (1 << map_state.zoom));
+        double west = fmax(-180, map_state.lon - span), east = fmin(180, map_state.lon + span);
+        double north = fmin(90, map_state.lat + span), south = fmax(-90, map_state.lat - span);
+        snprintf(url + used, size - used, "&viewbox=%.6f,%.6f,%.6f,%.6f", west, north, east, south);
+    }
+}
+
+static const GeocodeResult *place_rows;
+static int place_count, place_selection;
+static bool place_identify;
+
+static void render_place_panel(void) {
+    u32 white = C2D_Color32(239, 247, 253, 255);
+    u32 dim = C2D_Color32(165, 191, 213, 255);
+    C2D_DrawRectSolid(0, 0, .1f, 320, 49, C2D_Color32(25, 37, 53, 255));
+    C2D_DrawRectSolid(0, 47, .2f, 320, 2, C2D_Color32(113, 215, 235, 255));
+    draw_ui_text(12, 9, .57f, .57f, white, 0, place_identify ? "Map center" : "Search results");
+    char line[72];
+    if (place_identify) {
+        snprintf(line, sizeof(line), "%.6f, %.6f", place_rows[0].lat, place_rows[0].lon);
+        draw_ui_text(13, 106, .45f, .45f, dim, 0, line);
+        draw_ui_text(13, 134, .42f, .42f, dim, 0, "Saved to Recents");
+    } else {
+        snprintf(line, sizeof(line), "%d of %d", place_selection + 1, place_count);
+        draw_ui_text(12, 31, .39f, .39f, dim, 0, line);
+    }
+    int first = place_selection > 2 ? place_selection - 2 : 0;
+    for (int i = first; i < place_count && i < first + 3; i++) {
+        int y = 57 + (i - first) * 40;
+        C2D_DrawRectSolid(9, y, .2f, 302, 35, i == place_selection ?
+                          C2D_Color32(31, 74, 91, 255) : C2D_Color32(30, 42, 58, 255));
+        C2D_Text text;
+        C2D_TextParse(&text, g_ui_text_buf, place_rows[i].name);
+        C2D_TextOptimize(&text);
+        float scale = text.width > 0 ? fminf(.47f, 284 / text.width) : .47f;
+        C2D_DrawText(&text, C2D_WithColor, 17, y + 8, .5f, scale, .47f, white);
+    }
+    C2D_DrawRectSolid(0, 194, .2f, 320, 46, C2D_Color32(23, 32, 45, 255));
+    draw_ui_text(12, 205, .43f, .43f, dim, 0, place_identify ? "B  Back" : "Up/Down  Select     A  Choose     B  Cancel");
+}
+
+static int show_places(const GeocodeResult *places, int count, bool identify) {
+    if (!count) return -1;
+    place_rows = places;
+    place_count = count;
+    place_selection = 0;
+    place_identify = identify;
+    int result = -1;
+    g_bottom_modal = render_place_panel;
+    while (aptMainLoop() && !g_should_exit) {
+        hidScanInput();
+        u32 keys = hidKeysDown();
+        if (keys & KEY_START) g_should_exit = true;
+        if (keys & (KEY_START | KEY_B)) break;
+        if (!identify && (keys & KEY_A)) { result = place_selection; break; }
+        if (keys & KEY_DUP && place_selection > 0) place_selection--;
+        if (keys & KEY_DDOWN && place_selection + 1 < count) place_selection++;
+        gps_update();
+        map_tiles_process_downloads();
+        render_map();
+    }
+    g_bottom_modal = NULL;
+    place_rows = NULL;
+    return result;
+}
+
 static bool geocode_pick(const char* query, GeocodeResult* out) {
     if (!query || !query[0] || !out) return false;
     if (!is_connected()) return false;
@@ -2049,211 +2252,98 @@ static bool geocode_pick(const char* query, GeocodeResult* out) {
     }
 
     char url[512];
-    if (network_get_proxy_enabled()) {
-        snprintf(url, sizeof(url), PROXY_BASE_URL "/geocode?q=%s", encoded);
-    } else {
-        snprintf(url, sizeof(url),
-                 "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=%s",
-                 encoded);
-    }
+    build_search_url(url, sizeof(url), encoded, true);
 
     u8* buf = NULL;
     u32 size = 0;
-    if (!download_url(url, &buf, &size) || !buf || size == 0) {
+    if (!wait_for_request(url, "Searching places", &buf, &size)) {
         if (buf) free(buf);
         return false;
     }
-
-    u8* tmp = (u8*)realloc(buf, size + 1);
-    if (tmp) buf = tmp;
-    buf[size] = 0;
 
     GeocodeResult results[5];
     memset(results, 0, sizeof(results));
     int count = parse_geocode_results_json((const char*)buf, size, results, 5);
     free(buf);
 
-    if (count <= 0) return false;
-
-    int selected = 0;
-    if (count > 1) {
-        begin_bottom_console_ui();
-        while (aptMainLoop()) {
-            consoleClear();
-            printf("Search results:\n");
-            printf("Up/Down = select  A = choose  B = cancel\n\n");
-
-            for (int i = 0; i < count; i++) {
-                printf("%c %d) %s\n", (i == selected) ? '>' : ' ', i + 1, results[i].name[0] ? results[i].name : "(result)");
-            }
-
-            hidScanInput();
-            u32 kDown = hidKeysDown();
-            if (kDown & KEY_B) {
-                end_bottom_console_ui("Search cancelled");
-                return false;
-            }
-            if (kDown & KEY_START) {
-                g_should_exit = true;
-                end_bottom_console_ui(NULL);
-                return false;
-            }
-            if (kDown & KEY_DUP) {
-                if (selected > 0) selected--;
-            }
-            if (kDown & KEY_DDOWN) {
-                if (selected < count - 1) selected++;
-            }
-            if (kDown & KEY_A) {
-                break;
-            }
-
-            svcSleepThread(60000000LL);
-        }
-        end_bottom_console_ui(NULL);
+    if (!count) {
+        set_status_message("No search results");
+        return false;
+    }
+    int selected = count > 1 ? show_places(results, count, false) : 0;
+    if (selected < 0) {
+        set_status_message("Search cancelled");
+        return false;
     }
 
     *out = results[selected];
     return true;
 }
 
-static bool parse_route_json(const char* json, u32 json_size) {
-    if (!json || json_size == 0) return false;
-    const char* end = json + json_size;
+#define ROUTE_GEOMETRY_LIMIT 16000
 
-    if (strstr(json, "\"poly\"")) {
-        const char* next_key = strstr(json, "\"next\"");
-        const char* p;
-        const char* dist_key;
-        const char* q;
-        const char* poly_key;
-        const char* r;
-        size_t nlen = 0;
-
-        if (!next_key) return false;
-        p = strchr(next_key, ':');
-        if (!p) return false;
-        p++;
-        p = skip_ws(p, end);
-        if (p >= end || *p != '"') return false;
-        p++;
-        while (p < end && *p != '"') {
-            if (nlen + 1 < sizeof(g_route_next_text)) g_route_next_text[nlen++] = *p;
-            p++;
-        }
-        g_route_next_text[nlen] = 0;
-
-        dist_key = strstr(json, "\"distance_m\"");
-        if (!dist_key) return false;
-        q = strchr(dist_key, ':');
-        if (!q) return false;
-        q++;
-        q = skip_ws(q, end);
-        g_route_next_dist_m = (int)strtol(q, NULL, 10);
-        if (g_route_next_dist_m < 0) g_route_next_dist_m = 0;
-
-        poly_key = strstr(json, "\"poly\"");
-        if (!poly_key) return false;
-        r = strchr(poly_key, ':');
-        if (!r) return false;
-        r++;
-        r = skip_ws(r, end);
-        if (r >= end || *r != '"') return false;
-        r++;
-
-        g_route_count = 0;
-        while (r < end && *r != '"' && g_route_count < MAX_ROUTE_POINTS) {
-            char* lat_end = NULL;
-            char* lon_end = NULL;
-            double lat = strtod(r, &lat_end);
-            double lon;
-            if (!lat_end || lat_end == r) break;
-            r = lat_end;
-            if (*r != ',') break;
-            r++;
-            lon = strtod(r, &lon_end);
-            if (!lon_end || lon_end == r) break;
-            r = lon_end;
-            g_route[g_route_count].lat = lat;
-            g_route[g_route_count].lon = lon;
-            g_route_count++;
-            if (*r == ';') {
-                r++;
-                continue;
-            }
-            if (*r == '"') break;
-            if (*r != ';') break;
-        }
-
-        return g_route_count >= 2;
+static bool parse_route_json(const char *json, u32 size) {
+    json_t *root = json_loadb(json, size, JSON_REJECT_DUPLICATES, NULL);
+    json_t *route = json_array_get(json_object_get(root, "routes"), 0);
+    json_t *coordinates = json_object_get(json_object_get(route, "geometry"), "coordinates");
+    const char *poly = json_string_value(json_object_get(root, "poly"));
+    size_t count = json_array_size(coordinates);
+    if (poly) {
+        count = *poly ? 1 : 0;
+        for (const char *p = poly; *p && count <= ROUTE_GEOMETRY_LIMIT; p++)
+            if (*p == ';' && p[1]) count++;
     }
-
-    {
-        char type[32] = {0};
-        char modifier[32] = {0};
-        char road_name[64] = {0};
-        const char* dist_key = strstr(json, "\"distance\"");
-        const char* coords_key = strstr(json, "\"coordinates\"");
-        const char* r;
-
-        if (dist_key) {
-            const char* q = strchr(dist_key, ':');
-            if (q) {
-                q++;
-                q = skip_ws(q, end);
-                g_route_next_dist_m = (int)strtod(q, NULL);
-                if (g_route_next_dist_m < 0) g_route_next_dist_m = 0;
+    if (count < 2 || count > ROUTE_GEOMETRY_LIMIT) {
+        json_decref(root);
+        return false;
+    }
+    RoutePoint *points = calloc(count, sizeof(*points));
+    if (!points) { json_decref(root); return false; }
+    bool ok = true;
+    const char *p = poly;
+    for (size_t i = 0; i < count && ok; i++) {
+        if (poly) {
+            char *end;
+            points[i].lat = strtod(p, &end);
+            if (end == p || *end != ',') { ok = false; break; }
+            p = end + 1;
+            points[i].lon = strtod(p, &end);
+            if (end == p || (i + 1 < count ? *end != ';' : (*end && (*end != ';' || end[1])))) {
+                ok = false;
+                break;
             }
-        }
-
-        (void)extract_json_string_field(json, end, "\"type\"", type, sizeof(type));
-        (void)extract_json_string_field(json, end, "\"modifier\"", modifier, sizeof(modifier));
-        (void)extract_json_string_field(json, end, "\"name\"", road_name, sizeof(road_name));
-
-        if (modifier[0]) {
-            snprintf(g_route_next_text, sizeof(g_route_next_text), "%s %s", type[0] ? type : "Go", modifier);
-        } else if (type[0]) {
-            snprintf(g_route_next_text, sizeof(g_route_next_text), "%s", type);
+            p = *end ? end + 1 : end;
+            ok = isfinite(points[i].lat) && fabs(points[i].lat) <= 90 &&
+                 isfinite(points[i].lon) && fabs(points[i].lon) <= 180;
         } else {
-            snprintf(g_route_next_text, sizeof(g_route_next_text), "%s", road_name[0] ? road_name : "Route");
+            json_t *pair = json_array_get(coordinates, i);
+            ok = json_coord(json_array_get(pair, 0), 180, &points[i].lon) &&
+                 json_coord(json_array_get(pair, 1), 90, &points[i].lat);
         }
-
-        if (!coords_key) return false;
-        r = strchr(coords_key, '[');
-        if (!r) return false;
-        r++;
-
-        g_route_count = 0;
-        while (r < end && g_route_count < MAX_ROUTE_POINTS) {
-            char* lon_end = NULL;
-            char* lat_end = NULL;
-            double lon;
-            double lat;
-
-            while (r < end && *r != '[' && *r != ']') r++;
-            if (r >= end || *r == ']') break;
-            r++;
-
-            lon = strtod(r, &lon_end);
-            if (!lon_end || lon_end == r) break;
-            r = lon_end;
-            if (*r != ',') break;
-            r++;
-
-            lat = strtod(r, &lat_end);
-            if (!lat_end || lat_end == r) break;
-            r = lat_end;
-
-            g_route[g_route_count].lat = lat;
-            g_route[g_route_count].lon = lon;
-            g_route_count++;
-
-            while (r < end && *r != ']') r++;
-            if (r < end) r++;
-        }
-
-        return g_route_count >= 2;
     }
+    if (!ok) {
+        free(points);
+        json_decref(root);
+        return false;
+    }
+
+    const char *next = json_string_value(json_object_get(root, "next"));
+    if (!next) {
+        json_t *leg = json_array_get(json_object_get(route, "legs"), 0);
+        json_t *step = json_array_get(json_object_get(leg, "steps"), 0);
+        next = json_string_value(json_object_get(step, "name"));
+    }
+    double distance = json_number_value(json_object_get(poly ? root : route, poly ? "distance_m" : "distance"));
+    g_route_next_dist_m = (int)fmin(2147483647, fmax(0, distance));
+    snprintf(g_route_next_text, sizeof(g_route_next_text), "%s", next && *next ? next : "Route");
+    free(g_route_geometry);
+    g_route_geometry = points;
+    g_route_geometry_count = count;
+    g_route_count = count < MAX_ROUTE_POINTS ? (int)count : MAX_ROUTE_POINTS;
+    for (int i = 0; i < g_route_count; i++)
+        g_route[i] = points[i * (count - 1) / (g_route_count - 1)];
+    json_decref(root);
+    return true;
 }
 
 static void open_route_to_address(void) {
@@ -2262,8 +2352,6 @@ static void open_route_to_address(void) {
         return;
     }
 
-    begin_bottom_console_ui();
-
     char query[128] = {0};
     SwkbdState swkbd;
     swkbdInit(&swkbd, SWKBD_TYPE_NORMAL, 2, sizeof(query) - 1);
@@ -2271,23 +2359,17 @@ static void open_route_to_address(void) {
     swkbdSetFeatures(&swkbd, SWKBD_PREDICTIVE_INPUT);
     SwkbdButton btn = swkbdInputText(&swkbd, query, sizeof(query));
     if (btn != SWKBD_BUTTON_RIGHT) {
-        end_bottom_console_ui("Route cancelled");
+        set_status_message("Route cancelled");
         return;
     }
     if (query[0] == '\0') {
-        end_bottom_console_ui("Route cancelled");
+        set_status_message("Route cancelled");
         return;
     }
 
     GeocodeResult dest;
     memset(&dest, 0, sizeof(dest));
-    if (!geocode_pick(query, &dest)) {
-        consoleClear();
-        printf("No destination selected.\n");
-        svcSleepThread(800000000LL);
-        end_bottom_console_ui("No route destination");
-        return;
-    }
+    if (!geocode_pick(query, &dest)) return;
 
     double from_lat = map_state.lat;
     double from_lon = map_state.lon;
@@ -2298,7 +2380,7 @@ static void open_route_to_address(void) {
     char url[512];
     if (network_get_proxy_enabled()) {
         snprintf(url, sizeof(url),
-                 PROXY_BASE_URL "/route?from=%.6f,%.6f&to=%.6f,%.6f",
+                 "%s/route?from=%.6f,%.6f&to=%.6f,%.6f", network_get_proxy_base_url(),
                  from_lat, from_lon, dest.lat, dest.lon);
     } else {
         snprintf(url, sizeof(url),
@@ -2306,38 +2388,19 @@ static void open_route_to_address(void) {
                  from_lon, from_lat, dest.lon, dest.lat);
     }
 
-    consoleClear();
-    printf("Routing...\n");
-
-    u8* buf = NULL;
+    u8 *buf = NULL;
     u32 size = 0;
-    if (!download_url(url, &buf, &size) || !buf || size == 0) {
-        consoleClear();
-        printf("Route request failed.\n");
-        if (buf) free(buf);
-        svcSleepThread(1000000000LL);
-        end_bottom_console_ui("Route request failed");
-        return;
-    }
-
-    u8* tmp = (u8*)realloc(buf, size + 1);
-    if (tmp) buf = tmp;
-    buf[size] = 0;
-
-    bool ok = parse_route_json((const char*)buf, size);
+    if (!wait_for_request(url, "Planning route", &buf, &size)) return;
+    bool ok = parse_route_json((const char *)buf, size);
     free(buf);
-
     if (!ok) {
-        consoleClear();
-        printf("Failed to parse route.\n");
-        svcSleepThread(1000000000LL);
-        end_bottom_console_ui("Route parse failed");
+        set_status_message("Route parse failed");
         return;
     }
 
     g_route_active = true;
     add_recent(dest.name, dest.lat, dest.lon);
-    end_bottom_console_ui("Route ready");
+    set_status_message("Route ready");
 }
 
 static void render_route_overlay(double center_lat, double center_lon, int zoom, int screen_width, int screen_height) {
@@ -2382,10 +2445,12 @@ static void open_cache_stats(void) {
         printf("SD cache: %s\n", network_get_disk_cache_enabled() ? "ON" : "OFF");
      printf("Prefetch: ring=%d throttle=%d\n", g_prefetch_ring, g_prefetch_every_n_frames);
         printf("Night mode: %s\n", g_night_mode ? "ON" : "OFF");
-        printf("Last tile: %lu ms%s\n",
-               (unsigned long)network_get_last_tile_download_ms(),
-               network_get_last_tile_was_cache_hit() ? " (SD)" : "");
-        printf("Last tile size: %lu KB\n", (unsigned long)((network_get_last_tile_size_bytes() + 1023) / 1024));
+        TileTiming timing;
+        if (map_tiles_get_timing(&timing)) {
+            printf("Last loaded tile: %s\n", timing.local ? "SD card" : "network");
+            printf("SD access:  %u ms\nNetwork:    %u ms\nDecode:     %u ms\nGPU upload: %u ms\n",
+                   timing.sd_ms, timing.network_ms, timing.decode_ms, timing.upload_ms);
+        }
         printf("FPS: %lu\n", (unsigned long)g_fps);
 
         printf("\nX: Clear SD tile cache\n");
@@ -2418,277 +2483,468 @@ static void open_cache_stats(void) {
 
 /* -------- Offline region download ---------------------------------------- */
 
-static int count_region_tiles(int min_zoom, int max_zoom,
-                              double lat_min, double lon_min,
-                              double lat_max, double lon_max) {
-    int total = 0;
-    for (int z = min_zoom; z <= max_zoom; z++) {
-        int tx_min, ty_min, tx_max, ty_max;
-        lat_lon_to_tile(lat_max, lon_min, z, &tx_min, &ty_min);
-        lat_lon_to_tile(lat_min, lon_max, z, &tx_max, &ty_max);
-        int n = 1 << z;
-        if (tx_min < 0) tx_min = 0;
-        if (ty_min < 0) ty_min = 0;
-        if (tx_max >= n) tx_max = n - 1;
-        if (ty_max >= n) ty_max = n - 1;
-        total += (tx_max - tx_min + 1) * (ty_max - ty_min + 1);
+#define REGION_LIST_MAX (REGION_PACK_LIMIT * 2 + 2)
+
+typedef struct {
+    char path[REGION_PATH_LIMIT];
+    char name[REGION_NAME_LIMIT + 1];
+    TileSource source;
+    bool partial, legacy;
+    long size;
+} RegionItem;
+
+static char region_title[48], region_detail[64], region_status[96];
+static const RegionItem *region_items;
+static int region_selected, region_count;
+static bool region_confirm;
+static unsigned region_progress, region_total;
+static char region_summary[48], region_hint[56];
+static const char *region_actions[3];
+
+static void draw_region_panel(void) {
+    u32 white = C2D_Color32(238, 246, 253, 255);
+    u32 dim = C2D_Color32(164, 190, 211, 255);
+    u32 accent = C2D_Color32(113, 215, 235, 255);
+    C2D_DrawRectSolid(0, 0, 0.1f, 320, 54, C2D_Color32(25, 37, 53, 255));
+    C2D_DrawRectSolid(0, 52, 0.2f, 320, 2, accent);
+    draw_ui_text(12, 7, .58f, .58f, white, 0, region_title);
+    draw_ui_text(12, 32, .38f, .38f, dim, 0, region_detail);
+    if (region_items && region_count) {
+        int first = region_selected > 2 ? region_selected - 2 : 0;
+        if (first + 3 > region_count) first = region_count > 3 ? region_count - 3 : 0;
+        for (int row = 0; row < 3 && first + row < region_count; row++) {
+            int i = first + row;
+            float y = 61 + row * 31;
+            const RegionItem *item = &region_items[i];
+            C2D_DrawRectSolid(9, y, 0.2f, 302, 27, i == region_selected ?
+                              C2D_Color32(31, 74, 91, 255) : C2D_Color32(30, 42, 58, 255));
+            draw_ui_text(17, y + 4, .43f, .43f, white, 0, item->name);
+            char type[48];
+            const char *layer = item->partial ? "Paused" :
+                                item->source == TILE_SOURCE_SATELLITE ? "Sat" : "Street";
+            if (item->size < 1024 * 1024)
+                snprintf(type, sizeof(type), "%s  %.1f KB", layer, item->size / 1024.0);
+            else snprintf(type, sizeof(type), "%s  %.1f MB", layer, item->size / 1048576.0);
+            draw_ui_text(302, y + 6, .35f, .35f, dim, C2D_AlignRight, type);
+        }
+    } else if (region_items) {
+        draw_ui_text(15, 74, .48f, .48f, white, 0, "No saved regions yet");
+        draw_ui_text(15, 101, .42f, .42f, dim, 0, "Press Y to make a pack for this area.");
+        draw_ui_text(15, 123, .42f, .42f, dim, 0, "Press L to set your offline tile source.");
+    } else {
+        C2D_DrawRectSolid(10, 66, .2f, 300, 72, C2D_Color32(30, 42, 58, 255));
+        draw_ui_text(20, 74, .51f, .51f, white, 0, region_summary);
+        if (region_total) {
+            C2D_DrawRectSolid(20, 108, .21f, 280, 9, C2D_Color32(52, 69, 89, 255));
+            float fraction = fminf(1, (float)region_progress / region_total);
+            if (fraction > 0) C2D_DrawRectSolid(20, 108, .22f, 280 * fraction, 9, accent);
+        } else draw_ui_text(20, 106, .43f, .43f, dim, 0, region_hint);
     }
-    return total;
+    draw_ui_text(12, 151, .40f, .40f, region_confirm ? accent : white, 0, region_status);
+    C2D_DrawRectSolid(0, 178, 0.1f, 320, 62, C2D_Color32(23, 32, 45, 255));
+    for (int i = 0; i < 3; i++)
+        if (region_actions[i]) draw_ui_text(12, 183 + 17*i, .42f, .42f, dim, 0, region_actions[i]);
 }
 
-static void open_offline_regions(void) {
-    TileSource source = network_get_tile_source();
-    bool confirm_delete = false;
-    begin_bottom_console_ui();
-    while (aptMainLoop() && !g_should_exit) {
-        OfflinePackInfo info;
-        bool installed = network_get_offline_pack(source, &info);
-        consoleClear();
-        printf("=== Offline Regions ===\n\n");
-        printf("< %s >\n", source == TILE_SOURCE_SATELLITE ? "Satellite pack" : "Street pack");
-        if (installed) {
-            printf("%u tiles, zoom %u-%u, %.1f MB\n\n", info.tiles, info.min_zoom,
-                   info.max_zoom, info.bytes / 1048576.0);
-            printf("A: preview a covered location\n");
-            printf("X: remove this tilepack\n");
-        } else {
-            printf("No installed tilepack.\n\n");
+static u32 region_frame(void) {
+    hidScanInput();
+    u32 keys = hidKeysDown();
+    if (keys & KEY_START) g_should_exit = true;
+    gps_update();
+    map_tiles_process_downloads();
+    g_bottom_modal = draw_region_panel;
+    render_map();
+    g_bottom_modal = NULL;
+    return keys;
+}
+
+static bool region_keyboard(char *out, size_t size, const char *hint) {
+    SwkbdState keyboard;
+    swkbdInit(&keyboard, SWKBD_TYPE_NORMAL, 2, size - 1);
+    swkbdSetHintText(&keyboard, hint);
+    return swkbdInputText(&keyboard, out, size) == SWKBD_BUTTON_RIGHT && out[0];
+}
+
+static bool tile_image_valid(const u8 *bytes, size_t size, bool decode) {
+    if (!bytes || size < 24 || size > 1024 * 1024) return false;
+    if (memcmp(bytes, "\x89PNG\r\n\x1a\n", 8) &&
+        !(bytes[0] == 0xff && bytes[1] == 0xd8)) return false;
+    int w = 0, h = 0, channels;
+    if (!stbi_info_from_memory(bytes, size, &w, &h, &channels) || w != 256 || h != 256) return false;
+    if (!decode) return true;
+    unsigned char *pixels = stbi_load_from_memory(bytes, size, &w, &h, &channels, 4);
+    if (!pixels) return false;
+    stbi_image_free(pixels);
+    return true;
+}
+
+typedef struct {
+    RegionJob *job;
+    const char *endpoint;
+    atomic_bool done, cancel;
+    atomic_uint saved;
+    unsigned failed;
+} RegionTransfer;
+
+static void region_worker(void *arg) {
+    RegionTransfer *transfer = arg;
+    RegionJob *job = transfer->job;
+    void *curl = network_alloc_tile_curl();
+    for (unsigned i = 0; curl && i < job->count && !atomic_load(&transfer->cancel); i++) {
+        TilePackEntry *tile = &job->entries[i];
+        if (tile->size) continue;
+        char url[384];
+        u8 *bytes = NULL;
+        u32 size = 0;
+        if (!network_region_url(transfer->endpoint, tile->x, tile->y, tile->zoom, url, sizeof(url)) ||
+            !network_request(curl, url, 1024 * 1024, &transfer->cancel, &bytes, &size) ||
+            !tile_image_valid(bytes, size, true) ||
+            !region_append(job, i, bytes, size)) {
+            free(bytes);
+            if (!atomic_load(&transfer->cancel)) transfer->failed++;
+            break;
         }
-        printf("Y: download current area to SD cache\nB: back\n");
-        if (confirm_delete) printf("\nPress X again to confirm removal.\n");
-        hidScanInput();
-        u32 keys = hidKeysDown();
-        if (keys & KEY_START) { g_should_exit = true; break; }
-        if (keys & KEY_B) break;
-        if (keys & (KEY_DLEFT | KEY_DRIGHT)) {
-            source = source == TILE_SOURCE_SATELLITE ? TILE_SOURCE_STREET : TILE_SOURCE_SATELLITE;
-            confirm_delete = false;
-        } else if (installed && (keys & KEY_X)) {
-            if (confirm_delete) {
-                bool removed = network_remove_offline_pack(source);
-                map_tiles_clear_cache();
-                end_bottom_console_ui(removed ? "Tilepack removed" : "Could not remove tilepack");
-                return;
-            }
-            confirm_delete = true;
-        } else if (installed && (keys & KEY_A) && !confirm_delete) {
-            double north, west, south, east;
-            tile_to_lat_lon(info.x, info.y, info.zoom, &north, &west);
-            tile_to_lat_lon(info.x + 1, info.y + 1, info.zoom, &south, &east);
-            network_set_tile_source(source);
-            map_tiles_clear_cache();
-            map_state.gps_tracking = false;
-            set_camera_target((north + south) / 2, (west + east) / 2,
-                              info.zoom < 1 ? 1 : info.zoom > 18 ? 18 : info.zoom, true);
-            end_bottom_console_ui(NULL);
-            close_menu("Offline pack preview");
-            return;
-        } else if ((keys & KEY_Y) && !confirm_delete) {
-            end_bottom_console_ui(NULL);
-            open_offline_download();
-            return;
-        }
-        svcSleepThread(60000000LL);
+        free(bytes);
+        atomic_fetch_add(&transfer->saved, 1);
+        svcSleepThread(100000000LL);
     }
-    end_bottom_console_ui(NULL);
+    network_free_tile_curl(curl);
+    atomic_store(&transfer->done, true);
+}
+
+static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, unsigned count) {
+    if (network_region_count() >= REGION_PACK_LIMIT) {
+        set_status_message("Remove an installed pack before downloading");
+        return;
+    }
+    char endpoint[300], url[384];
+    if (!is_connected() || !network_region_endpoint(item->source, endpoint, sizeof(endpoint)) ||
+        !network_region_url(endpoint, 0, 0, 1, url, sizeof(url))) {
+        set_status_message("WiFi and offline source required");
+        return;
+    }
+    uint32_t fingerprint = crc32(0, (const unsigned char *)endpoint, strlen(endpoint));
+    uint8_t signature[3] = { fingerprint, fingerprint >> 8, fingerprint >> 16 };
+    if (plan && count) memcpy(plan[0].reserved, signature, sizeof(signature));
+    RegionJob job;
+    if (!region_open(&job, item->path, plan, count)) {
+        set_status_message("Could not open partial pack");
+        return;
+    }
+    if (memcmp(job.entries[0].reserved, signature, sizeof(signature))) {
+        region_close(&job);
+        set_status_message("Restore this pack's original tile source to resume");
+        return;
+    }
+    RegionTransfer transfer = { .job = &job, .endpoint = endpoint };
+    for (unsigned i = 0; i < job.count; i++)
+        if (job.entries[i].size) atomic_fetch_add(&transfer.saved, 1);
+    Thread thread = threadCreate(region_worker, &transfer, 96 * 1024, 0x32, -2, false);
+    if (!thread) {
+        region_close(&job);
+        set_status_message("Could not start download");
+        return;
+    }
+    region_items = NULL;
+    snprintf(region_title, sizeof(region_title), "Downloading region");
+    snprintf(region_detail, sizeof(region_detail), "%.24s", item->name);
+    region_total = job.count;
+    snprintf(region_summary, sizeof(region_summary), "Saving to SD card");
+    region_actions[0] = "B  Pause and keep downloaded tiles";
+    region_actions[1] = NULL;
+    region_actions[2] = NULL;
+    while (!atomic_load(&transfer.done) && aptMainLoop() && !g_should_exit) {
+        region_progress = atomic_load(&transfer.saved);
+        snprintf(region_status, sizeof(region_status), "%u / %u tiles saved%s",
+                 region_progress, job.count,
+                 atomic_load(&transfer.cancel) ? "  |  Pausing..." : "");
+        if (region_frame() & (KEY_B | KEY_START)) atomic_store(&transfer.cancel, true);
+    }
+    if (!atomic_load(&transfer.done)) atomic_store(&transfer.cancel, true);
+    threadJoin(thread, U64_MAX);
+    threadFree(thread);
+    char final[REGION_PATH_LIMIT];
+    size_t stem = strlen(item->path) - 5;
+    snprintf(final, sizeof(final), "%.*s.tilepack", (int)stem, item->path);
+    if (atomic_load(&transfer.saved) == job.count &&
+        region_finish(&job, item->path, final) && network_install_region(final, item->source)) {
+        map_tiles_view_changed();
+        set_status_message("Offline pack ready");
+    } else {
+        set_status_message(transfer.failed ? "Download interrupted; A to resume" : "Download paused or pack unavailable");
+    }
+    region_close(&job);
+}
+
+static void setup_offline_source(void) {
+    char endpoint[220] = "";
+    TileSource source = network_get_tile_source();
+    if (!region_keyboard(endpoint, sizeof(endpoint), source == TILE_SOURCE_SATELLITE ?
+                         "Satellite tile URL: {z}/{x}/{y}" : "Street tile URL: {z}/{x}/{y}")) return;
+    char sample[384];
+    if ((strncmp(endpoint, "https://", 8) && strncmp(endpoint, "http://", 7)) ||
+        strstr(endpoint, "tile.openstreetmap.org") || strpbrk(endpoint, " \r\n") ||
+        !network_region_url(endpoint, 0, 0, 1, sample, sizeof(sample))) {
+        set_status_message("Use a valid offline-capable tile URL");
+        return;
+    }
+    ensure_app_data_dir();
+    FILE *f = fopen(source == TILE_SOURCE_SATELLITE ?
+                    "sdmc:/3ds_google_maps/offline-sat.cfg" : "sdmc:/3ds_google_maps/offline-street.cfg", "w");
+    if (!f) {
+        set_status_message("Could not save tile source");
+        return;
+    }
+    bool wrote = fprintf(f, "%s\n", endpoint) > 0;
+    bool closed = fclose(f) == 0;
+    set_status_message(wrote && closed ? "Offline source saved" : "Could not save tile source");
 }
 
 static void open_offline_download(void) {
-    if (!is_connected()) {
-        set_status_message("WiFi required to download");
+    if (network_region_count() >= REGION_PACK_LIMIT) {
+        set_status_message("Remove a region before downloading");
         return;
     }
-    if (network_get_tile_source() == TILE_SOURCE_STREET && !network_get_proxy_enabled()) {
-        set_status_message("Use an offline-capable source");
-        return;
+    int max_zoom = map_state.zoom > 16 ? 18 : map_state.zoom + 2;
+    int min_zoom = max_zoom > 4 ? max_zoom - 4 : 1;
+    TilePackEntry *plan = calloc(REGION_LIMIT, sizeof(*plan));
+    if (!plan) return;
+    bool route = false, confirmed = false, quick_name = false, changed = true;
+    unsigned count = 0;
+    region_items = NULL;
+    snprintf(region_title, sizeof(region_title), "New offline pack");
+    region_total = 0;
+    FS_Archive sd;
+    u64 free_bytes = 0;
+    if (R_SUCCEEDED(FSUSER_OpenArchive(&sd, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, "")))) {
+        FSUSER_GetFreeBytes(&free_bytes, sd);
+        FSUSER_CloseArchive(sd);
     }
-    double lat = map_state.lat;
-    double lon = map_state.lon;
-    int zoom = map_state.zoom;
-
-    /* Calculate viewport bounds in lat/lon with 2-tile padding */
-    int cpx, cpy;
-    lat_lon_to_pixel(lat, lon, zoom, &cpx, &cpy);
-
-    int pad_px = 256 * 2;  /* 2 tiles of padding */
-    int tl_px = cpx - SCREEN_WIDTH_TOP / 2 - pad_px;
-    int tl_py = cpy - SCREEN_HEIGHT_TOP / 2 - pad_px;
-    int br_px = cpx + SCREEN_WIDTH_TOP / 2 + pad_px;
-    int br_py = cpy + SCREEN_HEIGHT_TOP / 2 + pad_px;
-
-    double total_pixels = (double)(1 << zoom) * 256.0;
-
-    /* pixel → lon */
-    double lon_min = (double)tl_px / total_pixels * 360.0 - 180.0;
-    double lon_max = (double)br_px / total_pixels * 360.0 - 180.0;
-
-    /* pixel → lat (inverse Mercator) */
-    double lat_max = atan(sinh(M_PI * (1.0 - 2.0 * (double)tl_py / total_pixels))) * 180.0 / M_PI;
-    double lat_min = atan(sinh(M_PI * (1.0 - 2.0 * (double)br_py / total_pixels))) * 180.0 / M_PI;
-
-    if (lat_min < -85.05) lat_min = -85.05;
-    if (lat_max >  85.05) lat_max =  85.05;
-    if (lon_min < -180.0) lon_min = -180.0;
-    if (lon_max >  180.0) lon_max =  180.0;
-
-    /* Default zoom range */
-    int min_zoom = zoom - 2;
-    int max_zoom = zoom + 2;
-    if (min_zoom < 1)  min_zoom = 1;
-    if (max_zoom > 16) max_zoom = 16;
-
-    log_write("[OFFLINE] Region download: center %.4f,%.4f z%d  bounds lat[%.4f,%.4f] lon[%.4f,%.4f]\n",
-              lat, lon, zoom, lat_min, lat_max, lon_min, lon_max);
-
-    /* ---- Confirmation screen ---- */
-    begin_bottom_console_ui();
-    bool confirmed = false;
-
+    region_actions[0] = "Left/Right  Min zoom    Up/Down  Max zoom";
+    region_actions[1] = "X  Area / Route corridor";
+    region_actions[2] = "A  Name    Select  Quick save    B  Back";
     while (aptMainLoop() && !g_should_exit) {
-        int total_tiles = count_region_tiles(min_zoom, max_zoom,
-                                             lat_min, lon_min, lat_max, lon_max);
-        consoleClear();
-        printf("\x1b[0;0H");
-        printf("=== Download Region for Offline ===\n\n");
-        printf("Center: %.4f, %.4f  Zoom: %d\n", lat, lon, zoom);
-        printf("Area: viewport + 2 tiles padding\n\n");
-        printf("Zoom range: %d  to  %d\n", min_zoom, max_zoom);
-        printf("Total tiles: %d\n\n", total_tiles);
-        if (total_tiles > 2000)
-            printf("WARNING: large download!\n\n");
-        printf("L/R = adjust min zoom\n");
-        printf("UP/DOWN = adjust max zoom\n");
-        printf("A = start download   B = cancel\n");
-
-        hidScanInput();
-        u32 kDown = hidKeysDown();
-
-        if (kDown & KEY_B) break;
-        if (kDown & KEY_START) { g_should_exit = true; break; }
-        if (kDown & KEY_A)    { confirmed = true; break; }
-        if (kDown & KEY_DLEFT)  { if (min_zoom > 1) min_zoom--; }
-        if (kDown & KEY_DRIGHT) { if (min_zoom < max_zoom) min_zoom++; }
-        if (kDown & KEY_DUP)    { if (max_zoom < 16) max_zoom++; }
-        if (kDown & KEY_DDOWN)  { if (max_zoom > min_zoom) max_zoom--; }
-
-        svcSleepThread(60000000LL);
-    }
-
-    if (!confirmed) {
-        end_bottom_console_ui("Download cancelled");
-        return;
-    }
-
-    /* ---- Download loop ---- */
-    void *curl = network_alloc_tile_curl();
-    if (!curl) {
-        end_bottom_console_ui("Failed to init downloader");
-        return;
-    }
-
-    int total_tiles = count_region_tiles(min_zoom, max_zoom,
-                                         lat_min, lon_min, lat_max, lon_max);
-    TileSource source = network_get_tile_source();
-    int done = 0, downloaded = 0, skipped = 0, failed = 0;
-    bool cancelled = false;
-    u64 start_ms = osGetTime();
-
-    log_write("[OFFLINE] Starting download: %d tiles, zoom %d-%d\n",
-              total_tiles, min_zoom, max_zoom);
-
-    for (int z = min_zoom; z <= max_zoom && !cancelled; z++) {
-        int tx_min, ty_min, tx_max, ty_max;
-        lat_lon_to_tile(lat_max, lon_min, z, &tx_min, &ty_min);
-        lat_lon_to_tile(lat_min, lon_max, z, &tx_max, &ty_max);
-        int n = 1 << z;
-        if (tx_min < 0) tx_min = 0;
-        if (ty_min < 0) ty_min = 0;
-        if (tx_max >= n) tx_max = n - 1;
-        if (ty_max >= n) ty_max = n - 1;
-
-        for (int tx = tx_min; tx <= tx_max && !cancelled; tx++) {
-            for (int ty = ty_min; ty <= ty_max && !cancelled; ty++) {
-                /* Progress display */
-                consoleClear();
-                printf("\x1b[0;0H");
-                printf("=== Downloading Offline Tiles ===\n\n");
-                printf("Progress: %d / %d\n", done, total_tiles);
-                printf("Zoom %d: tile (%d, %d)\n\n", z, tx, ty);
-                printf("New: %d  Cached: %d  Failed: %d\n\n", downloaded, skipped, failed);
-
-                u64 elapsed = osGetTime() - start_ms;
-                if (done > 0 && elapsed > 0) {
-                    u64 eta_s = ((elapsed / done) * (total_tiles - done)) / 1000ULL;
-                    printf("Elapsed: %llus   ETA: ~%llus\n", elapsed / 1000ULL, eta_s);
-                }
-
-                /* Text progress bar */
-                int bar_w = 36;
-                int filled = total_tiles > 0 ? (done * bar_w / total_tiles) : 0;
-                printf("[");
-                for (int i = 0; i < bar_w; i++)
-                    printf(i < filled ? "#" : "-");
-                printf("]\n\n");
-                printf("Press B to cancel\n");
-
-                /* Check for cancel */
-                hidScanInput();
-                u32 kDown = hidKeysDown();
-                if (kDown & KEY_B) { cancelled = true; break; }
-                if (kDown & KEY_START) { g_should_exit = true; cancelled = true; break; }
-
-                /* Download this tile (saves to disk cache automatically) */
-                u8 *buf = NULL;
-                u32 size = 0;
-                bool cached;
-                bool ok = fetch_map_tile(tx, ty, z, curl, is_connected(), source, &buf, &size, &cached);
-                if (ok) {
-                    if (cached)
-                        skipped++;
-                    else
-                        downloaded++;
-                    free(buf);
-                } else {
-                    failed++;
-                }
-                done++;
+        if (changed) {
+            RegionPoint center = { map_state.lat, map_state.lon };
+            count = region_plan(plan, REGION_LIMIT, min_zoom, max_zoom,
+                                route ? g_route_geometry : &center,
+                                route ? g_route_geometry_count : 1, map_state.zoom, 420);
+            snprintf(region_detail, sizeof(region_detail), "%s  |  Zoom %d-%d",
+                     route ? "Route corridor" : "Current map area", min_zoom, max_zoom);
+            if (count > REGION_LIMIT) {
+                snprintf(region_summary, sizeof(region_summary), "Region exceeds %d tiles", REGION_LIMIT);
+                snprintf(region_hint, sizeof(region_hint), "Lower the maximum zoom.");
+            } else {
+                snprintf(region_summary, sizeof(region_summary), "%u tiles", count);
+                snprintf(region_hint, sizeof(region_hint), "Estimated size: %.1f to %.1f MB",
+                         count * 15 / 1024.0, count * 100 / 1024.0);
             }
+            if (free_bytes)
+                snprintf(region_status, sizeof(region_status), "SD free: %.0f MB  |  %s tiles",
+                         free_bytes / 1048576.0, network_get_tile_source_name());
+            else snprintf(region_status, sizeof(region_status), "Layer: %s", network_get_tile_source_name());
+            changed = false;
+        }
+        u32 keys = region_frame();
+        if (keys & (KEY_B | KEY_START)) break;
+        if ((keys & (KEY_A | KEY_SELECT)) && count && count <= REGION_LIMIT) {
+            quick_name = (keys & KEY_SELECT) != 0;
+            confirmed = true;
+            break;
+        }
+        if (keys & KEY_DLEFT && min_zoom > 1) { min_zoom--; changed = true; }
+        if (keys & KEY_DRIGHT && min_zoom < max_zoom) { min_zoom++; changed = true; }
+        if (keys & KEY_DUP && max_zoom < 18) { max_zoom++; changed = true; }
+        if (keys & KEY_DDOWN && max_zoom > min_zoom) { max_zoom--; changed = true; }
+        if (keys & KEY_X) {
+            if (g_route_active && g_route_count >= 2) { route = !route; changed = true; }
+            else snprintf(region_status, sizeof(region_status), "Plan a route first to download its corridor.");
         }
     }
-
-    network_free_tile_curl(curl);
-
-    log_write("[OFFLINE] Done: %d downloaded, %d cached, %d failed, cancelled=%d\n",
-              downloaded, skipped, failed, cancelled);
-
-    /* ---- Summary screen ---- */
-    consoleClear();
-    printf("\x1b[0;0H");
-    if (cancelled)
-        printf("=== Download Cancelled ===\n\n");
-    else
-        printf("=== Download Complete ===\n\n");
-    printf("New tiles downloaded: %d\n", downloaded);
-    printf("Already cached: %d\n", skipped);
-    printf("Failed: %d\n\n", failed);
-    u64 total_sec = (osGetTime() - start_ms) / 1000ULL;
-    printf("Time: %llus\n\n", total_sec);
-    printf("Press A or B to continue\n");
-
-    while (aptMainLoop() && !g_should_exit) {
-        hidScanInput();
-        u32 kDown = hidKeysDown();
-        if (kDown & (KEY_A | KEY_B)) break;
-        if (kDown & KEY_START) { g_should_exit = true; break; }
-        svcSleepThread(60000000LL);
+    RegionItem item = { .source = network_get_tile_source(), .partial = true };
+    if (quick_name) snprintf(item.name, sizeof(item.name), "%s-%08lx",
+                             route ? "Route" : "Area", (unsigned long)(osGetTime() / 1000 & 0xffffffffu));
+    if (confirmed && (quick_name || region_keyboard(item.name, sizeof(item.name), "Name this offline region"))) {
+        for (char *p = item.name; *p; p++) {
+            unsigned char c = *p;
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '-' || c == '_')) *p = '-';
+        }
+        ensure_app_data_dir();
+        mkdir(REGION_DIR, 0777);
+        const char *prefix = item.source == TILE_SOURCE_SATELLITE ? "sat" : "str";
+        snprintf(item.path, sizeof(item.path), "%s/%s-%s.part", REGION_DIR, prefix, item.name);
+        char final[REGION_PATH_LIMIT];
+        snprintf(final, sizeof(final), "%s/%s-%s.tilepack", REGION_DIR, prefix, item.name);
+        if (access(item.path, F_OK) == 0 || access(final, F_OK) == 0)
+            set_status_message("Name already exists; choose it to resume");
+        else run_region_transfer(&item, plan, count);
     }
-
-    char msg[96];
-    snprintf(msg, sizeof(msg), "Offline: %d new, %d cached", downloaded, skipped);
-    end_bottom_console_ui(msg);
+    free(plan);
 }
 
-/* ------------------------------------------------------------------------- */
+static int compare_regions(const void *left, const void *right) {
+    const RegionItem *a = left, *b = right;
+    if (a->legacy != b->legacy) return a->legacy ? -1 : 1;
+    int order = strcmp(a->name, b->name);
+    return order ? order : (int)a->source - (int)b->source;
+}
+
+static int list_regions(RegionItem *items) {
+    int count = 0;
+    for (int sat = 0; sat <= 1; sat++) {
+        TileSource source = sat ? TILE_SOURCE_SATELLITE : TILE_SOURCE_STREET;
+        OfflinePackInfo info;
+        if (!network_get_offline_pack(source, &info)) continue;
+        RegionItem *item = &items[count++];
+        *item = (RegionItem){ .source = source, .legacy = true, .size = info.bytes };
+        snprintf(item->name, sizeof(item->name), "%s", sat ? "Legacy satellite" : "Legacy street");
+        snprintf(item->path, sizeof(item->path), "sdmc:/3ds_google_maps/tiles/%s.tilepack", sat ? "sat" : "street");
+    }
+    DIR *dir = opendir(REGION_DIR);
+    if (!dir) return count;
+    struct dirent *entry;
+    while (count < REGION_LIST_MAX && (entry = readdir(dir))) {
+        const char *name = entry->d_name;
+        size_t len = strlen(name);
+        bool partial = len > 9 && !strcmp(name + len - 5, ".part");
+        size_t ext = partial ? 5 : 9;
+        if (len <= 4 + ext || len > 4 + REGION_NAME_LIMIT + ext ||
+            (!partial && strcmp(name + len - ext, ".tilepack"))) continue;
+        bool sat = !strncmp(name, "sat-", 4);
+        if (!sat && strncmp(name, "str-", 4)) continue;
+        RegionItem *item = &items[count++];
+        *item = (RegionItem){ .source = sat ? TILE_SOURCE_SATELLITE : TILE_SOURCE_STREET, .partial = partial };
+        snprintf(item->name, sizeof(item->name), "%.*s", (int)(len - 4 - ext), name + 4);
+        snprintf(item->path, sizeof(item->path), "%s/%.*s", REGION_DIR, (int)len, name);
+        struct stat statbuf;
+        if (stat(item->path, &statbuf) == 0) item->size = statbuf.st_size;
+    }
+    closedir(dir);
+    qsort(items, count, sizeof(*items), compare_regions);
+    return count;
+}
+
+typedef struct {
+    TilePack *pack;
+    atomic_bool done, cancel;
+    atomic_uint checked, bad;
+} RegionCheck;
+
+static void check_region_worker(void *arg) {
+    RegionCheck *check = arg;
+    TilePack *pack = check->pack;
+    for (unsigned i = 0; i < pack->tile_count && !atomic_load(&check->cancel); i++) {
+        TilePackEntry *tile = &pack->index[i];
+        size_t size = 0;
+        u8 *bytes = tilepack_read_tile(pack, tile->zoom, tile->x, tile->y, &size);
+        if (!tile_image_valid(bytes, size, true)) atomic_fetch_add(&check->bad, 1);
+        free(bytes);
+        atomic_fetch_add(&check->checked, 1);
+    }
+    atomic_store(&check->done, true);
+}
+
+static void check_region(const RegionItem *item) {
+    TilePack pack;
+    if (!tilepack_open(&pack, item->path)) {
+        set_status_message("Pack index missing or damaged");
+        return;
+    }
+    RegionCheck check = { .pack = &pack };
+    Thread thread = threadCreate(check_region_worker, &check, 96 * 1024, 0x32, -2, false);
+    if (!thread) {
+        tilepack_close(&pack);
+        set_status_message("Could not start pack check");
+        return;
+    }
+    region_items = NULL;
+    snprintf(region_title, sizeof(region_title), "Checking offline pack");
+    snprintf(region_detail, sizeof(region_detail), "%.24s", item->name);
+    region_total = pack.tile_count;
+    snprintf(region_summary, sizeof(region_summary), "Reading tile images");
+    region_actions[0] = "B  Stop check";
+    region_actions[1] = region_actions[2] = NULL;
+    while (!atomic_load(&check.done) && aptMainLoop() && !g_should_exit) {
+        region_progress = atomic_load(&check.checked);
+        snprintf(region_status, sizeof(region_status), "%u / %u checked  |  %u unreadable",
+                 region_progress, region_total, atomic_load(&check.bad));
+        if (region_frame() & (KEY_B | KEY_START)) atomic_store(&check.cancel, true);
+    }
+    atomic_store(&check.cancel, true);
+    threadJoin(thread, U64_MAX);
+    threadFree(thread);
+    unsigned checked = atomic_load(&check.checked);
+    char result[96];
+    snprintf(result, sizeof(result), "%u checked, %u unreadable%s", checked, atomic_load(&check.bad),
+             checked < pack.tile_count ? " (stopped)" : "");
+    tilepack_close(&pack);
+    set_status_message(result);
+}
+
+static void open_offline_regions(void) {
+    RegionItem items[REGION_LIST_MAX];
+    int selected = 0;
+    bool confirm = false;
+    int count = list_regions(items);
+    set_status_message("Up/Down selects a pack");
+    while (aptMainLoop() && !g_should_exit) {
+        region_items = items;
+        region_selected = selected;
+        region_count = count;
+        region_confirm = confirm;
+        const RegionItem *item = count ? &items[selected] : NULL;
+        snprintf(region_title, sizeof(region_title), "Offline regions");
+        snprintf(region_detail, sizeof(region_detail), "%d saved or paused  |  Coverage %s",
+                 count, g_show_coverage ? "ON" : "OFF");
+        snprintf(region_status, sizeof(region_status), "%s", confirm ? "Press X again to remove this pack." :
+                 osGetTime() - g_status_message_ms < 3500 ? g_status_message : "Up/Down selects a pack.");
+        region_actions[0] = "Y  New pack    L  Tile source    R  Coverage";
+        region_actions[1] = item && item->partial ? "A  Resume    X  Remove" : "A  Preview    Select  Check    X  Remove";
+        region_actions[2] = g_show_coverage ? "B  Back    Green: saved   Amber: missing" : "B  Back";
+        u32 keys = region_frame();
+        if (keys & (KEY_B | KEY_START)) break;
+        if (keys & KEY_DUP && selected > 0) { selected--; confirm = false; }
+        else if (keys & KEY_DDOWN && selected + 1 < count) { selected++; confirm = false; }
+        else if (keys & KEY_R) g_show_coverage = !g_show_coverage;
+        else if (keys & KEY_L) setup_offline_source();
+        else if (keys & KEY_Y) open_offline_download();
+        else if (item && (keys & KEY_X)) {
+            if (!confirm) { confirm = true; continue; }
+            bool ok = item->legacy ? network_remove_offline_pack(item->source) : network_remove_region(item->path);
+            map_tiles_clear_cache();
+            set_status_message(ok ? "Pack removed" : "Could not remove pack");
+        } else if (item && !confirm && (keys & KEY_SELECT) && !item->partial) check_region(item);
+        else if (item && !confirm && (keys & KEY_A)) {
+            if (item->partial) run_region_transfer(item, NULL, 0);
+            else {
+                TilePack pack;
+                if (!tilepack_open(&pack, item->path)) {
+                    set_status_message("Pack index missing or damaged");
+                    continue;
+                }
+                TilePackEntry sample = pack.index[pack.tile_count / 2];
+                tilepack_close(&pack);
+                double north, west, south, east;
+                tile_to_lat_lon(sample.x, sample.y, sample.zoom, &north, &west);
+                tile_to_lat_lon(sample.x + 1, sample.y + 1, sample.zoom, &south, &east);
+                network_set_tile_source(item->source);
+                map_tiles_clear_cache();
+                map_state.gps_tracking = false;
+                g_show_coverage = true;
+                set_camera_target((north + south) / 2, (west + east) / 2,
+                                  sample.zoom < 1 ? 1 : sample.zoom > 18 ? 18 : sample.zoom, true);
+                close_menu("Offline pack preview");
+                break;
+            }
+        } else continue;
+        confirm = false;
+        count = list_regions(items);
+        if (selected >= count) selected = count ? count - 1 : 0;
+    }
+    region_items = NULL;
+    region_confirm = false;
+}
 
 static void open_recents(void) {
     if (g_recent_count <= 0) {
@@ -2790,142 +3046,58 @@ static bool url_encode_component(const char* input, char* output, size_t output_
     return true;
 }
 
-static const char* skip_ws(const char* p, const char* end) {
-    while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
-    return p;
+static bool json_coord(json_t *value, double limit, double *out) {
+    double number;
+    if (json_is_number(value)) {
+        number = json_number_value(value);
+    } else if (json_is_string(value)) {
+        const char *start = json_string_value(value);
+        char *end;
+        number = strtod(start, &end);
+        if (end == start || *end) return false;
+    } else {
+        return false;
+    }
+    if (!isfinite(number) || fabs(number) > limit) return false;
+    *out = number;
+    return true;
 }
 
-static bool extract_json_string_field(const char* start, const char* end, const char* key, char* out, size_t out_size) {
-    const char* field;
-    const char* p;
-    size_t len = 0;
-
-    if (!start || !end || !key || !out || out_size == 0) return false;
-
-    field = strstr(start, key);
-    if (!field || field >= end) return false;
-    p = strchr(field, ':');
-    if (!p || p >= end) return false;
-    p++;
-    p = skip_ws(p, end);
-    if (p >= end || *p != '"') return false;
-    p++;
-
-    while (p < end && *p != '"') {
-        if (*p == '\\' && (p + 1) < end) {
-            p++;
-        }
-        if (len + 1 < out_size) {
-            out[len++] = *p;
-        }
-        p++;
+static bool read_geocode(json_t *entry, GeocodeResult *result) {
+    if (!json_coord(json_object_get(entry, "lat"), 90, &result->lat) ||
+        !json_coord(json_object_get(entry, "lon"), 180, &result->lon)) return false;
+    const char *name = json_string_value(json_object_get(entry, "display_name"));
+    if (!name || !*name) name = json_string_value(json_object_get(entry, "name"));
+    if (!name || !*name) return false;
+    size_t n = strlen(name);
+    if (n >= sizeof(result->name)) {
+        n = sizeof(result->name) - 1;
+        while (n && ((unsigned char)name[n] & 0xc0) == 0x80) n--;
     }
-
-    out[len] = 0;
-    return len > 0;
+    for (size_t i = 0; i < n; i++) result->name[i] = (unsigned char)name[i] < 32 ? ' ' : name[i];
+    result->name[n] = 0;
+    return true;
 }
 
-static int parse_geocode_results_json(const char* json, u32 json_size, GeocodeResult* out_results, int max_results) {
-    if (!json || json_size == 0 || !out_results || max_results <= 0) return 0;
-
-    const char* end = json + json_size;
-    const char* p = json;
-
-    const char* results_key = strstr(p, "\"results\"");
-    if (results_key) {
-        p = results_key;
-    }
-
-    // Move to start of array
-    const char* array_start = strchr(p, '[');
-    if (!array_start) return 0;
-    p = array_start + 1;
-
+static int parse_geocode_results_json(const char *json, u32 size, GeocodeResult *results, int max) {
+    json_t *root = json_loadb(json, size, JSON_REJECT_DUPLICATES, NULL);
+    json_t *list = json_is_array(root) ? root : json_object_get(root, "results");
+    size_t i;
+    json_t *entry;
     int count = 0;
-    while (p < end && count < max_results) {
-        const char* lat_key = strstr(p, "\"lat\"");
-        if (!lat_key) break;
-
-        const char* lon_key = strstr(lat_key, "\"lon\"");
-        if (!lon_key) break;
-
-        const char* name_key = strstr(lon_key, "\"name\"");
-        if (!name_key) name_key = strstr(lon_key, "\"display_name\"");
-        if (!name_key) break;
-
-        // Parse lat
-        const char* q = strchr(lat_key, ':');
-        if (!q) break;
-        q++;
-        q = skip_ws(q, end);
-        if (q >= end) break;
-        if (*q == '"') q++;
-        char* lat_end = NULL;
-        double lat = strtod(q, &lat_end);
-        if (!lat_end || lat_end == q) break;
-
-        // Parse lon
-        q = strchr(lon_key, ':');
-        if (!q) break;
-        q++;
-        q = skip_ws(q, end);
-        if (q >= end) break;
-        if (*q == '"') q++;
-        char* lon_end = NULL;
-        double lon = strtod(q, &lon_end);
-        if (!lon_end || lon_end == q) break;
-
-        if (lat > 90.0 || lat < -90.0) break;
-        if (lon > 180.0 || lon < -180.0) break;
-
-        if (!extract_json_string_field(name_key, end,
-                                       (strstr(name_key, "\"display_name\"") == name_key) ? "\"display_name\"" : "\"name\"",
-                                       out_results[count].name,
-                                       sizeof(out_results[count].name))) {
-            break;
-        }
-
-        out_results[count].lat = lat;
-        out_results[count].lon = lon;
-        count++;
-
-        p = q;
-        if (p < end) p++;
+    json_array_foreach(list, i, entry) {
+        if (count >= max) break;
+        if (read_geocode(entry, &results[count])) count++;
     }
-
+    json_decref(root);
     return count;
 }
 
-static bool parse_reverse_geocode_json(const char* json, u32 json_size, GeocodeResult* out_result) {
-    if (!json || json_size == 0 || !out_result) return false;
-
-    const char* end = json + json_size;
-    const char* name_key = strstr(json, "\"name\"");
-    if (!name_key) name_key = strstr(json, "\"display_name\"");
-    const char* lat_key = strstr(json, "\"lat\"");
-    const char* lon_key = strstr(json, "\"lon\"");
-    if (!name_key || !lat_key || !lon_key) return false;
-
-    if (!extract_json_string_field(json, end,
-                                   strstr(json, "\"display_name\"") ? "\"display_name\"" : "\"name\"",
-                                   out_result->name,
-                                   sizeof(out_result->name))) {
-        return false;
-    }
-
-    const char* p = strchr(lat_key, ':');
-    if (!p) return false;
-    p++;
-    p = skip_ws(p, end);
-    out_result->lat = strtod(p, NULL);
-
-    p = strchr(lon_key, ':');
-    if (!p) return false;
-    p++;
-    p = skip_ws(p, end);
-    out_result->lon = strtod(p, NULL);
-
-    return out_result->name[0] != '\0';
+static bool parse_reverse_geocode_json(const char *json, u32 size, GeocodeResult *result) {
+    json_t *root = json_loadb(json, size, JSON_REJECT_DUPLICATES, NULL);
+    bool ok = read_geocode(root, result);
+    json_decref(root);
+    return ok;
 }
 
 static void open_reverse_geocode_center(void) {
@@ -2934,84 +3106,32 @@ static void open_reverse_geocode_center(void) {
         return;
     }
 
-    begin_bottom_console_ui();
-
     char url[512];
     if (network_get_proxy_enabled()) {
-        snprintf(url, sizeof(url), PROXY_BASE_URL "/reverse?lat=%.6f&lon=%.6f", map_state.lat, map_state.lon);
+        snprintf(url, sizeof(url), "%s/reverse?lat=%.6f&lon=%.6f", network_get_proxy_base_url(), map_state.lat, map_state.lon);
     } else {
         snprintf(url, sizeof(url),
                  "https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&lat=%.6f&lon=%.6f",
                  map_state.lat, map_state.lon);
     }
 
-    consoleClear();
-    printf("Identifying map center...\n");
-    printf("%.6f, %.6f\n", map_state.lat, map_state.lon);
-
-    u8* buf = NULL;
+    u8 *buf = NULL;
     u32 size = 0;
-    if (!download_url(url, &buf, &size) || !buf || size == 0) {
-        if (buf) free(buf);
-        consoleClear();
-        printf("Reverse geocode failed.\n");
-        printf("Press B to return\n");
-        while (aptMainLoop() && !g_should_exit) {
-            hidScanInput();
-            u32 kd = hidKeysDown();
-            if (kd & KEY_START) {
-                g_should_exit = true;
-                end_bottom_console_ui(NULL);
-                return;
-            }
-            if (kd & KEY_B) {
-                end_bottom_console_ui("Identify failed");
-                return;
-            }
-            svcSleepThread(60000000LL);
-        }
-        end_bottom_console_ui(NULL);
-        return;
-    }
-
-    u8* tmp = (u8*)realloc(buf, size + 1);
-    if (tmp) buf = tmp;
-    buf[size] = 0;
+    if (!wait_for_request(url, "Identifying map center", &buf, &size)) return;
 
     GeocodeResult result;
     memset(&result, 0, sizeof(result));
     bool ok = parse_reverse_geocode_json((const char*)buf, size, &result);
     free(buf);
 
-    consoleClear();
     if (!ok) {
-        printf("No place found for center.\n\n");
-        printf("Press B to return\n");
-    } else {
-        add_recent(result.name, result.lat, result.lon);
-        set_last_place_name(result.name);
-        printf("Center place:\n\n");
-        printf("%s\n\n", result.name);
-        printf("%.6f, %.6f\n\n", result.lat, result.lon);
-        printf("Saved to recents.\n");
-        printf("Press B to return\n");
+        set_status_message("No place found for center");
+        return;
     }
-
-    while (aptMainLoop() && !g_should_exit) {
-        hidScanInput();
-        u32 kd = hidKeysDown();
-        if (kd & KEY_START) {
-            g_should_exit = true;
-            end_bottom_console_ui(NULL);
-            return;
-        }
-        if (kd & KEY_B) {
-            end_bottom_console_ui(ok ? "Identify complete" : "Identify done");
-            return;
-        }
-        svcSleepThread(60000000LL);
-    }
-    end_bottom_console_ui(NULL);
+    add_recent(result.name, result.lat, result.lon);
+    set_last_place_name(result.name);
+    show_places(&result, 1, true);
+    set_status_message("Identify complete");
 }
 
 static void open_address_search(void) {
@@ -3059,27 +3179,35 @@ static void open_address_search(void) {
         return;
     }
 
-    char url[512];
-    if (network_get_proxy_enabled()) {
-        snprintf(url, sizeof(url), PROXY_BASE_URL "/geocode?q=%s", encoded);
-    } else {
-        snprintf(url, sizeof(url),
-                 "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=%s",
-                 encoded);
+    bool near = true;
+    if (!network_get_proxy_enabled()) {
+        begin_bottom_console_ui();
+        printf("Search area\n\nA  Prefer places near the map center\nX  Search everywhere\nB  Cancel\n");
+        bool chosen = false;
+        while (aptMainLoop()) {
+            hidScanInput();
+            u32 keys = hidKeysDown();
+            if (keys & KEY_START) g_should_exit = true;
+            if (keys & (KEY_START | KEY_B)) break;
+            if (keys & (KEY_A | KEY_X)) {
+                near = (keys & KEY_A) != 0;
+                chosen = true;
+                break;
+            }
+            gspWaitForVBlank();
+        }
+        end_bottom_console_ui(NULL);
+        if (!chosen) return;
     }
+    char url[512];
+    build_search_url(url, sizeof(url), encoded, near);
 
     u8* buf = NULL;
     u32 size = 0;
-    if (!download_url(url, &buf, &size) || !buf || size == 0) {
-        set_status_message("Geocode request failed");
+    if (!wait_for_request(url, "Searching places", &buf, &size)) {
         if (buf) free(buf);
         return;
     }
-
-    // Ensure null-terminated for strstr/strchr
-    u8* tmp = (u8*)realloc(buf, size + 1);
-    if (tmp) buf = tmp;
-    buf[size] = 0;
 
     GeocodeResult results[5];
     memset(results, 0, sizeof(results));
@@ -3091,44 +3219,10 @@ static void open_address_search(void) {
         return;
     }
 
-    int selected = 0;
-    if (count > 1) {
-        // Simple picker on the bottom screen.
-        begin_bottom_console_ui();
-        while (aptMainLoop()) {
-            consoleClear();
-            printf("Search results:\n");
-            printf("Up/Down = select  A = go  B = cancel\n\n");
-
-            for (int i = 0; i < count; i++) {
-                printf("%c %d) %s\n", (i == selected) ? '>' : ' ', i + 1, results[i].name[0] ? results[i].name : "(result)");
-            }
-
-            hidScanInput();
-            u32 kDown = hidKeysDown();
-            if (kDown & KEY_B) {
-                consoleClear();
-                end_bottom_console_ui("Search cancelled");
-                return;
-            }
-            if (kDown & KEY_START) {
-                g_should_exit = true;
-                end_bottom_console_ui(NULL);
-                return;
-            }
-            if (kDown & KEY_DUP) {
-                if (selected > 0) selected--;
-            }
-            if (kDown & KEY_DDOWN) {
-                if (selected < count - 1) selected++;
-            }
-            if (kDown & KEY_A) {
-                break;
-            }
-
-            svcSleepThread(60000000LL); // ~60ms
-        }
-        end_bottom_console_ui(NULL);
+    int selected = count > 1 ? show_places(results, count, false) : 0;
+    if (selected < 0) {
+        set_status_message("Search cancelled");
+        return;
     }
 
     // Jump map

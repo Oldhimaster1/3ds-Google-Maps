@@ -81,6 +81,7 @@ void tilepack_close(TilePack *pack);
  * (PNG or JPEG), sets *out_size, and the caller must free() it.
  * Returns NULL if the tile is not in this pack.
  */
+const TilePackEntry *tilepack_find(const TilePack *pack, int zoom, int x, int y);
 uint8_t *tilepack_read_tile(TilePack *pack, int zoom, int x, int y, size_t *out_size);
 
 #endif /* TILEPACK_H */
