@@ -446,7 +446,11 @@ bool network_region_endpoint(TileSource source, char *endpoint, size_t size) {
                          source == TILE_SOURCE_SATELLITE ? "/sat" : "");
         return n > 0 && (size_t)n < size;
     }
-    return false;
+    const char *preset = source == TILE_SOURCE_SATELLITE ?
+        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}" :
+        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}";
+    int n = snprintf(endpoint, size, "%s", preset);
+    return n > 0 && (size_t)n < size;
 }
 
 bool network_region_url(const char *endpoint, int x, int y, int z, char *url, size_t size) {

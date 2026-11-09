@@ -14,22 +14,16 @@ When using the default search service, choose **A** to prefer places near the ma
 
 Live browsing and the named offline download source are configured separately. The default Street layer uses OpenStreetMap’s standard raster tile service. Its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) prohibits offline bulk downloads. The default [Esri World Imagery service](https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer?f=pjson) reports export disabled. Use a source that permits offline downloads.
 
-For a small imagery region in the contiguous United States, select **Sat**, then enter this template with **Menu → Data → Offline regions → L**:
+Offline packs use USGS The National Map by default. **Street** uses USGS Topo and **Sat** uses USGS Imagery Only. Start with a small area in the contiguous United States. Outside supported coverage, use **Menu → Data → Offline regions → L** to enter a provider that permits offline downloads in your area. **L** shows the active endpoint before you edit it. A saved layer URL takes precedence, followed by the enabled LAN proxy, then the built-in preset.
 
-```text
-https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}
-```
-
-[USGS service metadata](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer?f=pjson) reports tile export enabled and credits USDA and USGS The National Map. It also distinguishes publicly downloadable imagery in the contiguous United States from imagery with additional restrictions in other areas. Check provider coverage and permissions for the area and zooms you intend to save. The candidate demo uses a controlled endpoint backed by this service. The direct request could not resolve the hostname in the test emulator. A physical console test is pending.
-
-Each URL template must include `{z}`, `{x}`, and `{y}` in the order the service expects. Use 256 × 256 PNG or JPEG tiles. An extensionless base URL works for services that accept `/z/x/y`. An existing compatible LAN proxy is a fallback when no offline source is set. The region must be resumed with the same endpoint. Named packs support up to 4,096 tiles each and up to 12 installed packs, in addition to the two legacy packs.
+Each URL template must include `{z}`, `{x}`, and `{y}` in the order the service expects. Use 256 × 256 PNG or JPEG tiles. An extensionless base URL works for services that accept `/z/x/y`. The region must be resumed with the same endpoint. Named packs support up to 4,096 tiles each and up to 12 installed packs, in addition to the two legacy packs.
 
 ### Manage saved regions
 
 | In Offline regions | Action |
 | --- | --- |
 | **Y** | Plan a new pack |
-| **L** | Set the download source for the current layer |
+| **L** | View or change the download source for the current layer |
 | **R** | Toggle coverage. Green means an exact tile is saved at the current zoom. Amber means no pack tile exists at that zoom. |
 | **A** | Preview a completed pack or resume a paused one |
 | **Select** | Check the selected completed pack’s tile images |

@@ -2530,7 +2530,7 @@ static void draw_region_panel(void) {
     } else if (region_items) {
         draw_ui_text(15, 74, .48f, .48f, white, 0, "No saved regions yet");
         draw_ui_text(15, 101, .42f, .42f, dim, 0, "Press Y to make a pack for this area.");
-        draw_ui_text(15, 123, .42f, .42f, dim, 0, "Press L to set your offline tile source.");
+        draw_ui_text(15, 123, .42f, .42f, dim, 0, "Press L to change the offline source.");
     } else {
         C2D_DrawRectSolid(10, 66, .2f, 300, 72, C2D_Color32(30, 42, 58, 255));
         draw_ui_text(20, 74, .51f, .51f, white, 0, region_summary);
@@ -2558,10 +2558,11 @@ static u32 region_frame(void) {
     return keys;
 }
 
-static bool region_keyboard(char *out, size_t size, const char *hint) {
+static bool region_keyboard(char *out, size_t size, const char *hint, const char *initial) {
     SwkbdState keyboard;
     swkbdInit(&keyboard, SWKBD_TYPE_NORMAL, 2, size - 1);
     swkbdSetHintText(&keyboard, hint);
+    if (initial && initial[0]) swkbdSetInitialText(&keyboard, initial);
     return swkbdInputText(&keyboard, out, size) == SWKBD_BUTTON_RIGHT && out[0];
 }
 
@@ -2618,9 +2619,13 @@ static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, uns
         return;
     }
     char endpoint[300], url[384];
-    if (!is_connected() || !network_region_endpoint(item->source, endpoint, sizeof(endpoint)) ||
+    if (!is_connected()) {
+        set_status_message("Connect to Wi-Fi to download");
+        return;
+    }
+    if (!network_region_endpoint(item->source, endpoint, sizeof(endpoint)) ||
         !network_region_url(endpoint, 0, 0, 1, url, sizeof(url))) {
-        set_status_message("WiFi and offline source required");
+        set_status_message("Press L to fix the offline tile source");
         return;
     }
     uint32_t fingerprint = crc32(0, (const unsigned char *)endpoint, strlen(endpoint));
@@ -2679,8 +2684,10 @@ static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, uns
 static void setup_offline_source(void) {
     char endpoint[220] = "";
     TileSource source = network_get_tile_source();
+    char initial[sizeof(endpoint)] = "";
+    if (!network_region_endpoint(source, initial, sizeof(initial))) initial[0] = '\0';
     if (!region_keyboard(endpoint, sizeof(endpoint), source == TILE_SOURCE_SATELLITE ?
-                         "Satellite tile URL: {z}/{x}/{y}" : "Street tile URL: {z}/{x}/{y}")) return;
+                         "Satellite tile URL" : "Street tile URL", initial)) return;
     char sample[384];
     if ((strncmp(endpoint, "https://", 8) && strncmp(endpoint, "http://", 7)) ||
         strstr(endpoint, "tile.openstreetmap.org") || strpbrk(endpoint, " \r\n") ||
@@ -2764,7 +2771,7 @@ static void open_offline_download(void) {
     RegionItem item = { .source = network_get_tile_source(), .partial = true };
     if (quick_name) snprintf(item.name, sizeof(item.name), "%s-%08lx",
                              route ? "Route" : "Area", (unsigned long)(osGetTime() / 1000 & 0xffffffffu));
-    if (confirmed && (quick_name || region_keyboard(item.name, sizeof(item.name), "Name this offline region"))) {
+    if (confirmed && (quick_name || region_keyboard(item.name, sizeof(item.name), "Name this offline region", NULL))) {
         for (char *p = item.name; *p; p++) {
             unsigned char c = *p;
             if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
