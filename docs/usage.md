@@ -18,7 +18,7 @@ For a small imagery region in the contiguous United States, select **Sat**, then
 https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}
 ```
 
-[USGS service metadata](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer?f=pjson) reports tile export enabled and credits USDA and USGS The National Map. It also distinguishes publicly downloadable imagery in the contiguous United States from imagery with additional restrictions in other areas. Check provider coverage and permissions for the area and zooms you intend to save. The candidate demo uses a controlled endpoint backed by this service. Live requests on a physical 3DS were not tested.
+[USGS service metadata](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer?f=pjson) reports tile export enabled and credits USDA and USGS The National Map. It also distinguishes publicly downloadable imagery in the contiguous United States from imagery with additional restrictions in other areas. Check provider coverage and permissions for the area and zooms you intend to save. The candidate demo uses a controlled endpoint backed by this service. The direct request could not resolve the hostname in the test emulator. A physical console test is pending.
 
 Each URL template must include `{z}`, `{x}`, and `{y}` in the order the service expects. Use 256 × 256 PNG or JPEG tiles. An extensionless base URL works for services that accept `/z/x/y`. An existing compatible LAN proxy is a fallback when no offline source is set. The region must be resumed with the same endpoint. Named packs support up to 4,096 tiles each and up to 12 installed packs, in addition to the two legacy packs.
 

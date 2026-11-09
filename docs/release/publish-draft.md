@@ -14,7 +14,7 @@ This preview adds named offline map packs on the console. Pick an area or the co
 - **HOME Menu:** use a custom firmware setup with a CIA installer such as FBI. Install the `.cia` from the SD card. Follow the tagged README for the direct download and any verified FBI QR.
 - **Try offline maps:** open **Menu → Data → Offline regions**, use **L** to set an offline-capable tile source for the current layer, then **Y** to plan a small pack. A connection is needed for the download and new routes. Saved maps cover the chosen area and zooms.
 
-The demo was recorded in Azahar. Physical Old 3DS testing is pending. Report your model, release version, tile provider, and reproduction steps in [Issues](https://github.com/Oldhimaster1/3ds-Google-Maps/issues/new/choose).
+The demo was recorded in Azahar using a controlled tile endpoint. Direct service requests and phone browser pairing still need physical testing. The GPS page uses a self-signed certificate, which some browser setups may block. Report your model, release version, tile provider, and reproduction steps in [Issues](https://github.com/Oldhimaster1/3ds-Google-Maps/issues/new/choose).
 
 ## Before publishing
 
