@@ -2,6 +2,10 @@
 
 [Preview release notes](preview-notes.md) · [Verification record](verification.md)
 
+## Publishing details
+
+Create a prerelease titled **On-device downloads for offline maps** using tag `v2.1.0-preview.1` at commit `59a356bf7956003fc947969b4400a64b9a1dbeb9`. Use the preview release notes as the body. Attach the tested `3ds_google_maps.cia`, `3ds_google_maps.3dsx`, `SHA256SUMS`, and `maps-for-nintendo-3ds-intro.mp4`. Check the public asset hashes after publishing and point the repository-root README to the tagged downloads.
+
 ## Listing and announcement copy
 
 ### Suggested repository description
