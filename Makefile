@@ -163,7 +163,7 @@ cia: all
 	"$(BANNERTOOL)" makesmdh -s "$(APP_TITLE)" -l "Maps for Nintendo 3DS" -p "Oldhimaster1" -i icon.png -r regionfree -f visible -o "$(BUILD)/cia-icon.bin"
 	"$(BANNERTOOL)" makebanner -i banner.png -a banner.wav -o "$(BUILD)/cia-banner.bin"
 	"$(MAKEROM)" -f ncch -target t -rsf tools/cia.rsf -elf "$(TARGET).elf" -icon "$(BUILD)/cia-icon.bin" -banner "$(BUILD)/cia-banner.bin" -o "$(BUILD)/$(TARGET).cxi"
-	"$(MAKEROM)" -f cia -target t -content "$(BUILD)/$(TARGET).cxi:0:0" -major 2 -minor 1 -micro 1 -o "$(BUILD)/$(TARGET).cia"
+	"$(MAKEROM)" -f cia -target t -content "$(BUILD)/$(TARGET).cxi:0:0" -major 2 -minor 1 -micro 2 -o "$(BUILD)/$(TARGET).cia"
 	mv "$(BUILD)/$(TARGET).cia" "$(TARGET).cia"
 
 $(BUILD):

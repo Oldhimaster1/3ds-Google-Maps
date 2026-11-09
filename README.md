@@ -34,13 +34,13 @@ You can also copy the [preview CIA][preview-cia] to the SD card. In FBI, open **
 
 ## Try offline maps
 
-Requires the v2.1 preview and a tile source that permits offline downloads. Configure the source for the layer you want to save.
+Requires the v2.1 preview and a tile source that permits offline downloads. Street packs use USGS Topo by default and satellite packs use USGS Imagery Only; **L** lets you override the source for the selected layer.
 
 The Azahar demo used a controlled tile endpoint. A separate direct USGS request hit a DNS error in Azahar. Check the [tile source guide](docs/usage.md#tile-sources) for compatible sources and setup.
 
 1. Connect the 3DS to Wi-Fi. Tap **Search** or press **Select**, then look up a familiar place.
-2. Open **Menu → Data → Offline regions**. Press **L** for **Tile source** and enter a raster tile URL that permits offline downloads for the selected layer. The [tile source guide](docs/usage.md#tile-sources) includes a USGS imagery example for the contiguous United States.
-3. Press **Y** for **New pack**. Start with a narrow zoom range and check the size estimate. Press **A** to name and download the pack, or **Select** for **Quick save**. **B** pauses a transfer. Select the paused pack and press **A** to resume.
+2. Open **Menu → Data → Offline regions**. The selected layer's permitted USGS source is ready automatically. Press **L** only if you want to inspect or replace it.
+3. Press **Y** for **New pack**. Start with a narrow zoom range and check the size estimate. Press **A** to name and download the pack, or **Select** for **Quick save**. During transfer, the bottom screen shows tiles/second, downloaded MB, ETA, and free SD space. **B** pauses a transfer. Select the paused pack and press **A** to resume.
 4. Once the pack is ready, press **Start** to exit, switch off Wi-Fi, and reopen the app. In **Offline regions**, select the pack and press **A** to preview it. Browse the saved area at the zoom levels you downloaded.
 
 Planning a new route requires a connection. With a route on screen, press **X** on the new pack screen to save a corridor of map tiles along it. This saves map coverage for the trip. Route calculation still uses the online routing service, and the route line itself does not persist with the pack.

@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdatomic.h>
+#include <strings.h>
 #include <malloc.h>
 #include <curl/curl.h>
 
@@ -406,27 +407,61 @@ static int transfer_progress(void *context, curl_off_t total, curl_off_t now,
     return atomic_load((atomic_bool *)context);
 }
 
-bool network_request(void *handle, const char *url, size_t limit, atomic_bool *cancel,
-                     u8 **buffer, u32 *size) {
+static size_t retry_header(void *ptr, size_t size, size_t count, void *context) {
+    size_t length = size * count;
+    NetworkRequestInfo *info = context;
+    static const char prefix[] = "Retry-After:";
+    if (info && length > sizeof(prefix) - 1 &&
+        !strncasecmp(ptr, prefix, sizeof(prefix) - 1)) {
+        const char *value = (const char *)ptr + sizeof(prefix) - 1;
+        const char *end = (const char *)ptr + length;
+        while (value < end && (*value == ' ' || *value == '\t')) value++;
+        unsigned long seconds = 0;
+        bool has_digits = false;
+        while (value < end && *value >= '0' && *value <= '9') {
+            has_digits = true;
+            if (seconds <= 300) seconds = seconds * 10 + (unsigned)(*value - '0');
+            value++;
+        }
+        if (has_digits) {
+            if (seconds > 300) seconds = 300;
+            info->retry_after_ms = (unsigned)seconds * 1000;
+        }
+    }
+    return length;
+}
+
+bool network_request_ex(void *handle, const char *url, size_t limit, atomic_bool *cancel,
+                        u8 **buffer, u32 *size, NetworkRequestInfo *info) {
     if (!handle || !url || !limit) return false;
     CURL *curl = handle;
     struct curl_buf data = { NULL, 0, limit };
+    NetworkRequestInfo local_info = {0};
+    if (!info) info = &local_info;
+    *info = (NetworkRequestInfo){0};
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, retry_header);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, info);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, cancel ? 0L : 1L);
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, transfer_progress);
     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel);
     CURLcode code = curl_easy_perform(curl);
-    long status = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-    if (code != CURLE_OK || status != 200 || !data.size) {
+    info->curl_code = code;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &info->http_status);
+    if (code != CURLE_OK || info->http_status != 200 || !data.size) {
         free(data.data);
         return false;
     }
     *buffer = data.data;
     *size = data.size;
     return true;
+}
+
+bool network_request(void *handle, const char *url, size_t limit, atomic_bool *cancel,
+                     u8 **buffer, u32 *size) {
+    return network_request_ex(handle, url, limit, cancel, buffer, size, NULL);
 }
 
 bool network_region_endpoint(TileSource source, char *endpoint, size_t size) {

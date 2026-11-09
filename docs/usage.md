@@ -32,6 +32,8 @@ Each URL template must include `{z}`, `{x}`, and `{y}` in the order the service 
 
 In **New offline pack**, Left/Right changes the minimum zoom and Up/Down changes the maximum. **X** switches between the visible area and a corridor if a route is active. Download narrow ranges first, especially at high zoom. Live search and calculating new routes require internet access. The route corridor contains image tiles, so reopening the pack does not restore the route line.
 
+The downloader uses two persistent connections and writes completed tiles into the partial pack one at a time. The transfer screen reports tiles per second, payload MB downloaded in the current session, estimated time remaining, and current free SD-card space. Temporary failures are retried with exponential backoff; HTTP 429 and 503 responses honor `Retry-After`. Pausing remains responsive during a provider cooldown, and resuming skips tiles already saved.
+
 ## Phone GPS
 
 The 3DS has no built-in GPS. In server mode, the app runs a local HTTPS page and uses your phone browser’s [Geolocation API](https://developer.mozilla.org/en-US/docs/Web/API/Geolocation_API). Both devices need a local network path to each other. Guest networks with client isolation can block access even if both devices show Wi-Fi connectivity.

@@ -39,8 +39,16 @@ unsigned network_region_count(void);
 bool network_install_region(const char *path, TileSource source);
 bool network_remove_region(const char *path);
 bool network_pack_covers(int x, int y, int z);
+typedef struct {
+    long http_status;
+    unsigned retry_after_ms;
+    int curl_code;
+} NetworkRequestInfo;
+
 bool network_request(void *handle, const char *url, size_t limit, atomic_bool *cancel,
                      u8 **buffer, u32 *size);
+bool network_request_ex(void *handle, const char *url, size_t limit, atomic_bool *cancel,
+                        u8 **buffer, u32 *size, NetworkRequestInfo *info);
 bool network_region_endpoint(TileSource source, char *endpoint, size_t size);
 bool network_region_url(const char *endpoint, int x, int y, int z, char *url, size_t size);
 

@@ -2538,6 +2538,7 @@ static void draw_region_panel(void) {
             C2D_DrawRectSolid(20, 108, .21f, 280, 9, C2D_Color32(52, 69, 89, 255));
             float fraction = fminf(1, (float)region_progress / region_total);
             if (fraction > 0) C2D_DrawRectSolid(20, 108, .22f, 280 * fraction, 9, accent);
+            draw_ui_text(20, 124, .36f, .36f, dim, 0, region_hint);
         } else draw_ui_text(20, 106, .43f, .43f, dim, 0, region_hint);
     }
     draw_ui_text(12, 151, .40f, .40f, region_confirm ? accent : white, 0, region_status);
@@ -2582,35 +2583,116 @@ static bool tile_image_valid(const u8 *bytes, size_t size, bool decode) {
 typedef struct {
     RegionJob *job;
     const char *endpoint;
-    atomic_bool done, cancel;
-    atomic_uint saved;
-    unsigned failed;
+    LightLock append_lock;
+    atomic_bool done, cancel, launch;
+    atomic_uint saved, failed, next, workers_left, cooldown_workers;
+    atomic_uint downloaded_bytes;
 } RegionTransfer;
 
+#define REGION_DOWNLOAD_WORKERS 2
+#define REGION_DOWNLOAD_ATTEMPTS 3
+
+typedef struct {
+    RegionTransfer *transfer;
+} RegionWorker;
+
+static u64 region_sd_free_bytes(void) {
+    FS_Archive sd;
+    u64 free_bytes = 0;
+    if (R_SUCCEEDED(FSUSER_OpenArchive(&sd, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, "")))) {
+        FSUSER_GetFreeBytes(&free_bytes, sd);
+        FSUSER_CloseArchive(sd);
+    }
+    return free_bytes;
+}
+
+static void region_format_eta(char *out, size_t size, const RegionProgressMetrics *metrics) {
+    if (!metrics->eta_known) {
+        snprintf(out, size, "--");
+    } else if (metrics->eta_seconds < 60) {
+        snprintf(out, size, "%llus", (unsigned long long)metrics->eta_seconds);
+    } else if (metrics->eta_seconds < 3600) {
+        snprintf(out, size, "%llum %02llus",
+                 (unsigned long long)(metrics->eta_seconds / 60),
+                 (unsigned long long)(metrics->eta_seconds % 60));
+    } else {
+        snprintf(out, size, "%lluh %02llum",
+                 (unsigned long long)(metrics->eta_seconds / 3600),
+                 (unsigned long long)((metrics->eta_seconds / 60) % 60));
+    }
+}
+
+static bool region_retry_wait(RegionTransfer *transfer, unsigned delay_ms) {
+    atomic_fetch_add(&transfer->cooldown_workers, 1);
+    unsigned waited = 0;
+    while (waited < delay_ms && !atomic_load(&transfer->cancel)) {
+        unsigned slice = delay_ms - waited;
+        if (slice > 50) slice = 50;
+        svcSleepThread((s64)slice * 1000000LL);
+        waited += slice;
+    }
+    atomic_fetch_sub(&transfer->cooldown_workers, 1);
+    return !atomic_load(&transfer->cancel);
+}
+
 static void region_worker(void *arg) {
-    RegionTransfer *transfer = arg;
+    RegionTransfer *transfer = ((RegionWorker *)arg)->transfer;
     RegionJob *job = transfer->job;
+    while (!atomic_load(&transfer->launch) && !atomic_load(&transfer->cancel))
+        svcSleepThread(1000000LL);
     void *curl = network_alloc_tile_curl();
-    for (unsigned i = 0; curl && i < job->count && !atomic_load(&transfer->cancel); i++) {
+    if (!curl && !atomic_load(&transfer->cancel)) {
+        atomic_fetch_add(&transfer->failed, 1);
+        atomic_store(&transfer->cancel, true);
+    }
+    while (curl && !atomic_load(&transfer->cancel)) {
+        unsigned i = atomic_fetch_add(&transfer->next, 1);
+        if (i >= job->count) break;
         TilePackEntry *tile = &job->entries[i];
         if (tile->size) continue;
-        char url[384];
-        u8 *bytes = NULL;
-        u32 size = 0;
-        if (!network_region_url(transfer->endpoint, tile->x, tile->y, tile->zoom, url, sizeof(url)) ||
-            !network_request(curl, url, 1024 * 1024, &transfer->cancel, &bytes, &size) ||
-            !tile_image_valid(bytes, size, true) ||
-            !region_append(job, i, bytes, size)) {
+
+        bool tile_saved = false;
+        for (unsigned attempt = 0; attempt < REGION_DOWNLOAD_ATTEMPTS &&
+             !atomic_load(&transfer->cancel); attempt++) {
+            char url[384];
+            u8 *bytes = NULL;
+            u32 size = 0;
+            NetworkRequestInfo info = {0};
+            bool requested = network_region_url(transfer->endpoint, tile->x, tile->y,
+                                                tile->zoom, url, sizeof(url)) &&
+                network_request_ex(curl, url, 1024 * 1024, &transfer->cancel,
+                                   &bytes, &size, &info);
+            bool valid = requested && tile_image_valid(bytes, size, true);
+            bool appended = false;
+            if (valid) {
+                LightLock_Lock(&transfer->append_lock);
+                appended = region_append(job, i, bytes, size);
+                LightLock_Unlock(&transfer->append_lock);
+            }
+            if (appended) {
+                atomic_fetch_add(&transfer->downloaded_bytes, size);
+                atomic_fetch_add(&transfer->saved, 1);
+                tile_saved = true;
+            }
             free(bytes);
-            if (!atomic_load(&transfer->cancel)) transfer->failed++;
+            if (tile_saved || atomic_load(&transfer->cancel)) break;
+
+            bool storage_failed = valid && !appended;
+            unsigned delay = storage_failed ? 0 :
+                region_retry_delay_ms(attempt, info.http_status, info.retry_after_ms,
+                                      requested && !valid);
+            if (!delay) break;
+            if (!region_retry_wait(transfer, delay)) break;
+        }
+        if (!tile_saved && !atomic_load(&transfer->cancel)) {
+            atomic_fetch_add(&transfer->failed, 1);
+            atomic_store(&transfer->cancel, true);
             break;
         }
-        free(bytes);
-        atomic_fetch_add(&transfer->saved, 1);
-        svcSleepThread(100000000LL);
     }
     network_free_tile_curl(curl);
-    atomic_store(&transfer->done, true);
+    if (atomic_fetch_sub(&transfer->workers_left, 1) == 1)
+        atomic_store(&transfer->done, true);
 }
 
 static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, unsigned count) {
@@ -2642,14 +2724,40 @@ static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, uns
         return;
     }
     RegionTransfer transfer = { .job = &job, .endpoint = endpoint };
+    LightLock_Init(&transfer.append_lock);
+    unsigned initial_saved = 0;
     for (unsigned i = 0; i < job.count; i++)
-        if (job.entries[i].size) atomic_fetch_add(&transfer.saved, 1);
-    Thread thread = threadCreate(region_worker, &transfer, 96 * 1024, 0x32, -2, false);
-    if (!thread) {
+        if (job.entries[i].size) initial_saved++;
+    atomic_init(&transfer.done, false);
+    atomic_init(&transfer.cancel, false);
+    atomic_init(&transfer.launch, false);
+    atomic_init(&transfer.saved, initial_saved);
+    atomic_init(&transfer.failed, 0);
+    atomic_init(&transfer.next, 0);
+    atomic_init(&transfer.workers_left, 0);
+    atomic_init(&transfer.cooldown_workers, 0);
+    atomic_init(&transfer.downloaded_bytes, 0);
+
+    Thread threads[REGION_DOWNLOAD_WORKERS] = {0};
+    RegionWorker workers[REGION_DOWNLOAD_WORKERS];
+    unsigned worker_count = 0;
+    for (unsigned i = 0; i < REGION_DOWNLOAD_WORKERS; i++) {
+        workers[i].transfer = &transfer;
+        atomic_fetch_add(&transfer.workers_left, 1);
+        threads[i] = threadCreate(region_worker, &workers[i], 96 * 1024, 0x32, -2, false);
+        if (!threads[i]) {
+            atomic_fetch_sub(&transfer.workers_left, 1);
+            continue;
+        }
+        worker_count++;
+    }
+    if (!worker_count) {
         region_close(&job);
         set_status_message("Could not start download");
         return;
     }
+    u64 start_ms = osGetTime();
+    atomic_store(&transfer.launch, true);
     region_items = NULL;
     snprintf(region_title, sizeof(region_title), "Downloading region");
     snprintf(region_detail, sizeof(region_detail), "%.24s", item->name);
@@ -2658,16 +2766,37 @@ static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, uns
     region_actions[0] = "B  Pause and keep downloaded tiles";
     region_actions[1] = NULL;
     region_actions[2] = NULL;
+    u64 free_bytes = region_sd_free_bytes();
+    u64 free_space_checked_ms = start_ms;
     while (!atomic_load(&transfer.done) && aptMainLoop() && !g_should_exit) {
+        u64 now_ms = osGetTime();
+        if (now_ms - free_space_checked_ms >= 1000) {
+            free_bytes = region_sd_free_bytes();
+            free_space_checked_ms = now_ms;
+        }
         region_progress = atomic_load(&transfer.saved);
-        snprintf(region_status, sizeof(region_status), "%u / %u tiles saved%s",
-                 region_progress, job.count,
-                 atomic_load(&transfer.cancel) ? "  |  Pausing..." : "");
+        RegionProgressMetrics metrics = region_progress_metrics(initial_saved, region_progress,
+                                                                job.count, now_ms - start_ms);
+        char eta[24];
+        region_format_eta(eta, sizeof(eta), &metrics);
+        snprintf(region_summary, sizeof(region_summary), "%u/%u tiles  |  %.1f tiles/s",
+                 region_progress, job.count, metrics.tiles_per_second);
+        snprintf(region_hint, sizeof(region_hint), "%.2f MB downloaded  |  ETA %s",
+                 atomic_load(&transfer.downloaded_bytes) / 1048576.0, eta);
+        const char *state = atomic_load(&transfer.cancel) ? "  |  Pausing..." :
+                            atomic_load(&transfer.cooldown_workers) ? "  |  Provider cooldown" : "";
+        if (free_bytes)
+            snprintf(region_status, sizeof(region_status), "SD free %.0f MB  |  %u connection%s%s",
+                     free_bytes / 1048576.0, worker_count, worker_count == 1 ? "" : "s", state);
+        else snprintf(region_status, sizeof(region_status), "%u connection%s%s",
+                      worker_count, worker_count == 1 ? "" : "s", state);
         if (region_frame() & (KEY_B | KEY_START)) atomic_store(&transfer.cancel, true);
     }
     if (!atomic_load(&transfer.done)) atomic_store(&transfer.cancel, true);
-    threadJoin(thread, U64_MAX);
-    threadFree(thread);
+    for (unsigned i = 0; i < REGION_DOWNLOAD_WORKERS; i++) if (threads[i]) {
+        threadJoin(threads[i], U64_MAX);
+        threadFree(threads[i]);
+    }
     char final[REGION_PATH_LIMIT];
     size_t stem = strlen(item->path) - 5;
     snprintf(final, sizeof(final), "%.*s.tilepack", (int)stem, item->path);
@@ -2676,7 +2805,8 @@ static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, uns
         map_tiles_view_changed();
         set_status_message("Offline pack ready");
     } else {
-        set_status_message(transfer.failed ? "Download interrupted; A to resume" : "Download paused or pack unavailable");
+        set_status_message(atomic_load(&transfer.failed) ?
+                           "Download interrupted; A to resume" : "Download paused or pack unavailable");
     }
     region_close(&job);
 }
@@ -2721,12 +2851,7 @@ static void open_offline_download(void) {
     region_items = NULL;
     snprintf(region_title, sizeof(region_title), "New offline pack");
     region_total = 0;
-    FS_Archive sd;
-    u64 free_bytes = 0;
-    if (R_SUCCEEDED(FSUSER_OpenArchive(&sd, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, "")))) {
-        FSUSER_GetFreeBytes(&free_bytes, sd);
-        FSUSER_CloseArchive(sd);
-    }
+    u64 free_bytes = region_sd_free_bytes();
     region_actions[0] = "Left/Right  Min zoom    Up/Down  Max zoom";
     region_actions[1] = "X  Area / Route corridor";
     region_actions[2] = "A  Name    Select  Quick save    B  Back";
