@@ -1,0 +1,26 @@
+name: Publish Explore hardware preview
+on:
+  push:
+    branches: [explore-3d-preview-assets]
+    paths: [.github/workflows/publish-explore.yml]
+permissions:
+  contents: write
+jobs:
+  release:
+    if: github.repository == 'Oldhimaster1/3ds-Google-Maps'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify and attach preview builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd preview-builds
+          sha256sum -c SHA256SUMS
+          gh release create v2.1.3-preview.1 --target "$(git rev-parse HEAD^^)" --prerelease --latest=false \
+            --title "3D Explore hardware preview" --notes-file RELEASE.md \
+            3ds_google_maps.cia 3ds_google_maps.3dsx SHA256SUMS
