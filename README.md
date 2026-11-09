@@ -2,9 +2,9 @@
 
 Browse street maps and satellite imagery, search for places, and plan routes. Download map regions directly to your 3DS for offline use, or pair your phone to display your GPS position.
 
-[Download .cia](#cia--home-menu) · [Download .3dsx][public-3dsx] · [Installation guide](#install)
+[Download .cia][preview-cia] · [Download .3dsx][preview-3dsx] · [Installation guide](#install)
 
-> The public download is **v2.0**. This branch previews **On-device downloads for offline maps**. The new CIA is pending production branding verification.
+> **v2.1.0-preview.1** adds named offline regions. The preview was tested in Azahar. Physical Old 3DS testing is pending. [Stable v2.0][stable-release]
 
 <p>
   <img src="docs/media/maps-for-nintendo-3ds-hero.png" width="432" alt="Golden Gate Bridge imagery on the top screen, with map controls on the touch screen">
@@ -12,19 +12,21 @@ Browse street maps and satellite imagery, search for places, and plan routes. Do
 
 *Golden Gate Bridge in Azahar. Imagery from USDA and USGS The National Map.*
 
-[Offline map preview (GIF)](docs/media/maps-for-nintendo-3ds-preview.gif?raw=true) · [Full introduction video (MP4)](docs/media/maps-for-nintendo-3ds-intro.mp4?raw=true)
+[Offline map preview (GIF)](docs/media/maps-for-nintendo-3ds-preview.gif?raw=true) · [Full introduction video (MP4)][preview-video]
 
 ## Install
 
 ### .3dsx · Homebrew Launcher
 
-1. Download [`3ds_google_maps.3dsx`][public-3dsx].
+1. Download [`3ds_google_maps.3dsx`][preview-3dsx].
 2. Copy it to `sdmc:/3ds/3ds_google_maps/3ds_google_maps.3dsx`.
-3. Open **Homebrew Launcher**, then select **3ds_google_maps**. The named offline pack workflow below requires the [candidate built from this branch](docs/usage.md#build-from-source).
+3. Open **Homebrew Launcher**, then select **3ds_google_maps**.
 
 ### .cia · HOME Menu
 
-A CIA needs a 3DS with [custom firmware](https://3ds.hacks.guide/) and a title installer such as [FBI](https://github.com/Steveice10/FBI). Once a verified CIA is published, copy it to the SD card and choose **Install CIA** in FBI. The title will appear on the HOME Menu. The [current public release][public-release] provides the Homebrew Launcher build.
+On a 3DS with [custom firmware](https://3ds.hacks.guide/), copy [`3ds_google_maps.cia`][preview-cia] to the SD card. In [FBI](https://github.com/Steveice10/FBI), open **SD**, select the file, and choose **Install CIA**. Return to the HOME Menu to launch **3DS Google Maps**.
+
+[Release notes and checksums][preview-release]
 
 ## Try offline maps
 
@@ -71,7 +73,7 @@ Use the touch panel for favorites, recents, and routing. Context-specific contro
 
 ## Compatibility and issues
 
-The candidate `.3dsx` was built with devkitARM and exercised in Azahar. Physical Old 3DS testing is pending. See the [verification record](docs/release/verification.md) for the exact coverage.
+Both preview packages were built with devkitARM and launched in Azahar. Physical Old 3DS testing is pending, including live tile sources and HOME Menu banner playback. See the [verification record](docs/release/verification.md) for the exact coverage.
 
 When [reporting an issue](https://github.com/Oldhimaster1/3ds-Google-Maps/issues/new/choose), include the console model or emulator version, app version or commit, and steps to reproduce it. For a tile problem, say which layer and provider you were using. Remove private locations, addresses, and pairing URLs before attaching logs or captures.
 
@@ -81,5 +83,8 @@ The default street layer uses [OpenStreetMap](https://www.openstreetmap.org/copy
 
 [Build instructions, SD layout, and tilepack format](docs/usage.md#build-from-source) · [Contributing](CONTRIBUTING.md) · [Third-party licenses](THIRD_PARTY_LICENSES.md)
 
-[public-release]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.0
-[public-3dsx]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.0/3ds_google_maps.3dsx
+[preview-release]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.1.0-preview.1
+[preview-cia]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.1.0-preview.1/3ds_google_maps.cia
+[preview-3dsx]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.1.0-preview.1/3ds_google_maps.3dsx
+[preview-video]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.1.0-preview.1/maps-for-nintendo-3ds-intro.mp4
+[stable-release]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.0

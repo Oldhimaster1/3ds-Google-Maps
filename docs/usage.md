@@ -70,6 +70,12 @@ make
 
 On Windows, use the corresponding MSYS2 path to the devkitPro installation, such as `/c/devkitPro`. The build produces `3ds_google_maps.3dsx` and a development ELF. The host tests cover region planning, antimeridian wrapping, and interrupted writes.
 
+### Build the CIA
+
+Put [bannertool 1.2.3](https://github.com/carstene1ns/3ds-bannertool/releases/tag/1.2.3) and [makerom 0.18.4](https://github.com/3DSGuy/Project_CTR/releases/tag/makerom-v0.18.4) on your path, then run `make cia` with the same devkitPro environment. Use `BANNERTOOL=/path/to/bannertool` and `MAKEROM=/path/to/makerom` to override the tool paths. Makerom 0.18.4 writes the intended minor version into the title metadata.
+
+The CIA uses the project's `icon.png` and `banner.png`, and `banner.wav` supplies the HOME Menu chime. Its title ID is `000400000FD34B00`. Keep this ID for future CIA upgrades and increase the title version in the Makefile. Makerom generates a fresh ticket on each run, so compare the executable and embedded assets when checking reproducibility. Compare the entire CIA against the release checksum when verifying a download.
+
 ### SD layout
 
 ```text

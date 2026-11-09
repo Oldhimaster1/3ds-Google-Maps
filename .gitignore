@@ -1,6 +1,7 @@
 # Build output
 build/
 *.3dsx
+*.cia
 *.elf
 *.lst
 *.d

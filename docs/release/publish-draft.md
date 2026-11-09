@@ -1,27 +1,6 @@
-# Draft release package
+# Release listings
 
-- Proposed tag `v2.1.0-preview.1`
-- Release title **On-device downloads for offline maps**
-- Publication depends on verifying the production CIA branding and title metadata.
-
-## Release body
-
-[Download .cia](https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.1.0-preview.1/3ds_google_maps.cia) · [Download .3dsx](https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.1.0-preview.1/3ds_google_maps.3dsx) · [SHA256SUMS](https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.1.0-preview.1/SHA256SUMS) · [Full introduction video](https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.1.0-preview.1/maps-for-nintendo-3ds-intro.mp4)
-
-This preview adds named offline map packs on the console. Pick an area or the corridor around an existing route, pause and resume the download, then reopen the saved tiles without the tile server. It also adds coverage previews, a pack integrity check, a restored map view, GPS accuracy, and cancellable place and route requests.
-
-- **Homebrew Launcher:** copy the `.3dsx` to `sdmc:/3ds/3ds_google_maps/3ds_google_maps.3dsx`.
-- **HOME Menu:** use a custom firmware setup with a CIA installer such as FBI. Install the `.cia` from the SD card. Follow the tagged README for the direct download and any verified FBI QR.
-- **Try offline maps:** open **Menu → Data → Offline regions**, use **L** to set an offline-capable tile source for the current layer, then **Y** to plan a small pack. A connection is needed for the download and new routes. Saved maps cover the chosen area and zooms.
-
-The demo was recorded in Azahar using a controlled tile endpoint. Direct service requests and phone browser pairing still need physical testing. The GPS page uses a self-signed certificate, which some browser setups may block. Report your model, release version, tile provider, and reproduction steps in [Issues](https://github.com/Oldhimaster1/3ds-Google-Maps/issues/new/choose).
-
-## Before publishing
-
-1. Recover and identify the production CIA or the production icon, banner model/artwork, banner sound and title ID. Compare the built CIA against those references and record installation, HOME Menu display and audio results separately.
-2. Set the README download links to the chosen tag and remove the hold notice after the asset checks. Generate the FBI QR from the actual tagged CIA URL only after confirming it is suitable for FBI. Keep the existing stable v2.0 link labeled separately.
-3. Build both packages from the same final commit. Test and hash the exact release files. Attach the two packages, `SHA256SUMS`, and `maps-for-nintendo-3ds-intro.mp4` to the preview release.
-4. Verify each public download against its hash, then bring the branch README to the repository default branch through a PR. Keep the raw captures in the separate source package.
+[Preview release notes](preview-notes.md) · [Verification record](verification.md)
 
 ## Listing and announcement copy
 

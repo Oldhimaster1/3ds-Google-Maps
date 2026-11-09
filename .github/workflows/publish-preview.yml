@@ -1,0 +1,75 @@
+name: Publish tested preview
+
+on:
+  push:
+    branches: [map-reliability-offline]
+    paths: [.github/release/preview.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: maps-preview-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Oldhimaster1/3ds-Google-Maps' && github.ref == 'refs/heads/map-reliability-offline'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify and publish preview assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=.github/release/preview.json
+          tag=$(jq -er '.tag' "$manifest")
+          commit=$(jq -er '.commit' "$manifest")
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$ ]]
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$commit" "$GITHUB_SHA"
+          git diff --exit-code "$commit" "$GITHUB_SHA" -- source include Makefile tools/cia.rsf icon.png banner.png banner.wav docs/media
+          ./tests/run-host.sh
+
+          staging=$(mktemp -d)
+          mkdir "$staging/assets" "$staging/downloaded"
+          # Retrieve the exact tested files without adding them to Git history.
+          for file in 3ds_google_maps.cia 3ds_google_maps.3dsx; do
+            blob=$(jq -er --arg file "$file" '.binaries[$file].blob' "$manifest")
+            checksum=$(jq -er --arg file "$file" '.binaries[$file].sha256' "$manifest")
+            [[ "$blob" =~ ^[0-9a-f]{40}$ && "$checksum" =~ ^[0-9a-f]{64}$ ]]
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$blob" --jq .content |
+              base64 --decode > "$staging/assets/$file"
+            printf '%s  %s\n' "$checksum" "$file" >> "$staging/assets/SHA256SUMS"
+          done
+          intro=maps-for-nintendo-3ds-intro.mp4
+          checksum=$(jq -er '.intro_sha256' "$manifest")
+          [[ "$checksum" =~ ^[0-9a-f]{64}$ ]]
+          git show "$commit:docs/media/$intro" > "$staging/assets/$intro"
+          printf '%s  %s\n' "$checksum" "$intro" >> "$staging/assets/SHA256SUMS"
+          git show "$commit:docs/release/preview-notes.md" > "$staging/notes.md"
+          (cd "$staging/assets" && sha256sum -c SHA256SUMS)
+
+          if gh release view "$tag" --json isDraft,targetCommitish > "$staging/release.json"; then
+            jq -e --arg commit "$commit" '.isDraft and .targetCommitish == $commit' "$staging/release.json"
+          fi
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            test "$(git rev-parse "refs/tags/$tag^{commit}")" = "$commit"
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$commit" >/dev/null
+          fi
+          if [[ ! -s "$staging/release.json" ]]; then
+            gh release create "$tag" --draft --prerelease --verify-tag --target "$commit" \
+              --title "On-device downloads for offline maps" --notes-file "$staging/notes.md"
+          fi
+          gh release upload "$tag" "$staging/assets/"* --clobber
+          gh release download "$tag" --pattern '*' --dir "$staging/downloaded"
+          cmp "$staging/assets/SHA256SUMS" "$staging/downloaded/SHA256SUMS"
+          (cd "$staging/downloaded" && sha256sum -c SHA256SUMS)
+          gh release edit "$tag" --draft=false --prerelease

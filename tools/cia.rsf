@@ -1,0 +1,107 @@
+BasicInfo:
+  Title: "3DSMaps"
+  CompanyCode: "00"
+  ProductCode: "CTR-P-3MAP"
+  ContentType: Application
+  Logo: Nintendo
+
+TitleInfo:
+  UniqueId: 0xfd34b
+  Category: Application
+
+Option:
+  UseOnSD: true
+  EnableCrypt: false
+  EnableCompress: true
+
+AccessControlInfo:
+  FileSystemAccess:
+    - DirectSdmc
+  IdealProcessor: 0
+  AffinityMask: 1
+  Priority: 16
+  MaxCpu: 0x9e
+  CanWriteSharedPage: true
+  CanShareDeviceMemory: true
+  CoreVersion: 2
+  DescVersion: 2
+  ReleaseKernelMajor: "02"
+  ReleaseKernelMinor: "33"
+  MemoryType: Application
+  SystemMode: 64MB
+  HandleTableSize: 512
+  IORegisterMapping:
+    - 1ff50000-1ff57fff
+    - 1ff70000-1ff77fff
+  MemoryMapping:
+    - 1f000000-1f5fffff:r
+  SystemCallAccess:
+    ControlMemory: 1
+    QueryMemory: 2
+    ExitProcess: 3
+    CreateThread: 8
+    ExitThread: 9
+    SleepThread: 10
+    GetThreadPriority: 11
+    SetThreadPriority: 12
+    CreateMutex: 19
+    ReleaseMutex: 20
+    CreateSemaphore: 21
+    ReleaseSemaphore: 22
+    CreateEvent: 23
+    SignalEvent: 24
+    ClearEvent: 25
+    CreateTimer: 26
+    SetTimer: 27
+    CancelTimer: 28
+    ClearTimer: 29
+    CreateMemoryBlock: 30
+    MapMemoryBlock: 31
+    UnmapMemoryBlock: 32
+    CreateAddressArbiter: 33
+    ArbitrateAddress: 34
+    CloseHandle: 35
+    WaitSynchronization1: 36
+    WaitSynchronizationN: 37
+    DuplicateHandle: 39
+    GetSystemTick: 40
+    GetHandleInfo: 41
+    GetSystemInfo: 42
+    GetProcessInfo: 43
+    GetThreadInfo: 44
+    ConnectToPort: 45
+    SendSyncRequest: 50
+    GetProcessId: 53
+    GetThreadId: 55
+    GetResourceLimit: 56
+    GetResourceLimitLimitValues: 57
+    GetResourceLimitCurrentValues: 58
+    Break: 60
+    OutputDebugString: 61
+  ServiceAccessControl:
+    - APT:U
+    - ac:u
+    - cfg:u
+    - fs:USER
+    - gsp::Gpu
+    - hid:USER
+    - http:C
+    - ndm:u
+    - ptm:u
+    - soc:U
+    - ssl:C
+
+SystemControlInfo:
+  SaveDataSize: 0KB
+  RemasterVersion: 0
+  StackSize: 0x40000
+  Dependency:
+    ac: 0x0004013000002402L
+    cfg: 0x0004013000001702L
+    gsp: 0x0004013000001c02L
+    hid: 0x0004013000001d02L
+    http: 0x0004013000002902L
+    ndm: 0x0004013000002b02L
+    ptm: 0x0004013000002202L
+    socket: 0x0004013000002e02L
+    ssl: 0x0004013000002f02L

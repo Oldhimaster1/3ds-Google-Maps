@@ -42,6 +42,8 @@ NO_SMDH		:=	1
 APP_TITLE	:= 3DS Google Maps
 APP_DESCRIPTION := Interactive Google Maps for Nintendo 3DS
 APP_AUTHOR	:= Homebrew Developer
+BANNERTOOL	?= bannertool
+MAKEROM		?= makerom
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -151,10 +153,18 @@ ifneq ($(ROMFS),)
 	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: $(BUILD) clean all
+.PHONY: $(BUILD) clean all cia
 
 #---------------------------------------------------------------------------------
 all: $(BUILD)
+
+cia: all
+	@"$(MAKEROM)" -help | grep -q '^CTR MAKEROM v0\.18\.4 ' || { echo "CIA packaging requires makerom v0.18.4"; exit 1; }
+	"$(BANNERTOOL)" makesmdh -s "$(APP_TITLE)" -l "Maps for Nintendo 3DS" -p "Oldhimaster1" -i icon.png -r regionfree -f visible -o "$(BUILD)/cia-icon.bin"
+	"$(BANNERTOOL)" makebanner -i banner.png -a banner.wav -o "$(BUILD)/cia-banner.bin"
+	"$(MAKEROM)" -f ncch -target t -rsf tools/cia.rsf -elf "$(TARGET).elf" -icon "$(BUILD)/cia-icon.bin" -banner "$(BUILD)/cia-banner.bin" -o "$(BUILD)/$(TARGET).cxi"
+	"$(MAKEROM)" -f cia -target t -content "$(BUILD)/$(TARGET).cxi:0:0" -major 2 -minor 1 -micro 0 -o "$(BUILD)/$(TARGET).cia"
+	mv "$(BUILD)/$(TARGET).cia" "$(TARGET).cia"
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
@@ -163,7 +173,7 @@ $(BUILD):
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf
+	@rm -fr $(BUILD) $(TARGET).3dsx $(TARGET).cia $(OUTPUT).smdh $(TARGET).elf
 
 
 #---------------------------------------------------------------------------------
