@@ -8,11 +8,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdatomic.h>
 #include <malloc.h>
 #include <curl/curl.h>
 
 #define WEB_MERCATOR_HALF_WORLD 20037508.342789244
 
+static LightLock tile_io_lock;
+static bool ac_ready;
 static bool network_initialized = false;
 static bool tile_cache_dirs_ready = false;
 static bool disk_cache_enabled = false;
@@ -20,9 +23,9 @@ static bool proxy_enabled = false;
 static TileSource tile_source = TILE_SOURCE_SATELLITE;
 static char g_proxy_base_url[256] = PROXY_BASE_URL;
 
-static u32 last_tile_download_ms = 0;
-static u32 last_tile_size_bytes = 0;
-static bool last_tile_cache_hit = false;
+static _Atomic u32 last_tile_download_ms = 0;
+static _Atomic u32 last_tile_size_bytes = 0;
+static _Atomic bool last_tile_cache_hit = false;
 
 /* Offline tile packs — one per source type */
 static TilePack g_tilepack_street;
@@ -46,11 +49,13 @@ static bool  g_curl_ready = false;
 struct curl_buf {
     u8  *data;
     u32  size;
+    size_t limit;
 };
 
 static size_t curl_write_cb(void *ptr, size_t size, size_t nmemb, void *userdata) {
     size_t realsize = size * nmemb;
     struct curl_buf *buf = (struct curl_buf *)userdata;
+    if (realsize > buf->limit - buf->size) return 0;
     u8 *tmp = (u8 *)realloc(buf->data, buf->size + realsize);
     if (!tmp) return 0;
     memcpy(tmp + buf->size, ptr, realsize);
@@ -96,8 +101,9 @@ static void net_curl_cleanup(void) {
 }
 
 /* Forward declarations for static helpers used by download_tile_with_curl */
-static bool load_tile_from_disk(int tile_x, int tile_y, int zoom, u8** buffer, u32* size);
-static void save_tile_to_disk(int tile_x, int tile_y, int zoom, const u8* buffer, u32 size);
+static void build_tile_url(TileSource source, int x, int y, int zoom, char *url, size_t size);
+static bool load_tile_from_disk(TileSource source, int tile_x, int tile_y, int zoom, u8** buffer, u32* size);
+static bool save_tile_to_disk(TileSource source, int tile_x, int tile_y, int zoom, const u8* buffer, u32 size, bool force);
 
 /* Download any URL via libcurl — handles HTTPS, redirects, chunked, etc. */
 static bool download_url_curl(const char *url, u8 **buffer, u32 *size) {
@@ -112,7 +118,7 @@ static bool download_url_curl(const char *url, u8 **buffer, u32 *size) {
         return false;
     }
 
-    struct curl_buf buf = { NULL, 0 };
+    struct curl_buf buf = { NULL, 0, 8 * 1024 * 1024 };
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
@@ -162,10 +168,7 @@ static bool download_url_curl(const char *url, u8 **buffer, u32 *size) {
  * the actual transfer time (typically 100-300 ms instead of 3-5 s).
  * ------------------------------------------------------------------------- */
 void *network_alloc_tile_curl(void) {
-    if (!g_curl_ready) {
-        net_curl_init();
-        if (!g_curl_ready) return NULL;
-    }
+    if (!g_curl_ready) return NULL;
 
     CURL *curl = curl_easy_init();
     if (!curl) {
@@ -199,12 +202,17 @@ void network_free_tile_curl(void *curl_handle) {
     }
 }
 
-bool download_tile_with_curl(int tile_x, int tile_y, int zoom, void *curl_handle,
-                             u8 **buffer, u32 *size) {
+bool fetch_map_tile(int tile_x, int tile_y, int zoom, void *curl_handle, bool online, TileSource source,
+                             u8 **buffer, u32 *size, bool *offline_hit) {
     if (!network_initialized) return false;
+    if (offline_hit) *offline_hit = false;
 
     /* 1) SD card tile cache — instant, no network */
-    if (load_tile_from_disk(tile_x, tile_y, zoom, buffer, size)) {
+    LightLock_Lock(&tile_io_lock);
+    bool disk_hit = load_tile_from_disk(source, tile_x, tile_y, zoom, buffer, size);
+    LightLock_Unlock(&tile_io_lock);
+    if (disk_hit) {
+        if (offline_hit) *offline_hit = true;
         last_tile_cache_hit  = true;
         last_tile_download_ms = 0;
         last_tile_size_bytes  = *size;
@@ -213,13 +221,16 @@ bool download_tile_with_curl(int tile_x, int tile_y, int zoom, void *curl_handle
 
     /* 1b) Offline tile pack — single binary file, binary search lookup */
     {
-        TilePack *pack = (tile_source == TILE_SOURCE_SATELLITE)
+        TilePack *pack = (source == TILE_SOURCE_SATELLITE)
                          ? &g_tilepack_sat : &g_tilepack_street;
         size_t tp_size = 0;
+        LightLock_Lock(&tile_io_lock);
         u8 *tp_buf = tilepack_read_tile(pack, zoom, tile_x, tile_y, &tp_size);
+        LightLock_Unlock(&tile_io_lock);
         if (tp_buf) {
             *buffer = tp_buf;
             *size   = (u32)tp_size;
+            if (offline_hit) *offline_hit = true;
             last_tile_cache_hit  = true;
             last_tile_download_ms = 0;
             last_tile_size_bytes  = (u32)tp_size;
@@ -227,18 +238,22 @@ bool download_tile_with_curl(int tile_x, int tile_y, int zoom, void *curl_handle
         }
     }
 
+    if (!online) return false;
+
     /* 2) Build the tile URL */
     char url[512];
-    build_osm_url(tile_x, tile_y, zoom, url, sizeof(url));
+    LightLock_Lock(&tile_io_lock);
+    build_tile_url(source, tile_x, tile_y, zoom, url, sizeof(url));
+    LightLock_Unlock(&tile_io_lock);
 
     last_tile_cache_hit = false;
     u64 t0 = osGetTime();
     bool ok = false;
 
     /* 3a) HTTPS — use the persistent handle to reuse the TLS connection */
-    if (strncmp(url, "https://", 8) == 0 && curl_handle) {
+    if (curl_handle) {
         CURL *curl = (CURL *)curl_handle;
-        struct curl_buf buf = { NULL, 0 };
+        struct curl_buf buf = { NULL, 0, 1024 * 1024 };
 
         curl_easy_setopt(curl, CURLOPT_URL,           url);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
@@ -262,9 +277,9 @@ bool download_tile_with_curl(int tile_x, int tile_y, int zoom, void *curl_handle
         }
         if (buf.data) free(buf.data);
 
-    /* 3b) HTTP proxy — fall back to the per-request httpc path */
+    /* Fall back to a one-off curl handle. */
     } else {
-        ok = download_url(url, buffer, size);
+        ok = download_url_curl(url, buffer, size);
     }
 
     u64 t1 = osGetTime();
@@ -272,9 +287,49 @@ bool download_tile_with_curl(int tile_x, int tile_y, int zoom, void *curl_handle
     last_tile_size_bytes  = ok ? *size : 0;
 
     if (ok) {
-        save_tile_to_disk(tile_x, tile_y, zoom, *buffer, *size);
+        LightLock_Lock(&tile_io_lock);
+        bool saved = save_tile_to_disk(source, tile_x, tile_y, zoom, *buffer, *size, offline_hit != NULL);
+        LightLock_Unlock(&tile_io_lock);
+        if (offline_hit && !saved) {
+            free(*buffer);
+            *buffer = NULL;
+            *size = 0;
+            return false;
+        }
     }
     return ok;
+}
+
+bool download_tile_with_curl(int x, int y, int zoom, void *curl, u8 **buffer, u32 *size) {
+    return fetch_map_tile(x, y, zoom, curl, is_connected(), tile_source, buffer, size, NULL);
+}
+
+bool network_get_offline_pack(TileSource source, OfflinePackInfo *info) {
+    const char *path = source == TILE_SOURCE_SATELLITE ?
+        "sdmc:/3ds_google_maps/tiles/sat.tilepack" : "sdmc:/3ds_google_maps/tiles/street.tilepack";
+    TilePack *pack = source == TILE_SOURCE_SATELLITE ? &g_tilepack_sat : &g_tilepack_street;
+    if (!pack->tile_count) return false;
+    struct stat st;
+    TilePackEntry sample = pack->index[pack->tile_count / 2];
+    *info = (OfflinePackInfo){
+        .tiles = pack->tile_count, .min_zoom = pack->index[0].zoom,
+        .max_zoom = pack->index[pack->tile_count - 1].zoom,
+        .x = sample.x, .y = sample.y, .zoom = sample.zoom,
+        .bytes = stat(path, &st) == 0 ? (long)st.st_size : 0,
+    };
+    return true;
+}
+
+bool network_remove_offline_pack(TileSource source) {
+    const char *path = source == TILE_SOURCE_SATELLITE ?
+        "sdmc:/3ds_google_maps/tiles/sat.tilepack" : "sdmc:/3ds_google_maps/tiles/street.tilepack";
+    TilePack *pack = source == TILE_SOURCE_SATELLITE ? &g_tilepack_sat : &g_tilepack_street;
+    LightLock_Lock(&tile_io_lock);
+    tilepack_close(pack);
+    bool removed = unlink(path) == 0;
+    if (!removed) tilepack_open(pack, path);
+    LightLock_Unlock(&tile_io_lock);
+    return removed;
 }
 
 bool network_has_proxy(void) {
@@ -304,7 +359,9 @@ bool network_get_proxy_enabled(void) {
 }
 
 void network_set_proxy_enabled(bool enabled) {
+    LightLock_Lock(&tile_io_lock);
     proxy_enabled = enabled && network_proxy_available();
+    LightLock_Unlock(&tile_io_lock);
 }
 
 TileSource network_get_tile_source(void) {
@@ -332,7 +389,9 @@ const char* network_get_effective_tile_backend_name(void) {
 }
 
 void network_set_disk_cache_enabled(bool enabled) {
+    LightLock_Lock(&tile_io_lock);
     disk_cache_enabled = enabled;
+    LightLock_Unlock(&tile_io_lock);
 }
 
 bool network_get_disk_cache_enabled(void) {
@@ -384,8 +443,11 @@ static int remove_tree(const char* path) {
 
 bool network_clear_disk_tile_cache(void) {
     // Remove the entire cache directory; it will be recreated lazily on next save.
-    int rc = remove_tree(TILE_CACHE_ROOT);
+    LightLock_Lock(&tile_io_lock);
+    int rc = remove_tree(TILE_CACHE_ROOT "/street");
+    if (remove_tree(TILE_CACHE_ROOT "/sat") != 0) rc = -1;
     tile_cache_dirs_ready = false;
+    LightLock_Unlock(&tile_io_lock);
     return rc == 0;
 }
 
@@ -397,18 +459,17 @@ static void ensure_dir(const char* path) {
     if (errno == EEXIST) return;
 }
 
-static void build_tile_cache_path(int tile_x, int tile_y, int zoom, char* out_path, size_t out_size) {
-    const char* source_dir = (tile_source == TILE_SOURCE_SATELLITE) ? "sat" : "street";
+static void build_tile_cache_path(TileSource source, int tile_x, int tile_y, int zoom, char* out_path, size_t out_size) {
+    const char* source_dir = (source == TILE_SOURCE_SATELLITE) ? "sat" : "street";
     // sdmc:/3ds_google_maps/tiles/<source>/<z>/<x>/<y>.png
     snprintf(out_path, out_size, TILE_CACHE_ROOT "/%s/%d/%d/%d.png", source_dir, zoom, tile_x, tile_y);
 }
 
-static bool load_tile_from_disk(int tile_x, int tile_y, int zoom, u8** buffer, u32* size) {
+static bool load_tile_from_disk(TileSource source, int tile_x, int tile_y, int zoom, u8** buffer, u32* size) {
     if (!buffer || !size) return false;
-    if (!disk_cache_enabled) return false;
 
     char path[256];
-    build_tile_cache_path(tile_x, tile_y, zoom, path, sizeof(path));
+    build_tile_cache_path(source, tile_x, tile_y, zoom, path, sizeof(path));
 
     FILE* f = fopen(path, "rb");
     if (!f) return false;
@@ -442,17 +503,17 @@ static bool load_tile_from_disk(int tile_x, int tile_y, int zoom, u8** buffer, u
     return true;
 }
 
-static void save_tile_to_disk(int tile_x, int tile_y, int zoom, const u8* buffer, u32 size) {
-    if (!buffer || size == 0) return;
-    if (!disk_cache_enabled) return;
+static bool save_tile_to_disk(TileSource source, int tile_x, int tile_y, int zoom, const u8* buffer, u32 size, bool force) {
+    if (!buffer || size == 0) return false;
+    if (!disk_cache_enabled && !force) return false;
 
     // Skip disk work if the file already exists.
     char path[256];
-    build_tile_cache_path(tile_x, tile_y, zoom, path, sizeof(path));
+    build_tile_cache_path(source, tile_x, tile_y, zoom, path, sizeof(path));
     FILE* existing = fopen(path, "rb");
     if (existing) {
         fclose(existing);
-        return;
+        return true;
     }
 
     // Try writing immediately; if it fails because dirs don't exist, create them once and retry.
@@ -467,7 +528,7 @@ static void save_tile_to_disk(int tile_x, int tile_y, int zoom, const u8* buffer
 
         char source_dir[96];
         snprintf(source_dir, sizeof(source_dir), TILE_CACHE_ROOT "/%s",
-                 (tile_source == TILE_SOURCE_SATELLITE) ? "sat" : "street");
+                 (source == TILE_SOURCE_SATELLITE) ? "sat" : "street");
         ensure_dir(source_dir);
 
         // Ensure directories exist: sdmc:/3ds_google_maps/tiles/<z>/<x>/
@@ -480,48 +541,22 @@ static void save_tile_to_disk(int tile_x, int tile_y, int zoom, const u8* buffer
         ensure_dir(zx_dir);
 
         f = fopen(path, "wb");
-        if (!f) return;
+        if (!f) return false;
     }
 
     // Use a larger stdio buffer to reduce SD write overhead.
-    static char file_buf[16 * 1024];
-    setvbuf(f, file_buf, _IOFBF, sizeof(file_buf));
-    fwrite(buffer, 1, (size_t)size, f);
-    fclose(f);
+    size_t written = fwrite(buffer, 1, (size_t)size, f);
+    int closed = fclose(f);
+    if (written == size && closed == 0) return true;
+    unlink(path);
+    return false;
 }
 
 bool network_init(void) {
     if (network_initialized) return true;
     
-    Result ret;
-    
-    // Initialize AC (wireless) service
-    ret = acInit();
-    if (R_FAILED(ret)) {
-        printf("Failed to initialize AC service: 0x%08lX\n", ret);
-        return false;
-    }
-    
-    // Wait for internet connection
-    bool connected = false;
-    for (int i = 0; i < 10; i++) {
-        u32 wifi_status = 0;
-        ret = ACU_GetWifiStatus(&wifi_status);
-        if (R_SUCCEEDED(ret) && wifi_status) {
-            connected = true;
-            break;
-        }
-        svcSleepThread(1000000000LL); // Sleep for 1 second
-    }
-    
-    if (!connected) {
-        printf("No WiFi connection detected!\n");
-        printf("Please ensure WiFi is enabled and connected.\n");
-        acExit();
-        return false;
-    }
-    
-    printf("WiFi connected successfully!\n");
+    LightLock_Init(&tile_io_lock);
+    ac_ready = R_SUCCEEDED(acInit());
 
     // Initialise libcurl + mbedTLS for HTTPS downloads.
     net_curl_init();
@@ -574,7 +609,7 @@ void network_cleanup(void) {
     g_tilepacks_loaded = false;
 
     net_curl_cleanup();
-    acExit();
+    if (ac_ready) acExit();
     network_initialized = false;
 }
 
@@ -715,45 +750,24 @@ bool download_url(const char* url, u8** buffer, u32* size) {
     return true;
 }
 
-bool download_tile(int tile_x, int tile_y, int zoom, u8** buffer, u32* size) {
-    if (!network_initialized) {
-        return false;
-    }
+bool download_tile(int x, int y, int zoom, u8 **buffer, u32 *size) {
+    return download_tile_with_curl(x, y, zoom, NULL, buffer, size);
+}
 
-    char url[512];
-    build_osm_url(tile_x, tile_y, zoom, url, sizeof(url));
-
-    // 1) Try SD card cache first
-    if (load_tile_from_disk(tile_x, tile_y, zoom, buffer, size)) {
-        last_tile_cache_hit = true;
-        last_tile_download_ms = 0;
-        last_tile_size_bytes = *size;
-        return true;
-    }
-
-    // 2) Download from network and populate cache
-    last_tile_cache_hit = false;
-    u64 t0 = osGetTime();
-    bool ok = download_url(url, buffer, size);
-    u64 t1 = osGetTime();
-    last_tile_download_ms = (u32)(t1 - t0);
-    last_tile_size_bytes = ok ? *size : 0;
-    if (ok) {
-        save_tile_to_disk(tile_x, tile_y, zoom, *buffer, *size);
-    }
-    return ok;
+bool network_socket_service_ready(void) {
+    return g_soc_buf != NULL;
 }
 
 bool is_connected(void) {
-    if (!network_initialized) return false;
+    if (!network_initialized || !ac_ready) return false;
     
     u32 wifi_status = 0;
     Result ret = ACU_GetWifiStatus(&wifi_status);
     return R_SUCCEEDED(ret) && wifi_status;
 }
 
-void build_osm_url(int tile_x, int tile_y, int zoom, char* url, size_t url_size) {
-    if (tile_source == TILE_SOURCE_SATELLITE) {
+static void build_tile_url(TileSource source, int tile_x, int tile_y, int zoom, char* url, size_t url_size) {
+    if (source == TILE_SOURCE_SATELLITE) {
         if (network_get_proxy_enabled()) {
             snprintf(url, url_size,
                      "%s/sat/%d/%d/%d.png",
@@ -775,6 +789,10 @@ void build_osm_url(int tile_x, int tile_y, int zoom, char* url, size_t url_size)
                  TILE_BASE_URL "/%d/%d/%d.png",
                  zoom, tile_x, tile_y);
     }
+}
+
+void build_osm_url(int x, int y, int zoom, char *url, size_t size) {
+    build_tile_url(tile_source, x, y, zoom, url, size);
 }
 
 void build_google_url(int tile_x, int tile_y, int zoom, char* url, size_t url_size) {

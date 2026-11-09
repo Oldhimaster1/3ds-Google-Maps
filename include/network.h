@@ -27,15 +27,26 @@ const char* network_get_tile_source_name(void);
 bool network_tile_requests_use_proxy(void);
 const char* network_get_effective_tile_backend_name(void);
 
+typedef struct {
+    unsigned tiles, min_zoom, max_zoom;
+    unsigned x, y, zoom;
+    long bytes;
+} OfflinePackInfo;
+
+bool network_get_offline_pack(TileSource source, OfflinePackInfo *info);
+bool network_remove_offline_pack(TileSource source);
+
 // Map tile downloading
 bool download_tile(int tile_x, int tile_y, int zoom, u8** buffer, u32* size);
 bool is_connected(void);
+bool network_socket_service_ready(void);
 
 // Persistent curl handle for download worker threads.
 // Allocate one handle per thread; reusing it across requests keeps the
 // TLS connection alive so only the first tile per thread pays handshake cost.
 void *network_alloc_tile_curl(void);
 void  network_free_tile_curl(void *curl_handle);
+bool fetch_map_tile(int x, int y, int zoom, void *curl, bool online, TileSource source, u8 **buffer, u32 *size, bool *offline_hit);
 bool  download_tile_with_curl(int tile_x, int tile_y, int zoom, void *curl_handle, u8 **buffer, u32 *size);
 
 // SD tile cache toggle

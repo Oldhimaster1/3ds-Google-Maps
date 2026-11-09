@@ -9,6 +9,7 @@ bool map_tiles_init(void);
 void map_tiles_cleanup(void);
 void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset_y, 
                      int screen_width, int screen_height, bool is_top_screen);
+void map_tiles_view_changed(void);
 void map_tiles_clear_cache(void);
 
 // Call once per frame from the main thread to finish GPU texture uploads

@@ -1,9 +1,11 @@
 #include "gps.h"
 #include "gps_server.h"
+#include "network.h"
 
 #include <3ds.h>
 #include <malloc.h>
 #include <errno.h>
+#include <math.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -28,6 +30,9 @@ static GpsSourceMode g_source_mode = GPS_SOURCE_NMEA_CLIENT;
 #define SOC_ALIGN 0x1000
 #define SOC_BUFFERSIZE 0x100000
 
+static char gps_host[16] = GPS_HOST;
+static int gps_port = GPS_PORT;
+
 static int gps_socket = -1;
 static bool gps_initialized = false;
 static bool soc_initialized = false;
@@ -36,6 +41,8 @@ static u32* soc_buffer = NULL;
 static double current_lat = 0.0;
 static double current_lon = 0.0;
 static bool has_fix = false;
+static u64 fix_time;
+static bool discard_sentence;
 
 /* LightLock protects current_lat / current_lon / has_fix so the HTTPS server
  * background thread can safely call gps_inject_fix() concurrently. */
@@ -52,74 +59,55 @@ static void ensure_fix_lock(void) {
 static char nmea_buffer[GPS_BUFFER_SIZE];
 static int buffer_pos = 0;
 
-static double parse_nmea_coord(const char* str, char direction) {
-    if (!str || strlen(str) < 4) return 0.0;
-
-    double raw = atof(str);
-    int degrees = (int)(raw / 100);
-    double minutes = raw - (degrees * 100);
-    double decimal = degrees + (minutes / 60.0);
-
-    if (direction == 'S' || direction == 'W') {
-        decimal = -decimal;
-    }
-
-    return decimal;
+static bool parse_nmea_coord(const char *field, const char *direction,
+                             char positive, char negative, double limit, double *out) {
+    if (!field[0] || !direction[0] || direction[1] ||
+        (direction[0] != positive && direction[0] != negative)) return false;
+    char *end;
+    double raw = strtod(field, &end);
+    if (end == field || *end || !isfinite(raw) || raw < 0 || raw > limit * 100) return false;
+    double degrees = floor(raw / 100);
+    double minutes = raw - degrees * 100;
+    if (minutes >= 60) return false;
+    *out = (degrees + minutes / 60) * (direction[0] == negative ? -1 : 1);
+    return fabs(*out) <= limit;
 }
 
-static bool parse_nmea_sentence(const char* sentence) {
-    char buf[256];
-    strncpy(buf, sentence, sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
-
-    // GGA: $GPGGA / $GNGGA
-    if (strncmp(buf, "$GPGGA", 6) == 0 || strncmp(buf, "$GNGGA", 6) == 0) {
-        char* tokens[15];
-        int token_count = 0;
-        char* token = strtok(buf, ",");
-
-        while (token && token_count < 15) {
-            tokens[token_count++] = token;
-            token = strtok(NULL, ",");
-        }
-
-        if (token_count >= 7) {
-            // tokens[2] lat, [3] N/S, [4] lon, [5] E/W, [6] fix quality
-            if (strlen(tokens[2]) > 0 && strlen(tokens[4]) > 0) {
-                int fix_quality = atoi(tokens[6]);
-                if (fix_quality > 0) {
-                    current_lat = parse_nmea_coord(tokens[2], tokens[3][0]);
-                    current_lon = parse_nmea_coord(tokens[4], tokens[5][0]);
-                    has_fix = true;
-                    return true;
-                }
-            }
-        }
+static bool parse_nmea_sentence(char *sentence) {
+    if (sentence[0] != '$') return false;
+    char *checksum = strchr(sentence, '*');
+    if (checksum) {
+        unsigned value = 0;
+        for (char *p = sentence + 1; p < checksum; p++) value ^= (unsigned char)*p;
+        char *end;
+        unsigned long expected = strtoul(checksum + 1, &end, 16);
+        if (end != checksum + 3 || *end || expected != value) return false;
+        *checksum = 0;
     }
 
-    // RMC: $GPRMC / $GNRMC
-    if (strncmp(buf, "$GPRMC", 6) == 0 || strncmp(buf, "$GNRMC", 6) == 0) {
-        char* tokens[15];
-        int token_count = 0;
-        char* token = strtok(buf, ",");
-
-        while (token && token_count < 15) {
-            tokens[token_count++] = token;
-            token = strtok(NULL, ",");
+    char *fields[7];
+    for (int i = 0; i < 7; i++) {
+        fields[i] = sentence;
+        char *comma = strchr(sentence, ',');
+        if (!comma) {
+            if (i != 6) return false;
+            break;
         }
-
-        if (token_count >= 7) {
-            // tokens[2] status A/V, [3] lat, [4] N/S, [5] lon, [6] E/W
-            if (tokens[2][0] == 'A' && strlen(tokens[3]) > 0 && strlen(tokens[5]) > 0) {
-                current_lat = parse_nmea_coord(tokens[3], tokens[4][0]);
-                current_lon = parse_nmea_coord(tokens[5], tokens[6][0]);
-                has_fix = true;
-                return true;
-            }
-        }
+        *comma = 0;
+        sentence = comma + 1;
     }
 
-    return false;
+    if (strlen(fields[0]) != 6) return false;
+    bool gga = strcmp(fields[0] + 3, "GGA") == 0;
+    bool rmc = strcmp(fields[0] + 3, "RMC") == 0;
+    if ((!gga && !rmc) || (gga && atoi(fields[6]) <= 0) ||
+        (rmc && strcmp(fields[2], "A") != 0)) return false;
+    int i = gga ? 2 : 3;
+    double lat, lon;
+    if (!parse_nmea_coord(fields[i], fields[i+1], 'N', 'S', 90, &lat) ||
+        !parse_nmea_coord(fields[i+2], fields[i+3], 'E', 'W', 180, &lon)) return false;
+    gps_inject_fix(lat, lon);
+    return true;
 }
 
 /* =========================================================================
@@ -137,6 +125,11 @@ GpsSourceMode gps_get_source_mode(void) {
 void gps_inject_fix(double lat, double lon) {
     ensure_fix_lock();
     LightLock_Lock(&g_fix_lock);
+    if (!isfinite(lat) || !isfinite(lon) || fabs(lat) > 90 || fabs(lon) > 180) {
+        LightLock_Unlock(&g_fix_lock);
+        return;
+    }
+    fix_time = osGetTime();
     current_lat = lat;
     current_lon = lon;
     has_fix     = true;
@@ -150,8 +143,8 @@ void gps_clear_fix(void) {
     LightLock_Unlock(&g_fix_lock);
 }
 
-const char *gps_get_nmea_host(void) { return GPS_HOST; }
-int         gps_get_nmea_port(void) { return GPS_PORT; }
+const char *gps_get_nmea_host(void) { return gps_host; }
+int         gps_get_nmea_port(void) { return gps_port; }
 
 void gps_get_server_url(char *buf, size_t len) {
     gps_server_get_url(buf, len);
@@ -176,9 +169,23 @@ bool gps_init(void) {
     /* ---- NMEA TCP client mode (original behaviour) --------------------- */
     if (gps_initialized) return true;
 
-    printf("Connecting to GPS at %s:%d...\n", GPS_HOST, GPS_PORT);
+    snprintf(gps_host, sizeof(gps_host), "%s", GPS_HOST);
+    gps_port = GPS_PORT;
+    FILE *config = fopen("sdmc:/3ds_google_maps/gps.cfg", "r");
+    if (config) {
+        char host[16];
+        unsigned port;
+        struct in_addr address;
+        if (fscanf(config, "%15s %u", host, &port) == 2 &&
+            port > 0 && port <= 65535 && inet_aton(host, &address)) {
+            snprintf(gps_host, sizeof(gps_host), "%s", host);
+            gps_port = (int)port;
+        }
+        fclose(config);
+    }
+    printf("Connecting to GPS at %s:%d...\n", gps_host, gps_port);
 
-    if (!soc_initialized) {
+    if (!soc_initialized && !network_socket_service_ready()) {
         soc_buffer = (u32*)memalign(SOC_ALIGN, SOC_BUFFERSIZE);
         if (!soc_buffer) {
             printf("GPS: Failed to allocate SOC buffer\n");
@@ -211,9 +218,9 @@ bool gps_init(void) {
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(GPS_PORT);
+    server_addr.sin_port = htons(gps_port);
 
-    if (inet_aton(GPS_HOST, &server_addr.sin_addr) == 0) {
+    if (inet_aton(gps_host, &server_addr.sin_addr) == 0) {
         printf("GPS: Invalid address\n");
         close(gps_socket);
         gps_socket = -1;
@@ -262,7 +269,8 @@ bool gps_init(void) {
     printf("GPS: Connected!\n");
     gps_initialized = true;
     buffer_pos = 0;
-    has_fix = false;
+    discard_sentence = false;
+    gps_clear_fix();
     return true;
 }
 
@@ -312,16 +320,19 @@ void gps_update(void) {
             char c = temp[i];
 
             if (c == '\n' || c == '\r') {
-                if (buffer_pos > 0) {
+                if (buffer_pos > 0 && !discard_sentence) {
                     nmea_buffer[buffer_pos] = '\0';
                     (void)parse_nmea_sentence(nmea_buffer);
-                    buffer_pos = 0;
                 }
+                buffer_pos = 0;
+                discard_sentence = false;
             } else if (buffer_pos < GPS_BUFFER_SIZE - 1) {
                 nmea_buffer[buffer_pos++] = c;
+            } else {
+                discard_sentence = true;
             }
         }
-    } else if (bytes_read == 0) {
+    } else if (bytes_read == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
         printf("GPS: Connection closed\n");
         gps_cleanup();
     }
@@ -329,13 +340,16 @@ void gps_update(void) {
 }
 
 bool gps_has_fix(void) {
-    return has_fix;
+    return gps_get_position(NULL, NULL);
 }
 
 bool gps_get_position(double *lat, double *lon) {
-    if (!has_fix) return false;
     ensure_fix_lock();
     LightLock_Lock(&g_fix_lock);
+    if (!has_fix || osGetTime() - fix_time > 10000) {
+        LightLock_Unlock(&g_fix_lock);
+        return false;
+    }
     if (lat) *lat = current_lat;
     if (lon) *lon = current_lon;
     LightLock_Unlock(&g_fix_lock);

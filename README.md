@@ -63,6 +63,14 @@ SD card:
 
 The app finds these on startup. Re-run the script for more areas and it merges new tiles into the existing pack.
 
+### Managing packs on the 3DS
+
+Open **Menu → Data → Offline regions**. Use Left/Right to select the street or
+satellite pack, A to preview a location in it, X twice to remove that pack, or
+Y to download the current area to the SD cache. The manager shows installed
+pack size, tile count, and zoom range. Clearing the browsing cache leaves
+tilepack files intact. Both tilepacks and cached tiles can be read with Wi-Fi off.
+
 ### Why one file instead of individual tiles?
 
 Copying 15,000 small PNGs to a FAT32 SD card takes over an hour. A single `.tilepack` file transfers in under a minute. The app reads it with a binary search index, so lookups are O(log n).
@@ -95,6 +103,11 @@ Both devices need to be on the same WiFi network or either connect the 3ds to yo
 **iPhone users:** Safari has been unreliable with the self-signed cert and geolocation on this setup. Use Google Chrome on your iPhone instead, it works much better.
 
 ---
+
+For NMEA client mode, optionally place a one-line `gps.cfg` in
+`sdmc:/3ds_google_maps/` with the phone's IPv4 address and TCP port separated
+by a space, for example `172.20.10.1 23`. Fixes expire after ten seconds without
+a valid update.
 
 ## Building from source
 

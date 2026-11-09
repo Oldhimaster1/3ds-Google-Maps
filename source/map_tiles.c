@@ -21,6 +21,8 @@ typedef struct {
     bool valid;
     bool pending;   /* download in-flight — do not evict or re-request */
     u32 last_used;
+    u64 retry_at;
+    unsigned failures;
 } CachedTile;
 
 static CachedTile tile_cache[MAX_CACHED_TILES];
@@ -59,6 +61,9 @@ static void free_cached_tile(CachedTile* tile) {
     }
 
     tile->valid = false;
+    tile->pending = false;
+    tile->retry_at = 0;
+    tile->failures = 0;
     tile->tile_x = 0;
     tile->tile_y = 0;
     tile->zoom = 0;
@@ -86,18 +91,21 @@ static C2D_Image create_image_from_decoded(const u8 *pixels);
 /* -------------------------------------------------------------------------
  * Background download thread
  *
- * The worker thread downloads raw tile bytes only. GPU operations (C3D_Tex*)
- * must happen on the main thread, so map_tiles_process_downloads() is called
- * once per frame from main.c to do the decode + texture upload.
+ * Workers read or download and decode tiles. The main thread uploads textures.
  * -------------------------------------------------------------------------*/
 typedef struct {
     int tile_x, tile_y, zoom;
     CachedTile *slot;
+    u32 generation;
+    TileSource source;
+    bool online;
+    bool prefetch;
 } DLRequest;
 
 typedef struct {
     int tile_x, tile_y, zoom;
     CachedTile *slot;
+    u32 generation;
     u8  *decoded_pixels;  /* Morton-tiled ABGR 256x256x4, NULL on failure */
     bool ok;
 } DLResult;
@@ -116,8 +124,16 @@ static LightLock  dl_res_lock;
 static LightEvent dl_work_event;
 #define DL_NUM_THREADS 2
 static Thread     dl_thread_handles[DL_NUM_THREADS];
-static volatile bool dl_thread_running = false;
+static bool dl_thread_running;
+static u32 dl_generation;
 static void      *dl_curl[DL_NUM_THREADS];  /* persistent curl handle per thread */
+
+static bool worker_running(void) {
+    LightLock_Lock(&dl_req_lock);
+    bool running = dl_thread_running;
+    LightLock_Unlock(&dl_req_lock);
+    return running;
+}
 
 static void download_worker(void *arg) {
     int thread_id = (int)(size_t)arg;
@@ -126,13 +142,14 @@ static void download_worker(void *arg) {
      * tile requests so we only pay the handshake cost on the first tile. */
     dl_curl[thread_id] = network_alloc_tile_curl();
     log_write("[THREAD %d] curl handle=%p\n", thread_id, dl_curl[thread_id]);
-    while (dl_thread_running) {
+    while (worker_running()) {
         LightEvent_Wait(&dl_work_event);
         log_write("[THREAD %d] woke up\n", thread_id);
-        while (dl_thread_running) {
+        while (worker_running()) {
             /* Dequeue one request */
             LightLock_Lock(&dl_req_lock);
-            if (dl_req_head == dl_req_tail) {
+            if (!dl_thread_running || dl_req_head == dl_req_tail) {
+                if (dl_thread_running) LightEvent_Clear(&dl_work_event);
                 LightLock_Unlock(&dl_req_lock);
                 break;
             }
@@ -144,8 +161,8 @@ static void download_worker(void *arg) {
             /* Download raw tile bytes using persistent handle (no GPU ops here) */
             u8 *buffer = NULL;
             u32 size = 0;
-            bool ok = download_tile_with_curl(req.tile_x, req.tile_y, req.zoom,
-                                              dl_curl[thread_id], &buffer, &size);
+            bool ok = fetch_map_tile(req.tile_x, req.tile_y, req.zoom,
+                                     dl_curl[thread_id], req.online, req.source, &buffer, &size, NULL);
             log_write("[THREAD %d] tile z=%d x=%d y=%d ok=%d size=%lu\n", thread_id, req.zoom, req.tile_x, req.tile_y, (int)ok, size);
 
             /* Decode on worker thread — JPEG decode + Morton conversion are the
@@ -179,23 +196,29 @@ static void download_worker(void *arg) {
             }
 
             /* Push result to main thread */
-            LightLock_Lock(&dl_res_lock);
-            if ((dl_res_tail - dl_res_head) < DL_QUEUE_SIZE) {
-                dl_res_q[dl_res_tail & DL_QUEUE_MASK] = (DLResult){
-                    .tile_x         = req.tile_x,
-                    .tile_y         = req.tile_y,
-                    .zoom           = req.zoom,
-                    .slot           = req.slot,
-                    .decoded_pixels = decoded_pixels,
-                    .ok             = ok,
+            while (worker_running()) {
+                LightLock_Lock(&dl_res_lock);
+                if ((dl_res_tail - dl_res_head) < DL_QUEUE_SIZE) {
+                    dl_res_q[dl_res_tail & DL_QUEUE_MASK] = (DLResult){
+                        .tile_x         = req.tile_x,
+                        .tile_y         = req.tile_y,
+                        .zoom           = req.zoom,
+                        .slot           = req.slot,
+                        .generation     = req.generation,
+                        .decoded_pixels = decoded_pixels,
+                        .ok             = ok,
                 };
                 dl_res_tail++;
                 decoded_pixels = NULL;   /* ownership transferred */
+                LightLock_Unlock(&dl_res_lock);
+                break;
+                }
+                LightLock_Unlock(&dl_res_lock);
+                svcSleepThread(2000000LL);
             }
-            LightLock_Unlock(&dl_res_lock);
 
             if (buffer) free(buffer);              /* raw bytes if download failed */
-            if (decoded_pixels) free(decoded_pixels); /* drop if result queue was full */
+            if (decoded_pixels) free(decoded_pixels); /* shutdown before publishing */
         }
     }
     /* Clean up the persistent curl handle when this thread exits */
@@ -203,15 +226,8 @@ static void download_worker(void *arg) {
     dl_curl[thread_id] = NULL;
 }
 
-static void enqueue_tile_download(int tile_x, int tile_y, int zoom, CachedTile *slot) {
-    /* is_connected() uses ACU which may not work from background threads.
-     * Check it here on the main thread before enqueuing. */
-    if (!is_connected()) {
-        log_write("[TILES] enqueue skipped (not connected) z=%d x=%d y=%d\n", zoom, tile_x, tile_y);
-        return;
-    }
-    log_write("[TILES] enqueue z=%d x=%d y=%d\n", zoom, tile_x, tile_y);
-
+static void enqueue_tile_download(int tile_x, int tile_y, int zoom, CachedTile *slot, bool prefetch) {
+    bool online = is_connected();
     slot->pending = true;
     slot->valid   = false;
     slot->tile_x  = tile_x;
@@ -220,16 +236,25 @@ static void enqueue_tile_download(int tile_x, int tile_y, int zoom, CachedTile *
     slot->last_used = cache_counter++;
 
     LightLock_Lock(&dl_req_lock);
-    if ((dl_req_tail - dl_req_head) < DL_QUEUE_SIZE) {
-        dl_req_q[dl_req_tail & DL_QUEUE_MASK] = (DLRequest){
+    if ((dl_req_tail - dl_req_head) < DL_QUEUE_SIZE - (prefetch ? 8 : 0)) {
+        int pos = dl_req_tail;
+        while (!prefetch && pos > dl_req_head && dl_req_q[(pos - 1) & DL_QUEUE_MASK].prefetch) {
+            dl_req_q[pos & DL_QUEUE_MASK] = dl_req_q[(pos - 1) & DL_QUEUE_MASK];
+            pos--;
+        }
+        dl_req_q[pos & DL_QUEUE_MASK] = (DLRequest){
             .tile_x = tile_x,
             .tile_y = tile_y,
             .zoom   = zoom,
             .slot   = slot,
+            .generation = dl_generation,
+            .source = network_get_tile_source(),
+            .online = online,
+            .prefetch = prefetch,
         };
         dl_req_tail++;
-        LightLock_Unlock(&dl_req_lock);
         LightEvent_Signal(&dl_work_event);
+        LightLock_Unlock(&dl_req_lock);
     } else {
         /* Queue full — clear pending so the slot stays reclaimable */
         slot->pending = false;
@@ -245,7 +270,7 @@ bool map_tiles_init(void) {
     /* Initialise download thread infrastructure */
     LightLock_Init(&dl_req_lock);
     LightLock_Init(&dl_res_lock);
-    LightEvent_Init(&dl_work_event, RESET_ONESHOT);
+    LightEvent_Init(&dl_work_event, RESET_STICKY);
     dl_req_head = dl_req_tail = 0;
     dl_res_head = dl_res_tail = 0;
     dl_thread_running = true;
@@ -256,6 +281,7 @@ bool map_tiles_init(void) {
         log_write("[TILES] started download thread %d handle=%p\n", i, (void*)dl_thread_handles[i]);
     }
 
+    if (!dl_thread_handles[0] && !dl_thread_handles[1]) return false;
     initialized = true;
     return true;
 }
@@ -276,11 +302,13 @@ void map_tiles_cleanup(void) {
     if (!initialized) return;
 
     /* Stop the background download threads */
+    LightLock_Lock(&dl_req_lock);
     dl_thread_running = false;
+    LightLock_Unlock(&dl_req_lock);
     LightEvent_Signal(&dl_work_event);  /* wake all threads so they can exit */
     for (int i = 0; i < DL_NUM_THREADS; i++) {
         if (dl_thread_handles[i]) {
-            threadJoin(dl_thread_handles[i], 5000000000ULL);  /* 5s max wait */
+            threadJoin(dl_thread_handles[i], U64_MAX);
             threadFree(dl_thread_handles[i]);
             dl_thread_handles[i] = NULL;
         }
@@ -307,14 +335,18 @@ void map_tiles_process_downloads(void) {
 
     /* Drain the result queue.  Tiles arrive pre-decoded (JPEG/PNG+Morton done
      * on the worker thread).  Only C3D_TexInit / C3D_TexUpload stay here. */
-    while (dl_res_head != dl_res_tail) {
+    for (int uploads = 0; uploads < 2; uploads++) {
         LightLock_Lock(&dl_res_lock);
+        if (dl_res_head == dl_res_tail) {
+            LightLock_Unlock(&dl_res_lock);
+            break;
+        }
         DLResult res = dl_res_q[dl_res_head & DL_QUEUE_MASK];
         dl_res_head++;
         LightLock_Unlock(&dl_res_lock);
 
         /* Only write to the slot if it is still waiting for this exact tile */
-        if (res.slot->pending &&
+        if (res.generation == dl_generation && res.slot->pending &&
             res.slot->tile_x == res.tile_x &&
             res.slot->tile_y == res.tile_y &&
             res.slot->zoom   == res.zoom) {
@@ -326,33 +358,62 @@ void map_tiles_process_downloads(void) {
                 }
             }
             res.slot->pending = false;
+            if (!res.slot->valid) {
+                unsigned failures = res.slot->failures;
+                res.slot->retry_at = osGetTime() + (1000u << failures);
+                if (failures < 5) res.slot->failures++;
+            } else {
+                res.slot->failures = 0;
+                res.slot->retry_at = 0;
+            }
         }
         if (res.decoded_pixels) free(res.decoded_pixels);
     }
+}
+
+static bool draw_zoom_fallback(int x, int y, int zoom, int screen_x, int screen_y) {
+    if (zoom > 1) {
+        CachedTile *parent = find_cached_tile(x / 2, y / 2, zoom - 1);
+        if (parent && parent->valid) {
+            Tex3DS_SubTexture crop = {
+                .width = 128, .height = 128,
+                .left = (x & 1) * 0.5f, .right = ((x & 1) + 1) * 0.5f,
+                .top = 1.0f - (y & 1) * 0.5f, .bottom = 0.5f - (y & 1) * 0.5f,
+            };
+            C2D_Image preview = { parent->image.tex, &crop };
+            C2D_DrawImageAt(preview, screen_x, screen_y, 0.0f, NULL, 2.0f, 2.0f);
+            return true;
+        }
+    }
+    bool drawn = false;
+    for (int dy = 0; dy < 2; dy++) {
+        for (int dx = 0; dx < 2; dx++) {
+            CachedTile *child = find_cached_tile(2*x + dx, 2*y + dy, zoom + 1);
+            if (child && child->valid) {
+                C2D_DrawImageAt(child->image, screen_x + dx*128, screen_y + dy*128,
+                               0.0f, NULL, 0.5f, 0.5f);
+                drawn = true;
+            }
+        }
+    }
+    return drawn;
 }
 
 void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset_y, 
                      int screen_width, int screen_height, bool is_top_screen) {
     if (!initialized) return;
     
-    // Calculate the tile coordinates for the center of the screen
-    int center_tile_x, center_tile_y;
-    lat_lon_to_tile(lat, lon, zoom, &center_tile_x, &center_tile_y);
-    
-    // Calculate how many tiles we need to cover the screen
-    int tiles_x = (screen_width / TILE_SIZE) + 2;
-    int tiles_y = (screen_height / TILE_SIZE) + 2;
-    
-    // Calculate starting tile position
-    int start_tile_x = center_tile_x - tiles_x / 2;
-    int start_tile_y = center_tile_y - tiles_y / 2;
-    
-    // Calculate pixel offset within the center tile
-    int center_pixel_x, center_pixel_y;
-    lat_lon_to_pixel(lat, lon, zoom, &center_pixel_x, &center_pixel_y);
-    int tile_offset_x = center_pixel_x % TILE_SIZE;
-    int tile_offset_y = center_pixel_y % TILE_SIZE;
-    
+    int center_x, center_y;
+    lat_lon_to_pixel(lat, lon, zoom, &center_x, &center_y);
+    int left = center_x - screen_width / 2 - offset_x;
+    int top = center_y - screen_height / 2 - offset_y;
+    int start_tile_x = (int)floor(left / 256.0);
+    int start_tile_y = (int)floor(top / 256.0);
+    int tiles_x = (int)floor((left + screen_width - 1) / 256.0) - start_tile_x + 1;
+    int tiles_y = (int)floor((top + screen_height - 1) / 256.0) - start_tile_y + 1;
+    int center_tile_x = center_x / TILE_SIZE;
+    int center_tile_y = center_y / TILE_SIZE;
+
     /* Phase 1 — collect uncached visible tiles, sort by distance from the map
      * centre, then enqueue downloads centre-first so the tile under the
      * crosshair always enters the worker queue before edge/corner tiles. */
@@ -364,9 +425,10 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
         for (int tx = 0; tx < tiles_x; tx++) {
             int tile_x = start_tile_x + tx;
             int tile_y = start_tile_y + ty;
-            if (tile_x < 0 || tile_x >= max_tile || tile_y < 0 || tile_y >= max_tile) continue;
+            if (tile_y < 0 || tile_y >= max_tile) continue;
+            tile_x = (tile_x + max_tile) % max_tile;
             if (!find_cached_tile(tile_x, tile_y, zoom) && npq < 16) {
-                int dx = tile_x - center_tile_x;
+                int dx = start_tile_x + tx - center_tile_x;
                 int dy = tile_y - center_tile_y;
                 pq[npq].tile_x  = tile_x;
                 pq[npq].tile_y  = tile_y;
@@ -383,23 +445,34 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
         pq[j + 1] = key;
     }
     for (int i = 0; i < npq; i++) {
-        CachedTile *slot = get_cache_slot();
-        if (slot) enqueue_tile_download(pq[i].tile_x, pq[i].tile_y, zoom, slot);
+        if (find_cached_tile(pq[i].tile_x, pq[i].tile_y, zoom)) continue;
+        CachedTile *slot = NULL;
+        for (int j = 0; j < MAX_CACHED_TILES; j++) {
+            CachedTile *candidate = &tile_cache[j];
+            if (candidate->retry_at && !candidate->pending &&
+                candidate->tile_x == pq[i].tile_x && candidate->tile_y == pq[i].tile_y &&
+                candidate->zoom == zoom) {
+                slot = candidate;
+                break;
+            }
+        }
+        if (!slot) slot = get_cache_slot();
+        if (slot) enqueue_tile_download(pq[i].tile_x, pq[i].tile_y, zoom, slot, false);
     }
 
     /* Phase 2 — render: draw cached tiles or grey placeholder */
-    int tiles_rendered = 0;
     for (int ty = 0; ty < tiles_y; ty++) {
         for (int tx = 0; tx < tiles_x; tx++) {
             int tile_x = start_tile_x + tx;
             int tile_y = start_tile_y + ty;
-            if (tile_x < 0 || tile_x >= max_tile || tile_y < 0 || tile_y >= max_tile) continue;
+            if (tile_y < 0 || tile_y >= max_tile) continue;
+            tile_x = (tile_x + max_tile) % max_tile;
 
             CachedTile *cached = find_cached_tile(tile_x, tile_y, zoom);
 
             // Calculate render position
-            int render_x = (tx * TILE_SIZE) - tile_offset_x + offset_x;
-            int render_y = (ty * TILE_SIZE) - tile_offset_y + offset_y;
+            int render_x = (start_tile_x + tx) * TILE_SIZE - left;
+            int render_y = (start_tile_y + ty) * TILE_SIZE - top;
 
             // Only render if tile is visible on screen
             if (render_x + TILE_SIZE >= 0 && render_x < screen_width &&
@@ -408,8 +481,7 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
                 if (cached && cached->valid && cached->image.tex) {
                     cached->last_used = cache_counter++;
                     C2D_DrawImageAt(cached->image, render_x, render_y, 0.0f, NULL, 1.0f, 1.0f);
-                    tiles_rendered++;
-                } else {
+                } else if (!draw_zoom_fallback(tile_x, tile_y, zoom, render_x, render_y)) {
                     // Draw placeholder for missing / in-flight tile
                     C2D_DrawRectSolid(render_x, render_y, 0.0f, TILE_SIZE, TILE_SIZE,
                                     C2D_Color32f(0.3f, 0.3f, 0.3f, 1.0f));
@@ -439,6 +511,7 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
 void map_tiles_clear_cache(void) {
     if (!initialized) return;
     
+    map_tiles_view_changed();
     // Free all cached tiles
     for (int i = 0; i < MAX_CACHED_TILES; i++) {
         free_cached_tile(&tile_cache[i]);
@@ -447,15 +520,30 @@ void map_tiles_clear_cache(void) {
     map_tiles_prefetch_reset();
 }
 
+void map_tiles_view_changed(void) {
+    if (!initialized) return;
+    LightLock_Lock(&dl_req_lock);
+    dl_req_head = dl_req_tail;
+    dl_generation++;
+    LightLock_Unlock(&dl_req_lock);
+    for (int i = 0; i < MAX_CACHED_TILES; i++) {
+        tile_cache[i].pending = false;
+        tile_cache[i].retry_at = 0;
+        tile_cache[i].failures = 0;
+    }
+    map_tiles_prefetch_reset();
+}
+
 static void build_prefetch_queue(double lat, double lon, int zoom, int screen_width, int screen_height, int ring) {
     // Match the render grid (inner rect) and prefetch just outside it.
-    int center_tile_x, center_tile_y;
-    lat_lon_to_tile(lat, lon, zoom, &center_tile_x, &center_tile_y);
-
-    int tiles_x = (screen_width / TILE_SIZE) + 2;
-    int tiles_y = (screen_height / TILE_SIZE) + 2;
-    int start_tile_x = center_tile_x - tiles_x / 2;
-    int start_tile_y = center_tile_y - tiles_y / 2;
+    int center_x, center_y;
+    lat_lon_to_pixel(lat, lon, zoom, &center_x, &center_y);
+    int left = center_x - screen_width / 2;
+    int top = center_y - screen_height / 2;
+    int start_tile_x = (int)floor(left / 256.0);
+    int start_tile_y = (int)floor(top / 256.0);
+    int tiles_x = (int)floor((left + screen_width - 1) / 256.0) - start_tile_x + 1;
+    int tiles_y = (int)floor((top + screen_height - 1) / 256.0) - start_tile_y + 1;
 
     prefetch_count = 0;
     prefetch_index = 0;
@@ -496,13 +584,14 @@ void map_tiles_prefetch_step(double lat, double lon, int zoom, int screen_width,
     if (ring <= 0) return;
 
     // Rebuild queue if view changed materially.
-    int center_tile_x, center_tile_y;
-    lat_lon_to_tile(lat, lon, zoom, &center_tile_x, &center_tile_y);
-
-    int tiles_x = (screen_width / TILE_SIZE) + 2;
-    int tiles_y = (screen_height / TILE_SIZE) + 2;
-    int start_tile_x = center_tile_x - tiles_x / 2;
-    int start_tile_y = center_tile_y - tiles_y / 2;
+    int center_x, center_y;
+    lat_lon_to_pixel(lat, lon, zoom, &center_x, &center_y);
+    int left = center_x - screen_width / 2;
+    int top = center_y - screen_height / 2;
+    int start_tile_x = (int)floor(left / 256.0);
+    int start_tile_y = (int)floor(top / 256.0);
+    int tiles_x = (int)floor((left + screen_width - 1) / 256.0) - start_tile_x + 1;
+    int tiles_y = (int)floor((top + screen_height - 1) / 256.0) - start_tile_y + 1;
 
     bool view_changed = !prefetch_active ||
                         prefetch_zoom != zoom ||
@@ -525,7 +614,7 @@ void map_tiles_prefetch_step(double lat, double lon, int zoom, int screen_width,
 
         CachedTile* slot = get_cache_slot();
         if (!slot) return;
-        enqueue_tile_download(c.tile_x, c.tile_y, c.zoom, slot);
+        enqueue_tile_download(c.tile_x, c.tile_y, c.zoom, slot, true);
         return;
     }
 
@@ -562,7 +651,7 @@ void lat_lon_to_pixel(double lat, double lon, int zoom, int* pixel_x, int* pixel
 
 static CachedTile* find_cached_tile(int tile_x, int tile_y, int zoom) {
     for (int i = 0; i < MAX_CACHED_TILES; i++) {
-        if ((tile_cache[i].valid || tile_cache[i].pending) &&
+        if ((tile_cache[i].valid || tile_cache[i].pending || tile_cache[i].retry_at > osGetTime()) &&
             tile_cache[i].tile_x == tile_x &&
             tile_cache[i].tile_y == tile_y &&
             tile_cache[i].zoom == zoom) {
@@ -575,7 +664,7 @@ static CachedTile* find_cached_tile(int tile_x, int tile_y, int zoom) {
 static CachedTile* get_cache_slot(void) {
     // First, try to find a free slot (not valid AND not pending)
     for (int i = 0; i < MAX_CACHED_TILES; i++) {
-        if (!tile_cache[i].valid && !tile_cache[i].pending) {
+        if (!tile_cache[i].valid && !tile_cache[i].pending && tile_cache[i].retry_at <= osGetTime()) {
             free_cached_tile(&tile_cache[i]);
             return &tile_cache[i];
         }

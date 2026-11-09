@@ -228,6 +228,7 @@ static void apply_settings_hit(SettingsHitTarget hit);
 static bool point_in_rect(int px, int py, int x, int y, int w, int h);
 static bool is_recent_settings_hit(SettingsHitTarget hit, u64 now_ms);
 static void open_offline_download(void);
+static void open_offline_regions(void);
 
 static void ensure_app_data_dir(void) {
     mkdir("sdmc:/3ds_google_maps", 0777);
@@ -504,6 +505,7 @@ static double approach_lon(double current, double target, double alpha) {
 }
 
 static void set_camera_target(double lat, double lon, int zoom, bool snap_now) {
+    lat = fmax(-85.05112878, fmin(85.05112878, lat));
     g_target_lat = lat;
     g_target_lon = lon;
     g_target_zoom = zoom;
@@ -512,7 +514,7 @@ static void set_camera_target(double lat, double lon, int zoom, bool snap_now) {
         map_state.lat = lat;
         map_state.lon = lon;
         map_state.zoom = zoom;
-        map_tiles_clear_cache();
+        map_tiles_view_changed();
         map_tiles_prefetch_reset();
     }
 }
@@ -536,7 +538,7 @@ static void update_camera_smooth(void) {
             g_last_zoom_step_ms = now_ms;
             if (map_state.zoom < g_target_zoom) map_state.zoom++;
             else if (map_state.zoom > g_target_zoom) map_state.zoom--;
-            map_tiles_clear_cache();
+            map_tiles_view_changed();
             map_tiles_prefetch_reset();
         }
     }
@@ -676,7 +678,6 @@ int main(int argc, char* argv[]) {
     cfguInit();
     sslcInit(0);
     httpcInit(0);
-    acInit();
     
     // Initialize graphics
     init_graphics();
@@ -768,7 +769,8 @@ int main(int argc, char* argv[]) {
 
         // Prefetch a 1-tile ring around the view after ~0.5s of user idle.
         // This is throttled (one tile per frame) to keep things responsive.
-        if (!map_state.gps_tracking) {
+        if (!map_state.gps_tracking && (network_get_tile_source() != TILE_SOURCE_STREET ||
+                                         network_get_proxy_enabled())) {
             if (now_ms - g_last_interaction_ms > 500) {
                 if (g_prefetch_ring > 0 && g_prefetch_every_n_frames > 0) {
                     if ((frame_counter % g_prefetch_every_n_frames) == 0) {
@@ -792,7 +794,6 @@ cleanup:
     log_close();
     httpcExit();
     sslcExit();
-    acExit();
     cfguExit();
     gfxExit();
     
@@ -1293,27 +1294,11 @@ void zoom_out(void) {
 }
 
 void pan_map(int dx, int dy) {
-    map_state.offset_x += dx;
-    map_state.offset_y += dy;
-    
-    // Convert pixel offset to lat/lon offset
-    double lat_per_pixel = 180.0 / (TILE_SIZE * pow(2, map_state.zoom));
-    double lon_per_pixel = 360.0 / (TILE_SIZE * pow(2, map_state.zoom));
-    
-    g_target_lat -= dy * lat_per_pixel;
-    g_target_lon += dx * lon_per_pixel;
-    
-    // Clamp latitude
-    if (g_target_lat > 85.0511) g_target_lat = 85.0511;
-    if (g_target_lat < -85.0511) g_target_lat = -85.0511;
-    
-    // Wrap longitude
-    while (g_target_lon > 180.0) g_target_lon -= 360.0;
-    while (g_target_lon < -180.0) g_target_lon += 360.0;
-    
-    // Reset offsets after converting to lat/lon
-    map_state.offset_x = 0;
-    map_state.offset_y = 0;
+    double world = (double)(1 << map_state.zoom) * TILE_SIZE;
+    double y = (1.0 - asinh(tan(g_target_lat * M_PI / 180.0)) / M_PI) * world / 2.0;
+    y = fmax(0.0, fmin(world, y + dy));
+    g_target_lat = atan(sinh(M_PI * (1.0 - 2.0 * y / world))) * 180.0 / M_PI;
+    g_target_lon = fmod(g_target_lon + dx * 360.0 / world + 540.0, 360.0) - 180.0;
 }
 
 void render_map(void) {
@@ -1542,7 +1527,7 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             }
             break;
         case SETTINGS_HIT_DOWNLOAD_REGION:
-            open_offline_download();
+            open_offline_regions();
             break;
 
         /* ---- GPS tab -------------------------------------------------- */
@@ -1773,8 +1758,8 @@ static void render_settings_panel(void) {
 
         draw_ui_text(24.0f, 166.0f, 0.40f, 0.40f, C2D_Color32f(0.97f, 0.98f, 1.0f, 1.0f), 0, "Clear SD");
         draw_ui_text(24.0f, 184.0f, 0.40f, 0.40f, C2D_Color32f(0.97f, 0.98f, 1.0f, 1.0f), 0, "tile cache");
-        draw_ui_text(178.0f, 166.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "Download");
-        draw_ui_text(178.0f, 184.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "region");
+        draw_ui_text(178.0f, 166.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "Offline");
+        draw_ui_text(178.0f, 184.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "regions");
         snprintf(line, sizeof(line), "backend %s", network_get_effective_tile_backend_name());
         draw_ui_text(12.0f, 222.0f, 0.30f, 0.30f, C2D_Color32f(0.56f, 0.62f, 0.70f, 1.0f), 0, line);
     } else { /* SETTINGS_TAB_GPS */
@@ -2361,15 +2346,18 @@ static void render_route_overlay(double center_lat, double center_lon, int zoom,
     int center_px, center_py;
     lat_lon_to_pixel(center_lat, center_lon, zoom, &center_px, &center_py);
 
+    const int world = TILE_SIZE * (1 << zoom);
     const u32 color = C2D_Color32f(1.0f, 1.0f, 0.0f, 0.8f);
     for (int i = 1; i < g_route_count; i++) {
         int p0x, p0y, p1x, p1y;
         lat_lon_to_pixel(g_route[i - 1].lat, g_route[i - 1].lon, zoom, &p0x, &p0y);
         lat_lon_to_pixel(g_route[i].lat, g_route[i].lon, zoom, &p1x, &p1y);
 
-        float x0 = (float)(p0x - center_px + (screen_width / 2));
+        int dx0 = (p0x - center_px + world + world / 2) % world - world / 2;
+        int dx1 = dx0 + (p1x - p0x + world + world / 2) % world - world / 2;
+        float x0 = (float)(dx0 + screen_width / 2);
         float y0 = (float)(p0y - center_py + (screen_height / 2));
-        float x1 = (float)(p1x - center_px + (screen_width / 2));
+        float x1 = (float)(dx1 + screen_width / 2);
         float y1 = (float)(p1y - center_py + (screen_height / 2));
 
         // Skip segments fully off-screen (cheap check).
@@ -2448,7 +2436,72 @@ static int count_region_tiles(int min_zoom, int max_zoom,
     return total;
 }
 
+static void open_offline_regions(void) {
+    TileSource source = network_get_tile_source();
+    bool confirm_delete = false;
+    begin_bottom_console_ui();
+    while (aptMainLoop() && !g_should_exit) {
+        OfflinePackInfo info;
+        bool installed = network_get_offline_pack(source, &info);
+        consoleClear();
+        printf("=== Offline Regions ===\n\n");
+        printf("< %s >\n", source == TILE_SOURCE_SATELLITE ? "Satellite pack" : "Street pack");
+        if (installed) {
+            printf("%u tiles, zoom %u-%u, %.1f MB\n\n", info.tiles, info.min_zoom,
+                   info.max_zoom, info.bytes / 1048576.0);
+            printf("A: preview a covered location\n");
+            printf("X: remove this tilepack\n");
+        } else {
+            printf("No installed tilepack.\n\n");
+        }
+        printf("Y: download current area to SD cache\nB: back\n");
+        if (confirm_delete) printf("\nPress X again to confirm removal.\n");
+        hidScanInput();
+        u32 keys = hidKeysDown();
+        if (keys & KEY_START) { g_should_exit = true; break; }
+        if (keys & KEY_B) break;
+        if (keys & (KEY_DLEFT | KEY_DRIGHT)) {
+            source = source == TILE_SOURCE_SATELLITE ? TILE_SOURCE_STREET : TILE_SOURCE_SATELLITE;
+            confirm_delete = false;
+        } else if (installed && (keys & KEY_X)) {
+            if (confirm_delete) {
+                bool removed = network_remove_offline_pack(source);
+                map_tiles_clear_cache();
+                end_bottom_console_ui(removed ? "Tilepack removed" : "Could not remove tilepack");
+                return;
+            }
+            confirm_delete = true;
+        } else if (installed && (keys & KEY_A) && !confirm_delete) {
+            double north, west, south, east;
+            tile_to_lat_lon(info.x, info.y, info.zoom, &north, &west);
+            tile_to_lat_lon(info.x + 1, info.y + 1, info.zoom, &south, &east);
+            network_set_tile_source(source);
+            map_tiles_clear_cache();
+            map_state.gps_tracking = false;
+            set_camera_target((north + south) / 2, (west + east) / 2,
+                              info.zoom < 1 ? 1 : info.zoom > 18 ? 18 : info.zoom, true);
+            end_bottom_console_ui(NULL);
+            close_menu("Offline pack preview");
+            return;
+        } else if ((keys & KEY_Y) && !confirm_delete) {
+            end_bottom_console_ui(NULL);
+            open_offline_download();
+            return;
+        }
+        svcSleepThread(60000000LL);
+    }
+    end_bottom_console_ui(NULL);
+}
+
 static void open_offline_download(void) {
+    if (!is_connected()) {
+        set_status_message("WiFi required to download");
+        return;
+    }
+    if (network_get_tile_source() == TILE_SOURCE_STREET && !network_get_proxy_enabled()) {
+        set_status_message("Use an offline-capable source");
+        return;
+    }
     double lat = map_state.lat;
     double lon = map_state.lon;
     int zoom = map_state.zoom;
@@ -2535,6 +2588,7 @@ static void open_offline_download(void) {
 
     int total_tiles = count_region_tiles(min_zoom, max_zoom,
                                          lat_min, lon_min, lat_max, lon_max);
+    TileSource source = network_get_tile_source();
     int done = 0, downloaded = 0, skipped = 0, failed = 0;
     bool cancelled = false;
     u64 start_ms = osGetTime();
@@ -2586,9 +2640,10 @@ static void open_offline_download(void) {
                 /* Download this tile (saves to disk cache automatically) */
                 u8 *buf = NULL;
                 u32 size = 0;
-                bool ok = download_tile_with_curl(tx, ty, z, curl, &buf, &size);
+                bool cached;
+                bool ok = fetch_map_tile(tx, ty, z, curl, is_connected(), source, &buf, &size, &cached);
                 if (ok) {
-                    if (network_get_last_tile_was_cache_hit())
+                    if (cached)
                         skipped++;
                     else
                         downloaded++;

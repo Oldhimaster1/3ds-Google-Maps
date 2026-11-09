@@ -24,6 +24,10 @@
  *   correctness.
  */
 
+#include "network.h"
+#include <stdatomic.h>
+#include <sys/select.h>
+#include <math.h>
 #include "gps_server.h"
 #include "gps.h"
 #include "gps_server_cert.h"   /* embedded cert + key as C arrays */
@@ -106,39 +110,54 @@ static mbedtls_ctr_drbg_context  s_ctr_drbg;
 static bool                      s_ssl_ready     = false;
 static int                       s_listen_fd     = -1;
 static Thread                    s_thread        = NULL;
-static volatile bool             s_thread_alive  = false;
-static volatile bool             s_stop_flag     = false;
+static _Atomic bool             s_thread_alive  = false;
+static _Atomic bool             s_stop_flag     = false;
 static char                      s_local_ip[32]  = {0};
 static int                       s_port          = 0;
 static u32                      *s_soc_buf       = NULL;
-static volatile unsigned int     s_fix_count     = 0;
+static _Atomic unsigned int     s_fix_count     = 0;
 
 /* =========================================================================
  * BSD socket send/recv callbacks for mbedTLS
  * ========================================================================= */
 
-static int my_net_send(void *ctx, const unsigned char *buf, size_t len)
-{
-    int fd = *(int *)ctx;
-    int ret = (int)send(fd, buf, len, 0);
-    if (ret < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return MBEDTLS_ERR_SSL_WANT_WRITE;
-        return -1;
+typedef struct {
+    int fd;
+    u64 deadline;
+} ClientSocket;
+
+static bool wait_client(ClientSocket *client, bool writing) {
+    while (!s_stop_flag && osGetTime() < client->deadline) {
+        fd_set sockets;
+        FD_ZERO(&sockets);
+        FD_SET(client->fd, &sockets);
+        struct timeval timeout = { .tv_usec = 100000 };
+        int ready = select(client->fd + 1, writing ? NULL : &sockets,
+                           writing ? &sockets : NULL, NULL, &timeout);
+        if (ready > 0) return true;
+        if (ready < 0 && errno != EINTR) return false;
     }
-    return ret;
+    return false;
 }
 
-static int my_net_recv(void *ctx, unsigned char *buf, size_t len)
-{
-    int fd = *(int *)ctx;
-    int ret = (int)recv(fd, buf, len, 0);
-    if (ret < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return MBEDTLS_ERR_SSL_WANT_READ;
-        return -1;
+static int my_net_send(void *ctx, const unsigned char *buf, size_t len) {
+    ClientSocket *client = ctx;
+    while (wait_client(client, true)) {
+        int ret = (int)send(client->fd, buf, len, 0);
+        if (ret >= 0) return ret;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) break;
     }
-    return ret;
+    return MBEDTLS_ERR_SSL_TIMEOUT;
+}
+
+static int my_net_recv(void *ctx, unsigned char *buf, size_t len) {
+    ClientSocket *client = ctx;
+    while (wait_client(client, false)) {
+        int ret = (int)recv(client->fd, buf, len, 0);
+        if (ret >= 0) return ret;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) break;
+    }
+    return MBEDTLS_ERR_SSL_TIMEOUT;
 }
 
 /* =========================================================================
@@ -288,7 +307,7 @@ static void handle_client(mbedtls_ssl_context *ssl)
             if (read_exact(ssl, body, body_len)) {
                 body[body_len] = '\0';
                 double lat = 0.0, lon = 0.0;
-                if (parse_location_json(body, &lat, &lon)) {
+                if (parse_location_json(body, &lat, &lon) && isfinite(lat) && isfinite(lon)) {
                     gps_inject_fix(lat, lon);
                     s_fix_count++;
                 }
@@ -347,12 +366,13 @@ static void server_thread_func(void *arg)
             break;
         }
 
-        /*
-         * Make the client socket blocking so mbedtls_ssl_read/write work
-         * without WANT_READ loops in handle_client.
-         */
         int cf = fcntl(client_fd, F_GETFL, 0);
-        if (cf >= 0) fcntl(client_fd, F_SETFL, cf & ~O_NONBLOCK);
+        if (client_fd >= FD_SETSIZE || cf < 0 ||
+            fcntl(client_fd, F_SETFL, cf | O_NONBLOCK) < 0) {
+            close(client_fd);
+            continue;
+        }
+        ClientSocket client = { client_fd, osGetTime() + 10000 };
 
         /* TLS handshake -------------------------------------------------- */
         mbedtls_ssl_context ssl;
@@ -363,30 +383,9 @@ static void server_thread_func(void *arg)
             close(client_fd);
             continue;
         }
-        mbedtls_ssl_set_bio(&ssl, &client_fd, my_net_send, my_net_recv, NULL);
-
-        /*
-         * mbedtls_ssl_handshake() may need to be retried if the underlying
-         * socket signals WANT_READ / WANT_WRITE.  We retry up to 1000 times
-         * with 10 ms pauses (10 seconds total max).
-         *
-         * On an O3DS (268 MHz ARM11) the RSA-2048 signature step takes
-         * approximately 200-500 ms; on an N3DS (804 MHz) under 200 ms.
-         * The phone typically waits patiently through the delay.
-         */
-        int hs_result;
-        int retries = 0;
-        do {
-            hs_result = mbedtls_ssl_handshake(&ssl);
-            if (hs_result == MBEDTLS_ERR_SSL_WANT_READ ||
-                hs_result == MBEDTLS_ERR_SSL_WANT_WRITE) {
-                svcSleepThread(10000000LL); /* 10 ms */
-                if (++retries > 1000) break;
-            }
-        } while (hs_result == MBEDTLS_ERR_SSL_WANT_READ ||
-                 hs_result == MBEDTLS_ERR_SSL_WANT_WRITE);
-
-        if (hs_result == 0) {
+        mbedtls_ssl_set_bio(&ssl, &client, my_net_send, my_net_recv, NULL);
+        if (mbedtls_ssl_handshake(&ssl) == 0) {
+            client.deadline = osGetTime() + 5000;
             handle_client(&ssl);
         }
 
@@ -411,31 +410,21 @@ bool gps_server_start(int port)
         return true;
     }
 
+    if (s_thread) gps_server_stop();
     s_fix_count    = 0;
     s_port         = port;
     s_stop_flag    = false;
     s_local_ip[0]  = '\0';
 
     /* ---- Initialise SOC service ---------------------------------------- */
-    if (!s_soc_buf) {
+    if (!network_socket_service_ready()) {
         s_soc_buf = (u32 *)memalign(0x1000, SVR_SOC_BUF_SZ);
-        if (!s_soc_buf) {
-            log_write("[GPS-SVR] memalign for SOC buffer failed\n");
-            return false;
-        }
-
-        Result ret = socInit(s_soc_buf, SVR_SOC_BUF_SZ);
-        if (R_FAILED(ret)) {
-            /* Already initialised by network module — that's fine,
-               BSD sockets are usable; just free our duplicate buffer. */
-            log_write("[GPS-SVR] socInit returned 0x%08lX (already init by network — OK)\n", ret);
+        if (!s_soc_buf) return false;
+        if (R_FAILED(socInit(s_soc_buf, SVR_SOC_BUF_SZ))) {
             free(s_soc_buf);
             s_soc_buf = NULL;
-        } else {
-            log_write("[GPS-SVR] socInit OK\n");
+            return false;
         }
-    } else {
-        log_write("[GPS-SVR] SOC buffer already allocated, skipping socInit\n");
     }
 
     /* ---- Determine local WiFi IP --------------------------------------- */
@@ -524,7 +513,8 @@ bool gps_server_start(int port)
     /* Non-blocking so accept() yields immediately when nothing is pending */
     {
         int flags = fcntl(s_listen_fd, F_GETFL, 0);
-        if (flags >= 0) fcntl(s_listen_fd, F_SETFL, flags | O_NONBLOCK);
+        if (flags < 0 || fcntl(s_listen_fd, F_SETFL, flags | O_NONBLOCK) < 0)
+            goto fail_sock;
     }
 
     {
@@ -572,7 +562,7 @@ fail_ssl:
     mbedtls_ctr_drbg_free(&s_ctr_drbg);
     mbedtls_entropy_free(&s_entropy);
     s_ssl_ready = false;
-    socExit();
+    if (s_soc_buf) socExit();
     free(s_soc_buf);
     s_soc_buf = NULL;
     return false;
@@ -580,23 +570,21 @@ fail_ssl:
 
 void gps_server_stop(void)
 {
-    if (!s_thread_alive) return;
+    if (!s_thread) return;
 
     /* Signal the thread to exit */
     s_stop_flag = true;
-
-    /* Close the listen socket — this causes accept() to return an error,
-     * waking the thread immediately rather than waiting up to 50 ms. */
-    if (s_listen_fd >= 0) {
-        close(s_listen_fd);
-        s_listen_fd = -1;
-    }
 
     /* Wait for the thread to finish cleanly */
     if (s_thread) {
         threadJoin(s_thread, U64_MAX);
         threadFree(s_thread);
         s_thread = NULL;
+    }
+
+    if (s_listen_fd >= 0) {
+        close(s_listen_fd);
+        s_listen_fd = -1;
     }
 
     s_thread_alive = false;

@@ -67,8 +67,10 @@ bool tilepack_open(TilePack *pack, const char *path)
     }
 
     /* Sanity: index must fit between header and data_offset */
-    uint32_t expected_data = TILEPACK_HEADER_SIZE + tile_count * TILEPACK_ENTRY_SIZE;
-    if (data_offset < expected_data) {
+    uint64_t expected_data = TILEPACK_HEADER_SIZE + (uint64_t)tile_count * TILEPACK_ENTRY_SIZE;
+    if (data_offset < expected_data || data_offset > INT32_MAX ||
+        fseek(fp, 0, SEEK_END) != 0 || ftell(fp) < (long)data_offset ||
+        fseek(fp, TILEPACK_HEADER_SIZE, SEEK_SET) != 0) {
         log_write("[TILEPACK] %s: data_offset %u too small for %u entries\n",
                   path, (unsigned)data_offset, (unsigned)tile_count);
         fclose(fp);
@@ -89,6 +91,16 @@ bool tilepack_open(TilePack *pack, const char *path)
         free(index);
         fclose(fp);
         return false;
+    }
+
+    for (uint32_t i = 0; i < tile_count; i++) {
+        unsigned z = index[i].zoom;
+        if (z > 19 || index[i].x >= (1u << z) || index[i].y >= (1u << z) ||
+            (i && entry_cmp(&index[i - 1], &index[i]) >= 0)) {
+            free(index);
+            fclose(fp);
+            return false;
+        }
     }
 
     pack->fp          = fp;
@@ -158,9 +170,9 @@ uint8_t *tilepack_read_tile(TilePack *pack, int zoom, int x, int y, size_t *out_
      * Lock protects the fseek+fread pair from concurrent worker threads. */
     LightLock_Lock(&pack->lock);
     FILE *fp = (FILE *)pack->fp;
-    long file_pos = (long)pack->data_offset + (long)found->offset;
+    uint64_t file_pos = (uint64_t)pack->data_offset + found->offset;
 
-    if (fseek(fp, file_pos, SEEK_SET) != 0) {
+    if (file_pos > INT32_MAX || fseek(fp, (long)file_pos, SEEK_SET) != 0) {
         LightLock_Unlock(&pack->lock);
         free(buf);
         return NULL;
