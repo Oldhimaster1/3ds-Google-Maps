@@ -44,6 +44,6 @@ unsigned pano_parse_nearby(const char *json, size_t length,
 bool pano_parse_image(const char *json, size_t length, PanoLiveImage *out);
 
 /* Calibrated camera movement. The positive/negative sign may be toggled in UI. */
-void pano_apply_gyro(float raw_pitch, float raw_yaw, float dps_per_raw,
+void pano_apply_gyro(float raw_pitch, float raw_yaw, float counts_per_dps,
                      float dt, bool invert, float *pitch, float *yaw);
 #endif
