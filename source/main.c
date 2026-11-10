@@ -18,6 +18,8 @@
 #include "region.h"
 #include "explore.h"
 #include "pano_runtime.h"
+#include "street_sources.h"
+#include "gyro_stable.h"
 #include <jansson.h>
 #include <zlib.h>
 
@@ -107,7 +109,9 @@ typedef enum {
     SETTINGS_HIT_TAB_EXPLORE,
     SETTINGS_HIT_GLOBE,
     SETTINGS_HIT_TERRAIN,
-    SETTINGS_HIT_STREET_EXPLORER
+    SETTINGS_HIT_STREET_EXPLORER,
+    SETTINGS_HIT_STREET_PROVIDER,
+    SETTINGS_HIT_STREET_COVERAGE
 } SettingsHitTarget;
 
 #define MAX_RECENTS 10
@@ -154,6 +158,8 @@ static C3D_RenderTarget *g_explore_right;
 static unsigned g_street_stop;
 static bool g_explore_gyro;
 static bool g_explore_gyro_inverted = true;
+static GyroStable g_explore_gyro_filter;
+static float g_explore_gyro_coeff;
 static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
 static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
 
@@ -1019,6 +1025,8 @@ static void open_explore(ExploreMode mode) {
     close_menu(NULL);
     if (mode == EXPLORE_STREET) {
         g_explore_gyro_inverted = true;
+        gyro_stable_reset(&g_explore_gyro_filter);
+        g_explore_gyro_coeff = 0;
         pano_runtime_start(map_state.lat, map_state.lon);
     }
 }
@@ -1092,25 +1100,33 @@ static void update_explore(void) {
                 } else set_status_message("Could not open demo panorama");
             }
         }
-        if (keys & KEY_SELECT) g_explore_gyro_inverted = !g_explore_gyro_inverted;
+        if (keys & KEY_SELECT) {
+            g_explore_gyro_inverted = !g_explore_gyro_inverted;
+            gyro_stable_reset(&g_explore_gyro_filter);
+        }
+        if (keys & KEY_DUP) gyro_stable_reset(&g_explore_gyro_filter);
         if ((keys & KEY_Y) && !pano_runtime_busy())
             pano_runtime_start(map_state.lat, map_state.lon);
         if (keys & KEY_X) {
             if (g_explore_gyro) {
                 HIDUSER_DisableGyroscope();
                 g_explore_gyro = false;
-            } else g_explore_gyro = R_SUCCEEDED(HIDUSER_EnableGyroscope());
+            } else {
+                g_explore_gyro = R_SUCCEEDED(HIDUSER_EnableGyroscope());
+                gyro_stable_reset(&g_explore_gyro_filter);
+                g_explore_gyro_coeff = 0;
+                if (g_explore_gyro &&
+                    R_FAILED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&g_explore_gyro_coeff)))
+                    g_explore_gyro_coeff = 0;
+            }
         }
-        if (g_explore_gyro) {
+        if (g_explore_gyro && g_explore_gyro_coeff > 0) {
             angularRate gyro;
             hidGyroRead(&gyro);
-            float scale = 0;
-            if (R_SUCCEEDED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&scale)) && scale > 0) {
-                /* libctru: gyro.y = pitch, gyro.z = yaw. Raw-to-DPS conversion
-                 * is multiplication. Select reverses both signs if needed. */
-                pano_apply_gyro((float)gyro.y, (float)gyro.z, scale, dt,
-                                g_explore_gyro_inverted, &g_explore_pitch, &g_explore_yaw);
-            }
+            gyro_stable_step(&g_explore_gyro_filter,
+                             (float)gyro.y, (float)gyro.z,
+                             g_explore_gyro_coeff, dt,
+                             g_explore_gyro_inverted, &g_explore_pitch, &g_explore_yaw);
         }
     } else {
         float minimum = g_explore_mode == EXPLORE_TERRAIN ? 1.65f : 1.45f;
@@ -1164,7 +1180,7 @@ static void render_explore(void) {
     const PanoLiveImage *live = g_explore_mode == EXPLORE_STREET ?
         pano_runtime_current() : NULL;
     const char *place = g_explore_mode == EXPLORE_STREET ?
-        (live ? "Panoramax live 360 image" : explore_street_places[g_street_stop].name) :
+        (live ? street_provider_name(live->provider) : explore_street_places[g_street_stop].name) :
         g_explore_mode == EXPLORE_TERRAIN ? explore_terrain_place.name : coordinates;
     C2D_DrawRectSolid(0, 0, .1f, 320, 55, C2D_Color32(25, 37, 53, 255));
     C2D_DrawRectSolid(0, 53, .2f, 320, 2, accent);
@@ -1174,10 +1190,11 @@ static void render_explore(void) {
         draw_ui_text(14, 68, .40f, .40f, white, 0, "Circle Pad Look     L/R Next panorama");
         draw_ui_text(14, 94, .32f, .32f, accent, 0, pano_runtime_status());
         draw_ui_text(14, 118, .38f, .38f, white, 0,
-                     g_explore_gyro ? "X Gyro ON" : "X Gyro OFF");
+                     !g_explore_gyro ? "X Gyro OFF" :
+                     !g_explore_gyro_filter.ready ? "Gyro: HOLD STILL" : "X Gyro ON");
         draw_ui_text(129, 118, .36f, .36f, white, 0,
                      g_explore_gyro_inverted ? "Select Flip: inverted" : "Select Flip: normal");
-        draw_ui_text(14, 142, .33f, .33f, white, 0, "Y Search again");
+        draw_ui_text(14, 142, .33f, .33f, white, 0, "Y Retry     D-Up Recalibrate");
         draw_ui_text(14, 162, .31f, .31f, dim, 0,
                      live ? live->credit : "G. Edward Johnson / CC BY 4.0");
         if (live) draw_ui_text(14, 176, .30f, .30f, dim, 0, live->license);
@@ -1389,9 +1406,11 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
             if (point_in_rect(touch->px, touch->py, 166, 154, 142, 60)) return SETTINGS_HIT_DOWNLOAD_REGION;
             break;
         case SETTINGS_TAB_EXPLORE:
-            if (point_in_rect(touch->px, touch->py, 12, 86, 296, 39)) return SETTINGS_HIT_GLOBE;
-            if (point_in_rect(touch->px, touch->py, 12, 132, 296, 39)) return SETTINGS_HIT_TERRAIN;
-            if (point_in_rect(touch->px, touch->py, 12, 178, 296, 39)) return SETTINGS_HIT_STREET_EXPLORER;
+            if (point_in_rect(touch->px, touch->py, 12, 84, 296, 28)) return SETTINGS_HIT_STREET_PROVIDER;
+            if (point_in_rect(touch->px, touch->py, 12, 118, 296, 27)) return SETTINGS_HIT_GLOBE;
+            if (point_in_rect(touch->px, touch->py, 12, 150, 296, 27)) return SETTINGS_HIT_TERRAIN;
+            if (point_in_rect(touch->px, touch->py, 12, 182, 296, 27)) return SETTINGS_HIT_STREET_EXPLORER;
+            if (point_in_rect(touch->px, touch->py, 12, 215, 296, 22)) return SETTINGS_HIT_STREET_COVERAGE;
             break;
         case SETTINGS_TAB_GPS:
             /* [Client] / [Server] source mode buttons (same position as tile source) */
@@ -1440,6 +1459,17 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             break;
         case SETTINGS_HIT_STREET_EXPLORER:
             open_explore(EXPLORE_STREET);
+            break;
+        case SETTINGS_HIT_STREET_PROVIDER: {
+            StreetProvider next = (StreetProvider)((pano_runtime_provider() + 1) % STREET_PROVIDER_COUNT);
+            pano_runtime_set_provider(next);
+            set_status_message(street_provider_name(next));
+            break;
+        }
+        case SETTINGS_HIT_STREET_COVERAGE:
+            pano_runtime_set_coverage(!pano_runtime_coverage_enabled());
+            set_status_message(pano_runtime_coverage_enabled() ?
+                               "Nearby 360 photo markers ON" : "Nearby 360 photo markers OFF");
             break;
         case SETTINGS_HIT_TILE_STREET:
             if (network_get_tile_source() != TILE_SOURCE_STREET) {
@@ -1749,17 +1779,27 @@ static void render_settings_panel(void) {
         snprintf(line, sizeof(line), "backend %s", network_get_effective_tile_backend_name());
         draw_ui_text(12.0f, 222.0f, 0.30f, 0.30f, C2D_Color32f(0.56f, 0.62f, 0.70f, 1.0f), 0, line);
     } else if (g_settings_tab == SETTINGS_TAB_EXPLORE) {
+        C2D_DrawRectSolid(12, 84, .2f, 296, 28, C2D_Color32(31, 50, 66, 255));
+        char provider_label[100];
+        snprintf(provider_label, sizeof(provider_label), "360 provider: %s  >",
+                 street_provider_name(pano_runtime_provider()));
+        draw_ui_text(22, 92, .44f, .44f, C2D_Color32(113, 215, 235, 255), 0, provider_label);
         static const char *names[] = {"World globe", "Terrain in 3D", "Street View Explorer"};
-        static const char *details[] = {"Rotate Earth and zoom into the map",
-                                       "Grand Canyon with 3D slider support",
-                                       "Two nearby 360-degree stops in Bethesda"};
+        static const char *details[] = {"Rotate Earth and open the map",
+                                       "Grand Canyon stereo demo",
+                                       "Nearby 360 street panoramas"};
         for (int i = 0; i < 3; i++) {
-            float y = 86 + i * 46;
-            C2D_DrawRectSolid(12, y, .2f, 296, 39, C2D_Color32(30, 42, 58, 255));
-            C2D_DrawRectSolid(12, y, .3f, 3, 39, C2D_Color32(113, 215, 235, 255));
-            draw_ui_text(24, y + 4, .45f, .45f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
-            draw_ui_text(24, y + 22, .34f, .34f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
+            float y = 118 + i * 32;
+            C2D_DrawRectSolid(12, y, .2f, 296, 27, C2D_Color32(30, 42, 58, 255));
+            C2D_DrawRectSolid(12, y, .3f, 3, 27, C2D_Color32(113, 215, 235, 255));
+            draw_ui_text(22, y + 3, .40f, .40f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
+            draw_ui_text(22, y + 15, .30f, .30f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
         }
+        C2D_DrawRectSolid(12, 215, .2f, 296, 22, C2D_Color32(30, 42, 58, 255));
+        draw_ui_text(22, 221, .34f, .34f, C2D_Color32(164, 190, 211, 255), 0,
+                     pano_runtime_coverage_enabled() ?
+                     "Nearby 360 map markers: ON (tap to hide)" :
+                     "Nearby 360 map markers: OFF (tap to show)");
     } else { /* SETTINGS_TAB_GPS */
         bool client_mode   = (gps_get_source_mode() == GPS_SOURCE_NMEA_CLIENT);
         bool server_mode   = (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER);
