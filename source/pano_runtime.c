@@ -176,8 +176,9 @@ bool pano_runtime_start(double lat, double lon) {
     }
     s_pano.requested_lat = lat;
     s_pano.requested_lon = lon;
-    s_pano.count = 0;
-    s_pano.has_live = false;
+    /* Keep the currently displayed live image and its coordinates if the
+     * refresh fails; otherwise A could open the old bundled demo location. */
+    if (!s_pano.has_live) s_pano.count = 0;
     snprintf(s_pano.status, sizeof(s_pano.status), "Searching Panoramax near map center...");
     if (launch(JOB_SEARCH)) return true;
     snprintf(s_pano.status, sizeof(s_pano.status), "Could not start panorama search");
