@@ -1280,9 +1280,9 @@ static void draw_gps_fix(void) {
  * not a complete provider road-coverage layer. */
 static void draw_street_coverage_markers(void) {
     if (!pano_runtime_coverage_enabled()) return;
-    static PanoLiveImage points[PANO_NEARBY_MAX]; /* Keep large metadata off stack. */
-    unsigned count = pano_runtime_coverage(points, PANO_NEARBY_MAX);
-    if (!count) return;
+    unsigned count = 0;
+    const PanoLiveImage *points = pano_runtime_coverage_view(&count);
+    if (!points || !count) return;
     int cx = 0, cy = 0;
     lat_lon_to_pixel(map_state.lat, map_state.lon, map_state.zoom, &cx, &cy);
     int world = (1 << map_state.zoom) * 256;
