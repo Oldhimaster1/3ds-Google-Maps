@@ -161,8 +161,10 @@ void pano_apply_gyro(float raw_pitch, float raw_yaw, float coefficient,
         !isfinite(dt) || dt <= 0 || dt > 0.1f) return;
     const float rad = 0.017453292519943295f;
     const float sign = invert ? -1.0f : 1.0f;
-    float pitch_dps = raw_pitch * coefficient;
-    float yaw_dps = raw_yaw * coefficient;
+    /* HID reports raw counts per degree/second (~14.375 on 3DS).
+     * Divide rather than multiply to prevent massive unexpected rotation. */
+    float pitch_dps = raw_pitch / coefficient;
+    float yaw_dps = raw_yaw / coefficient;
     if (fabsf(pitch_dps) > 2.0f) *pitch += sign * pitch_dps * rad * dt;
     if (fabsf(yaw_dps) > 2.0f) *yaw += sign * yaw_dps * rad * dt;
 }
