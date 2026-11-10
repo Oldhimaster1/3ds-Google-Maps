@@ -9,6 +9,18 @@ Open **R → Explore** and tap a scene. Globe and Grand Canyon terrain work offl
 | Street View Explorer | Searches imagery near the **current map center**. Tap the source row to choose **Automatic, Panoramax, Mapillary, KartaView, Google (experimental), or Bing (experimental)**; **Y** remains a cycling shortcut. **R** follows a verified forward link, **L** backtracks when history exists, and touchscreen arrows choose intersection branches. **Down** retries; **X** toggles gyro, **Up** recalibrates and **Select** reverses gyro motion. The bottom minimap tracks live panoramas; available higher-quality Google tiles replace the initial preview when valid. Ordinary street photos remain flat. The bundled demonstration panoramas no longer display or ship in the app. Entry starts a real provider search immediately; the overhead map flies down while imagery downloads. |
 
 
+## StreetGuess development game
+
+**Explore → Play StreetGuess** opens a completely separate five-round
+Google Street View geography game with its own world/US/Europe random
+location sampling, Moving/No Move/NMPZ rules, independent touchscreen
+guessing map, scores and local records. B from the game menu returns to
+ordinary Maps at the unchanged location and settings.
+
+This is a **development feature**, not a released or hardware-verified
+game. [Read StreetGuess controls, implementation details, test coverage
+and remaining verification gates](streetguess.md).
+
 ## Multi-provider Street View
 
 The app runs native lightweight HTTPS/JSON client code on the original
