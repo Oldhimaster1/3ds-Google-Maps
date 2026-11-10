@@ -430,7 +430,10 @@ void pano_runtime_poll(void) {
     } else if (state.outcome==TOKEN_MISSING)
         snprintf(state.status,sizeof(state.status),"Mapillary: configure mapillary.token");
     else if (state.outcome==NO_COVERAGE)
-        snprintf(state.status,sizeof(state.status),"No imagery nearby; try other source");
+        snprintf(state.status,sizeof(state.status),
+                 state.pref==STREET_PROVIDER_AUTO ?
+                 "No matching photos from enabled sources" :
+                 "No matching photos from selected provider");
     else if (state.outcome==INVALID_IMAGE)
         snprintf(state.status,sizeof(state.status),"Photo format unsupported on Old 3DS");
     else if (state.outcome==OUT_OF_MEMORY)
