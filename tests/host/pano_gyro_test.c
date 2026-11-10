@@ -30,6 +30,24 @@ int main(void) {
         pano_gyro_step(&g,0,14.375f*45.f,14.375f,.016f,true,&pitch,&yaw);
     assert(yaw < old-radians(50));
     assert(!pano_gyro_step(&g,0,1,NAN,.016f,true,&pitch,&yaw));
+    /* Calibration must reject picking up and moving the console.
+     * A malformed initial zero-bias estimate previously drove bad drift. */
+    pano_gyro_reset(&g);
+    for (int i=0; i<10; i++)
+        pano_gyro_step(&g,0,0,14.375f,.016f,false,&pitch,&yaw);
+    assert(!pano_gyro_step(&g,0,14.375f*75,14.375f,.016f,
+                           false,&pitch,&yaw));
+    assert(!g.ready && g.samples < 10);
+    /* After stationary samples, there must be no residual turn. */
+    pano_gyro_reset(&g);
+    for (int i=0; i<45; i++)
+        pano_gyro_step(&g,0,0,14.375f,.016f,false,&pitch,&yaw);
+    for (int i=0; i<50; i++)
+        pano_gyro_step(&g,0,14.375f*45,14.375f,.016f,false,&pitch,&yaw);
+    float stopped=yaw;
+    pano_gyro_step(&g,0,0,14.375f,.016f,false,&pitch,&yaw);
+    assert(yaw==stopped);
+
     puts("PASS 3DS gyro 14.375 counts/dps calibration, smooth turn, stillness, invert, invalid inputs");
     return 0;
 }
