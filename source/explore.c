@@ -3,16 +3,10 @@
 #include "earth_rgb_bin.h"
 #include "canyon_rgb_bin.h"
 #include "canyon_dem_bin.h"
-#include "norfolk_rgb_bin.h"
-#include "georgetown_rgb_bin.h"
 #include <math.h>
 #include <string.h>
 #include <zlib.h>
 
-const ExplorePlace explore_street_places[2] = {
-    {"Norfolk Ave & Woodmont Ave", 38.987977, -77.095532},
-    {"Old Georgetown Rd & Woodmont Ave", 38.986277, -77.096902}
-};
 const ExplorePlace explore_terrain_place = {"Grand Canyon, Arizona", 36.09, -112.13};
 
 typedef struct { float x, y, z, u, v; } Vertex;
@@ -29,8 +23,11 @@ static ExploreMode loaded;
 static bool load_texture(C3D_Tex *tex, Asset asset, bool wrap) {
     if (!C3D_TexInit(tex, asset.width, asset.height, GPU_RGB565)) return false;
     unsigned long length = asset.width * asset.height * 2;
-    if (uncompress(tex->data, &length, asset.data, asset.size) != Z_OK ||
-        length != asset.width * asset.height * 2) {
+    if (!asset.data) {
+        /* Real Street View starts as a tiny blank texture, never demo imagery. */
+        memset(tex->data, 0, length);
+    } else if (uncompress(tex->data, &length, asset.data, asset.size) != Z_OK ||
+               length != asset.width * asset.height * 2) {
         C3D_TexDelete(tex);
         return false;
     }
@@ -97,9 +94,8 @@ bool explore_load(ExploreMode mode, unsigned street_stop) {
     case EXPLORE_GLOBE: asset = (Asset){earth_rgb_bin, earth_rgb_bin_size, 1024, 512}; break;
     case EXPLORE_TERRAIN: asset = (Asset){canyon_rgb_bin, canyon_rgb_bin_size, 256, 256}; break;
     case EXPLORE_STREET:
-        if (street_stop >= 2) return false;
-        asset = street_stop ? (Asset){georgetown_rgb_bin, georgetown_rgb_bin_size, 1024, 512} :
-                              (Asset){norfolk_rgb_bin, norfolk_rgb_bin_size, 1024, 512};
+        (void)street_stop;
+        asset = (Asset){NULL, 0, 8, 8};
         break;
     default: return false;
     }
