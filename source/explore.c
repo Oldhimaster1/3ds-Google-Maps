@@ -57,6 +57,40 @@ static Vertex make_vertex(ExploreMode mode, unsigned x, unsigned y, unsigned row
                     u, v};
 }
 
+/* On flat imagery, draw a fixed photo plane rather than falsely stretching a
+ * normal forward-facing photograph across the inside of a 360-degree sphere.
+ * The street mesh buffers already have room for both configurations. */
+static bool street_flat;
+
+static void rebuild_street_mesh(bool flat) {
+    if (!vertices || !indices || loaded != EXPLORE_STREET) return;
+    street_flat = flat;
+    if (flat) {
+        vertices[0] = (Vertex){-1.65f,  .95f, -2, 0, 0};
+        vertices[1] = (Vertex){ 1.65f,  .95f, -2, 1, 0};
+        vertices[2] = (Vertex){-1.65f, -.95f, -2, 0, 1};
+        vertices[3] = (Vertex){ 1.65f, -.95f, -2, 1, 1};
+        indices[0]=0; indices[1]=2; indices[2]=1;
+        indices[3]=1; indices[4]=2; indices[5]=3;
+        index_count = 6;
+    } else {
+        const unsigned rows = 32;
+        for (unsigned y=0;y<=rows;y++)
+            for (unsigned x=0;x<=64;x++)
+                vertices[y*65+x] = make_vertex(EXPLORE_STREET,x,y,rows);
+        unsigned n=0;
+        for (unsigned y=0;y<rows;y++)
+            for (unsigned x=0;x<64;x++) {
+                u16 p=y*65+x,q=p+1,z=p+65,k=z+1;
+                indices[n++]=p; indices[n++]=z; indices[n++]=q;
+                indices[n++]=q; indices[n++]=z; indices[n++]=k;
+            }
+        index_count = n;
+    }
+    GSPGPU_FlushDataCache(vertices, (flat ? 4 : 65*33)*sizeof(*vertices));
+    GSPGPU_FlushDataCache(indices, index_count*sizeof(*indices));
+}
+
 bool explore_load(ExploreMode mode, unsigned street_stop) {
     Asset asset;
     switch (mode) {
@@ -76,6 +110,7 @@ bool explore_load(ExploreMode mode, unsigned street_stop) {
     if (loaded == mode) {
         C3D_TexDelete(&texture);
         texture = next;
+        if (mode == EXPLORE_STREET && street_flat) rebuild_street_mesh(false);
         return true;
     }
     unsigned rows = mode == EXPLORE_TERRAIN ? 64 : 32;
@@ -115,6 +150,7 @@ bool explore_load(ExploreMode mode, unsigned street_stop) {
     indices = order;
     index_count = count;
     loaded = mode;
+    street_flat = false;
     return true;
 }
 
@@ -122,7 +158,7 @@ bool explore_load(ExploreMode mode, unsigned street_stop) {
 /* Swap the panorama only after the new 1024x512 Morton RGB565 image is complete.
  * The old scene remains visible if allocation fails. Call on the render thread
  * outside C3D_FrameBegin/C3D_FrameEnd. */
-bool explore_load_street_pixels(const void *pixels) {
+bool explore_load_street_pixels(const void *pixels, bool is_pano) {
     if (!pixels || loaded != EXPLORE_STREET) return false;
     C3D_FrameSync();
     C3D_Tex next;
@@ -134,6 +170,7 @@ bool explore_load_street_pixels(const void *pixels) {
     C3D_FrameSync();
     C3D_TexDelete(&texture);
     texture = next;
+    if (street_flat == is_pano) rebuild_street_mesh(!is_pano);
     return true;
 }
 
@@ -176,9 +213,11 @@ void explore_draw(C3D_RenderTarget *target, float yaw, float pitch,
                              cosf(yaw) * cosf(pitch));
     C3D_FVec origin = FVec3_New(0, 0, 0);
     C3D_FVec up = FVec3_New(0, 1, 0);
-    if (loaded == EXPLORE_STREET)
-        Mtx_LookAt(&view, origin, FVec3_New(dir.x, dir.y, -dir.z), up, false);
-    else
+    if (loaded == EXPLORE_STREET) {
+        C3D_FVec look = street_flat ? FVec3_New(0,0,-1) :
+            FVec3_New(dir.x, dir.y, -dir.z);
+        Mtx_LookAt(&view, origin, look, up, false);
+    } else
         Mtx_LookAt(&view, FVec3_New(dir.x * distance, dir.y * distance, dir.z * distance),
                    origin, up, false);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, projection_uniform, &projection);
