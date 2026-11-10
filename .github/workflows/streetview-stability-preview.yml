@@ -1,0 +1,117 @@
+name: Street View stability preview
+
+on:
+  push:
+    branches: [streetview-multi-stability-review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streetview-stability-preview
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run host tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjansson-dev
+          sh tests/run-host.sh
+          sh tests/run-panorama-host.sh
+          sh tests/run-multisource-host.sh
+          python3 tests/explore_assets_test.py
+      - name: Build with devkitPro
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tooling="$RUNNER_TEMP/maps-tooling"
+          mkdir -p "$tooling/banner" "$tooling/rom"
+          gh release download 1.2.3 -R carstene1ns/3ds-bannertool -p '*linux*x86_64*' -D "$tooling/banner"
+          gh release download makerom-v0.18.4 -R 3DSGuy/Project_CTR -p '*ubuntu*x86_64*.zip' -D "$tooling/rom"
+          for archive in "$tooling/banner/"* "$tooling/rom/"*; do
+            case "$archive" in
+              *.zip) unzip -q "$archive" -d "${archive%/*}" ;;
+              *.tar.gz|*.tgz) tar -xzf "$archive" -C "${archive%/*}" ;;
+              *.tar.xz) tar -xJf "$archive" -C "${archive%/*}" ;;
+              *) case "$archive" in *bannertool*) cp "$archive" "$tooling/banner/bannertool";; *) exit 1;; esac ;;
+            esac
+          done
+          cp "$(find "$tooling/banner" -type f -name bannertool -print -quit)" "$tooling/bannertool"
+          cp "$(find "$tooling/rom" -type f -name makerom -print -quit)" "$tooling/makerom"
+          chmod +x "$tooling/bannertool" "$tooling/makerom"
+          docker run --rm -v "$PWD:/src" -v "$tooling:/tools:ro" -w /src devkitpro/devkitarm:latest bash -ec '
+            dkp-pacman -Syu --noconfirm --needed 3ds-dev 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson
+            make clean
+            make -j2 cia BANNERTOOL=/tools/bannertool MAKEROM=/tools/makerom
+          '
+          mkdir -p dist
+          cp 3ds_google_maps.cia 3ds_google_maps.3dsx dist/
+          python3 - <<'PY'
+          import struct
+          from pathlib import Path
+          cia = Path("dist/3ds_google_maps.cia").read_bytes()
+          header, kind, version, cert, ticket, tmd, meta, content = struct.unpack_from("<IHHIIIIQ", cia)
+          assert (header, kind, version) == (0x2020, 0, 0)
+          assert all((cert, ticket, tmd, content))
+          align = lambda size: (size + 63) & ~63
+          start = sum(map(align, (header, cert, ticket, tmd)))
+          assert cia[start + 0x100:start + 0x104] == b"NCCH"
+          assert start + content <= len(cia) <= align(start + content) + align(meta)
+          homebrew = Path("dist/3ds_google_maps.3dsx").read_bytes()
+          magic, header, reloc, version, flags, code, rodata, data, bss = struct.unpack_from("<4sHH6I", homebrew)
+          assert magic == b"3DSX" and header >= 32 and reloc >= 8 and code > 0
+          assert header + code + rodata + data - bss <= len(homebrew)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: verified-streetview-builds
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    if: github.repository == 'Oldhimaster1/3ds-Google-Maps' && github.ref == 'refs/heads/streetview-multi-stability-review'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: verified-streetview-builds
+          path: dist
+      - name: Publish and verify preview downloads
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qrencode zbar-tools
+          tag="streetview-stability-${GITHUB_SHA:0:12}"
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag"
+          (
+            cd dist
+            qrencode -l M -m 4 -s 10 -o fbi-cia-qr.png "$base/3ds_google_maps.cia"
+            test "$(zbarimg --quiet --raw fbi-cia-qr.png)" = "$base/3ds_google_maps.cia"
+            sha256sum 3ds_google_maps.cia 3ds_google_maps.3dsx fbi-cia-qr.png > SHA256SUMS
+          )
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" dist/* --target "$GITHUB_SHA" --prerelease \
+              --title "Street View stability preview (${GITHUB_SHA:0:12})" \
+              --notes "Fresh devkitPro CIA and 3DSX builds. Host tests passed. Physical Old 3DS behavior is unverified."
+          fi
+          mkdir verified
+          for asset in 3ds_google_maps.cia 3ds_google_maps.3dsx fbi-cia-qr.png SHA256SUMS; do
+            curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+              "$base/$asset" -o "verified/$asset"
+          done
+          cmp dist/SHA256SUMS verified/SHA256SUMS
+          (cd verified && sha256sum -c SHA256SUMS)
+          test "$(zbarimg --quiet --raw verified/fbi-cia-qr.png)" = "$base/3ds_google_maps.cia"
+          cat verified/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
