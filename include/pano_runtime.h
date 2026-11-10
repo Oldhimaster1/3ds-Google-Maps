@@ -12,6 +12,8 @@ bool pano_runtime_switch_provider(StreetProvider provider,double lat,double lon)
 void pano_runtime_poll(void);
 void pano_runtime_stop(void);
 bool pano_runtime_busy(void);
+/* A successful next-panorama image is decoded and can be swapped on UI thread. */
+bool pano_runtime_next_ready(void);
 bool pano_runtime_has_live(void);
 bool pano_runtime_network_active(void);
 const char *pano_runtime_status(void);
