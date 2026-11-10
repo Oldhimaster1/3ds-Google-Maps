@@ -17,6 +17,7 @@
 #include "qrcode.h"
 #include "region.h"
 #include "explore.h"
+#include "pano_runtime.h"
 #include <jansson.h>
 #include <zlib.h>
 
@@ -152,6 +153,7 @@ static ExploreMode g_explore_mode;
 static C3D_RenderTarget *g_explore_right;
 static unsigned g_street_stop;
 static bool g_explore_gyro;
+static bool g_explore_gyro_inverted = true;
 static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
 static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
 
@@ -980,6 +982,7 @@ static bool handle_touch_button_action(TouchAction action) {
 }
 
 static void close_explore(void) {
+    pano_runtime_stop();
     if (g_explore_gyro) HIDUSER_DisableGyroscope();
     g_explore_gyro = false;
     g_explore_mode = EXPLORE_NONE;
@@ -1014,6 +1017,10 @@ static void open_explore(ExploreMode mode) {
     if (mode == EXPLORE_TERRAIN)
         g_explore_right = C2D_CreateScreenTarget(GFX_TOP, GFX_RIGHT);
     close_menu(NULL);
+    if (mode == EXPLORE_STREET) {
+        g_explore_gyro_inverted = true;
+        pano_runtime_start(map_state.lat, map_state.lon);
+    }
 }
 
 static void explore_show_map(void) {
@@ -1026,8 +1033,10 @@ static void explore_show_map(void) {
     } else {
         const ExplorePlace *place = g_explore_mode == EXPLORE_TERRAIN ?
             &explore_terrain_place : &explore_street_places[g_street_stop];
-        lat = place->lat;
-        lon = place->lon;
+        const PanoLiveImage *live = g_explore_mode == EXPLORE_STREET ?
+            pano_runtime_current() : NULL;
+        lat = live ? live->lat : place->lat;
+        lon = live ? live->lon : place->lon;
         zoom = g_explore_mode == EXPLORE_TERRAIN ? 11 : 17;
     }
     close_explore();
@@ -1041,6 +1050,7 @@ static float explore_axis(int value) {
 }
 
 static void update_explore(void) {
+    pano_runtime_poll();
     hidScanInput();
     u32 keys = hidKeysDown(), held = hidKeysHeld();
     if (keys & (KEY_B | KEY_START)) {
@@ -1069,12 +1079,22 @@ static void update_explore(void) {
     g_explore_pitch += y * turn * dt;
     if (g_explore_mode == EXPLORE_STREET) {
         if (keys & (KEY_L | KEY_R | KEY_DLEFT | KEY_DRIGHT)) {
-            unsigned next = g_street_stop ^ 1;
-            if (explore_load(EXPLORE_STREET, next)) {
-                g_street_stop = next;
-                g_explore_yaw = g_explore_pitch = 0;
-            } else set_status_message("Could not open next street stop");
+            int dir = (keys & (KEY_L | KEY_DLEFT)) ? -1 : 1;
+            if (pano_runtime_has_live()) {
+                if (!pano_runtime_step(dir))
+                    set_status_message("Panorama loading; try again");
+            } else if (!pano_runtime_busy()) {
+                /* Preserve the bundled photos as an offline fallback. */
+                unsigned next = g_street_stop ^ 1;
+                if (explore_load(EXPLORE_STREET, next)) {
+                    g_street_stop = next;
+                    g_explore_yaw = g_explore_pitch = 0;
+                } else set_status_message("Could not open demo panorama");
+            }
         }
+        if (keys & KEY_SELECT) g_explore_gyro_inverted = !g_explore_gyro_inverted;
+        if ((keys & KEY_Y) && !pano_runtime_busy())
+            pano_runtime_start(map_state.lat, map_state.lon);
         if (keys & KEY_X) {
             if (g_explore_gyro) {
                 HIDUSER_DisableGyroscope();
@@ -1086,9 +1106,10 @@ static void update_explore(void) {
             hidGyroRead(&gyro);
             float scale = 0;
             if (R_SUCCEEDED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&scale)) && scale > 0) {
-                float to_radians = C3D_AngleFromDegrees(1) * dt / scale;
-                if (fabsf(gyro.z / scale) > 2) g_explore_yaw += gyro.z * to_radians;
-                if (fabsf(gyro.x / scale) > 2) g_explore_pitch += gyro.x * to_radians;
+                /* libctru: gyro.y = pitch, gyro.z = yaw. Raw-to-DPS conversion
+                 * is multiplication. Select reverses both signs if needed. */
+                pano_apply_gyro((float)gyro.y, (float)gyro.z, scale, dt,
+                                g_explore_gyro_inverted, &g_explore_pitch, &g_explore_yaw);
             }
         }
     } else {
@@ -1140,19 +1161,26 @@ static void render_explore(void) {
     char coordinates[58];
     snprintf(coordinates, sizeof(coordinates), "%.2f, %.2f",
              g_explore_pitch * (180.0 / M_PI), g_explore_yaw * (180.0 / M_PI));
-    const char *place = g_explore_mode == EXPLORE_STREET ? explore_street_places[g_street_stop].name :
-                        g_explore_mode == EXPLORE_TERRAIN ? explore_terrain_place.name : coordinates;
+    const PanoLiveImage *live = g_explore_mode == EXPLORE_STREET ?
+        pano_runtime_current() : NULL;
+    const char *place = g_explore_mode == EXPLORE_STREET ?
+        (live ? "Panoramax live 360 image" : explore_street_places[g_street_stop].name) :
+        g_explore_mode == EXPLORE_TERRAIN ? explore_terrain_place.name : coordinates;
     C2D_DrawRectSolid(0, 0, .1f, 320, 55, C2D_Color32(25, 37, 53, 255));
     C2D_DrawRectSolid(0, 53, .2f, 320, 2, accent);
     draw_ui_text(12, 9, .58f, .58f, white, 0, title);
     draw_ui_text(12, 34, .40f, .40f, dim, 0, place);
     if (g_explore_mode == EXPLORE_STREET) {
-        draw_ui_text(14, 76, .44f, .44f, white, 0, "Circle Pad  Look around");
-        draw_ui_text(14, 101, .44f, .44f, white, 0,
-                     g_street_stop ? "L / R  Nearby stop (2 of 2)" : "L / R  Nearby stop (1 of 2)");
-        draw_ui_text(14, 127, .40f, .40f, accent, 0,
-                     g_explore_gyro ? "X  Gyro ON" : "X  Gyro OFF");
-        draw_ui_text(14, 162, .36f, .36f, dim, 0, "G. Edward Johnson / CC BY 4.0");
+        draw_ui_text(14, 68, .40f, .40f, white, 0, "Circle Pad Look     L/R Next panorama");
+        draw_ui_text(14, 94, .32f, .32f, accent, 0, pano_runtime_status());
+        draw_ui_text(14, 118, .38f, .38f, white, 0,
+                     g_explore_gyro ? "X Gyro ON" : "X Gyro OFF");
+        draw_ui_text(129, 118, .36f, .36f, white, 0,
+                     g_explore_gyro_inverted ? "Select Flip: inverted" : "Select Flip: normal");
+        draw_ui_text(14, 142, .33f, .33f, white, 0, "Y Search again");
+        draw_ui_text(14, 162, .31f, .31f, dim, 0,
+                     live ? live->credit : "G. Edward Johnson / CC BY 4.0");
+        if (live) draw_ui_text(14, 176, .30f, .30f, dim, 0, live->license);
     } else {
         draw_ui_text(14, 76, .44f, .44f, white, 0, "Circle Pad / D-Pad  Rotate");
         draw_ui_text(14, 101, .44f, .44f, white, 0, "X / Y  Zoom in / out");
