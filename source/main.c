@@ -1276,6 +1276,32 @@ static void draw_gps_fix(void) {
     C2D_DrawCircleSolid(x, y, .68f, 3.5f, C2D_Color32(50, 157, 241, 255));
 }
 
+/* These are known nearby 360 photo points from the latest imagery search,
+ * not a complete provider road-coverage layer. */
+static void draw_street_coverage_markers(void) {
+    if (!pano_runtime_coverage_enabled()) return;
+    static PanoLiveImage points[PANO_NEARBY_MAX]; /* Keep large metadata off stack. */
+    unsigned count = pano_runtime_coverage(points, PANO_NEARBY_MAX);
+    if (!count) return;
+    int cx = 0, cy = 0;
+    lat_lon_to_pixel(map_state.lat, map_state.lon, map_state.zoom, &cx, &cy);
+    int world = (1 << map_state.zoom) * 256;
+    for (unsigned i = 0; i < count; i++) {
+        int px = 0, py = 0;
+        lat_lon_to_pixel(points[i].lat, points[i].lon, map_state.zoom, &px, &py);
+        int dx = (px - cx + world + world / 2) % world - world / 2;
+        float sx = 200.0f + dx, sy = 120.0f + py - cy;
+        if (sx < 4 || sx > 396 || sy < 4 || sy > 236) continue;
+        u32 color = points[i].provider == STREET_PROVIDER_MAPILLARY ?
+            C2D_Color32(80, 235, 130, 255) :
+            points[i].provider == STREET_PROVIDER_KARTAVIEW ?
+            C2D_Color32(255, 186, 73, 255) :
+            C2D_Color32(88, 211, 247, 255);
+        C2D_DrawCircleSolid(sx, sy, .87f, 4.0f, C2D_Color32(16, 27, 36, 220));
+        C2D_DrawCircleSolid(sx, sy, .88f, 2.7f, color);
+    }
+}
+
 void render_map(void) {
     // Start rendering frame
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
@@ -1305,6 +1331,7 @@ void render_map(void) {
 
         render_route_overlay(map_state.lat, map_state.lon, map_state.zoom, SCREEN_WIDTH_TOP, SCREEN_HEIGHT_TOP);
         draw_gps_fix();
+        draw_street_coverage_markers();
 
         if (g_night_mode) {
             C2D_DrawRectSolid(0.0f, 0.0f, 0.95f, (float)SCREEN_WIDTH_TOP, (float)SCREEN_HEIGHT_TOP,
