@@ -19,6 +19,8 @@ typedef struct {
     StreetProvider provider;
     char id[48];
     char sequence[64];
+    long long captured_at_ms;
+    int sequence_index;
     char image_url[1024];
     char preview_url[1024];
     char next_id[40];
