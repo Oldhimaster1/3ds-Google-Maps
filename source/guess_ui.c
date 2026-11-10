@@ -146,6 +146,12 @@ static void find_round(u64 now){
             snprintf(ui.note,sizeof(ui.note),"No playable Google panorama found. Retry or exit.");
             guess_error(&ui.game);return;
         }
+        /* Reject recently visited geographic cells BEFORE an HTTP lookup.
+         * This does not store or index Google's imagery. */
+        if(!guess_candidate_acceptable(&ui.game,ui.candidate)){
+            ui.next_search_ms=now;
+            return;
+        }
         /* No repeated fixed panorama list. Independently randomized coordinates
          * are checked live with Google and accepted only after a real decode. */
         if(!pano_runtime_start_game_google(ui.candidate.lat,ui.candidate.lon)){
