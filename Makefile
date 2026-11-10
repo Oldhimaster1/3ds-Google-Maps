@@ -93,7 +93,7 @@ SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 PICAFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.v.pica)))
 SHLISTFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.shlist)))
 GFXFILES	:=	$(foreach dir,$(GRAPHICS),$(notdir $(wildcard $(dir)/*.t3s)))
-BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+BINFILES	:=	$(filter-out norfolk_rgb.bin georgetown_rgb.bin,$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*))))
 
 #---------------------------------------------------------------------------------
 # use CXX for linking C++ projects, CC for standard C
