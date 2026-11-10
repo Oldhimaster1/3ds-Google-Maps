@@ -33,16 +33,10 @@ jobs:
         run: |
           tooling="$RUNNER_TEMP/maps-tooling"
           mkdir -p "$tooling/banner" "$tooling/rom"
-          gh release download 1.2.3 -R carstene1ns/3ds-bannertool -p '*linux*x86_64*' -D "$tooling/banner"
-          gh release download makerom-v0.18.4 -R 3DSGuy/Project_CTR -p '*ubuntu*x86_64*.zip' -D "$tooling/rom"
-          for archive in "$tooling/banner/"* "$tooling/rom/"*; do
-            case "$archive" in
-              *.zip) unzip -q "$archive" -d "${archive%/*}" ;;
-              *.tar.gz|*.tgz) tar -xzf "$archive" -C "${archive%/*}" ;;
-              *.tar.xz) tar -xJf "$archive" -C "${archive%/*}" ;;
-              *) case "$archive" in *bannertool*) cp "$archive" "$tooling/banner/bannertool";; *) exit 1;; esac ;;
-            esac
-          done
+          gh release download 1.2.3 -R carstene1ns/3ds-bannertool -p 'bannertool-1.2.3-linux.tar.gz' -D "$tooling/banner"
+          gh release download makerom-v0.18.4 -R 3DSGuy/Project_CTR -p 'makerom-v0.18.4-ubuntu_x86_64.zip' -D "$tooling/rom"
+          tar -xzf "$tooling/banner/bannertool-1.2.3-linux.tar.gz" -C "$tooling/banner"
+          unzip -q "$tooling/rom/makerom-v0.18.4-ubuntu_x86_64.zip" -d "$tooling/rom"
           cp "$(find "$tooling/banner" -type f -name bannertool -print -quit)" "$tooling/bannertool"
           cp "$(find "$tooling/rom" -type f -name makerom -print -quit)" "$tooling/makerom"
           chmod +x "$tooling/bannertool" "$tooling/makerom"
