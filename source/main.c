@@ -108,7 +108,8 @@ typedef enum {
     SETTINGS_HIT_TAB_EXPLORE,
     SETTINGS_HIT_GLOBE,
     SETTINGS_HIT_TERRAIN,
-    SETTINGS_HIT_STREET_EXPLORER
+    SETTINGS_HIT_STREET_EXPLORER,
+    SETTINGS_HIT_STREET_COVERAGE
 } SettingsHitTarget;
 
 #define MAX_RECENTS 10
@@ -1081,6 +1082,11 @@ static void update_explore(void) {
     g_explore_yaw += x * turn * dt;
     g_explore_pitch += y * turn * dt;
     if (g_explore_mode == EXPLORE_STREET) {
+        const PanoLiveImage *active_photo = pano_runtime_current();
+        if (active_photo && !active_photo->is_pano) {
+            /* Ordinary street photos are flat, not a navigable sphere. */
+            g_explore_yaw = g_explore_pitch = 0;
+        }
         if (keys & (KEY_L | KEY_R | KEY_DLEFT | KEY_DRIGHT)) {
             int dir = (keys & (KEY_L | KEY_DLEFT)) ? -1 : 1;
             if (pano_runtime_has_live()) {
@@ -1100,8 +1106,34 @@ static void update_explore(void) {
             pano_gyro_reset(&g_explore_gyro_filter);
         }
         if (keys & KEY_DUP) pano_gyro_reset(&g_explore_gyro_filter);
-        if ((keys & KEY_Y) && !pano_runtime_busy())
+        if (keys & KEY_DDOWN) {
+            pano_runtime_stop();
+            explore_load(EXPLORE_STREET, g_street_stop);
             pano_runtime_start(map_state.lat, map_state.lon);
+        }
+        if (keys & KEY_Y) {
+            StreetProvider next = (StreetProvider)((pano_runtime_provider()+1)
+                                                    % STREET_PROVIDER_COUNT);
+            pano_runtime_stop();
+            pano_runtime_set_provider(next);
+            /* A new source must not masquerade as the previous provider. */
+            explore_load(EXPLORE_STREET, g_street_stop);
+            g_explore_yaw = g_explore_pitch = 0;
+            pano_runtime_start(map_state.lat, map_state.lon);
+        }
+        if (keys & KEY_TOUCH) {
+            touchPosition touch;
+            hidTouchRead(&touch);
+            if (touch.py >= 65 && touch.py < 90) {
+                StreetProvider next = (StreetProvider)((pano_runtime_provider()+1)
+                                                        % STREET_PROVIDER_COUNT);
+                pano_runtime_stop();
+                pano_runtime_set_provider(next);
+                explore_load(EXPLORE_STREET, g_street_stop);
+                g_explore_yaw = g_explore_pitch = 0;
+                pano_runtime_start(map_state.lat, map_state.lon);
+            }
+        }
         if (keys & KEY_X) {
             if (g_explore_gyro) {
                 HIDUSER_DisableGyroscope();
@@ -1119,7 +1151,8 @@ static void update_explore(void) {
                 }
             }
         }
-        if (g_explore_gyro) {
+        if (g_explore_gyro && (!pano_runtime_current() ||
+                              pano_runtime_current()->is_pano)) {
             angularRate gyro;
             hidGyroRead(&gyro);
             /* Verified raw counts = angular rate in dps times coefficient.
@@ -1180,24 +1213,36 @@ static void render_explore(void) {
              g_explore_pitch * (180.0 / M_PI), g_explore_yaw * (180.0 / M_PI));
     const PanoLiveImage *live = g_explore_mode == EXPLORE_STREET ?
         pano_runtime_current() : NULL;
+    char live_label[96];
+    if (live) snprintf(live_label, sizeof(live_label), "%s %s",
+                       street_provider_name(live->provider),
+                       live->is_pano ? "360 panorama" : "street photo");
     const char *place = g_explore_mode == EXPLORE_STREET ?
-        (live ? "Panoramax live 360 image" : explore_street_places[g_street_stop].name) :
+        (live ? live_label : explore_street_places[g_street_stop].name) :
         g_explore_mode == EXPLORE_TERRAIN ? explore_terrain_place.name : coordinates;
     C2D_DrawRectSolid(0, 0, .1f, 320, 55, C2D_Color32(25, 37, 53, 255));
     C2D_DrawRectSolid(0, 53, .2f, 320, 2, accent);
     draw_ui_text(12, 9, .58f, .58f, white, 0, title);
     draw_ui_text(12, 34, .40f, .40f, dim, 0, place);
     if (g_explore_mode == EXPLORE_STREET) {
-        draw_ui_text(14, 68, .40f, .40f, white, 0, "Circle Pad Look     L/R Next panorama");
-        draw_ui_text(14, 94, .32f, .32f, accent, 0, pano_runtime_status());
-        draw_ui_text(14, 118, .38f, .38f, white, 0,
-                     g_explore_gyro ? "X Gyro ON" : "X Gyro OFF");
-        draw_ui_text(129, 118, .36f, .36f, white, 0,
-                     g_explore_gyro_inverted ? "Select Flip: inverted" : "Select Flip: normal");
-        draw_ui_text(14, 142, .33f, .33f, white, 0, "Y Search again");
-        draw_ui_text(14, 162, .31f, .31f, dim, 0,
+        char source_label[48];
+        snprintf(source_label, sizeof(source_label), "Y / Tap  Source: %s",
+                 street_provider_name(pano_runtime_provider()));
+        draw_ui_text(14, 67, .40f, .40f, accent, 0, source_label);
+        draw_ui_text(14, 89, .32f, .32f, dim, 0, pano_runtime_status());
+        draw_ui_text(14, 108, .35f, .35f, white, 0,
+                     "L/R Next photo     Down Retry");
+        draw_ui_text(14, 130, .35f, .35f, white, 0,
+                     live && !live->is_pano ?
+                        "Flat photo  (gyro only for 360)" :
+                        (g_explore_gyro ? "X Gyro ON   Up Calibrate" :
+                                         "X Gyro OFF  Up Calibrate"));
+        draw_ui_text(14, 151, .32f, .32f, dim, 0,
+                     g_explore_gyro_inverted ? "Select Reverse gyro: ON" :
+                                              "Select Reverse gyro: OFF");
+        draw_ui_text(14, 169, .30f, .30f, dim, 0,
                      live ? live->credit : "G. Edward Johnson / CC BY 4.0");
-        if (live) draw_ui_text(14, 176, .30f, .30f, dim, 0, live->license);
+        if (live) draw_ui_text(14, 178, .26f, .26f, dim, 0, live->license);
     } else {
         draw_ui_text(14, 76, .44f, .44f, white, 0, "Circle Pad / D-Pad  Rotate");
         draw_ui_text(14, 101, .44f, .44f, white, 0, "X / Y  Zoom in / out");
@@ -1302,6 +1347,7 @@ void render_map(void) {
         map_tiles_render(map_state.lat, map_state.lon, map_state.zoom, 
                         map_state.offset_x, map_state.offset_y, 
                         SCREEN_WIDTH_TOP, SCREEN_HEIGHT_TOP, true);
+        draw_street_coverage();
 
         render_route_overlay(map_state.lat, map_state.lon, map_state.zoom, SCREEN_WIDTH_TOP, SCREEN_HEIGHT_TOP);
         draw_gps_fix();
@@ -1409,6 +1455,7 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
             if (point_in_rect(touch->px, touch->py, 12, 86, 296, 39)) return SETTINGS_HIT_GLOBE;
             if (point_in_rect(touch->px, touch->py, 12, 132, 296, 39)) return SETTINGS_HIT_TERRAIN;
             if (point_in_rect(touch->px, touch->py, 12, 178, 296, 39)) return SETTINGS_HIT_STREET_EXPLORER;
+            if (point_in_rect(touch->px, touch->py, 12, 220, 296, 20)) return SETTINGS_HIT_STREET_COVERAGE;
             break;
         case SETTINGS_TAB_GPS:
             /* [Client] / [Server] source mode buttons (same position as tile source) */
@@ -1457,6 +1504,11 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             break;
         case SETTINGS_HIT_STREET_EXPLORER:
             open_explore(EXPLORE_STREET);
+            break;
+        case SETTINGS_HIT_STREET_COVERAGE:
+            pano_runtime_set_coverage(!pano_runtime_coverage_enabled());
+            set_status_message(pano_runtime_coverage_enabled() ?
+                "Street imagery markers ON" : "Street imagery markers OFF");
             break;
         case SETTINGS_HIT_TILE_STREET:
             if (network_get_tile_source() != TILE_SOURCE_STREET) {
@@ -1769,7 +1821,7 @@ static void render_settings_panel(void) {
         static const char *names[] = {"World globe", "Terrain in 3D", "Street View Explorer"};
         static const char *details[] = {"Rotate Earth and zoom into the map",
                                        "Grand Canyon with 3D slider support",
-                                       "Two nearby 360-degree stops in Bethesda"};
+                                       "Explore nearby 360 and street photos"};
         for (int i = 0; i < 3; i++) {
             float y = 86 + i * 46;
             C2D_DrawRectSolid(12, y, .2f, 296, 39, C2D_Color32(30, 42, 58, 255));
@@ -1777,6 +1829,10 @@ static void render_settings_panel(void) {
             draw_ui_text(24, y + 4, .45f, .45f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
             draw_ui_text(24, y + 22, .34f, .34f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
         }
+        draw_ui_text(20, 223, .30f, .30f, C2D_Color32(164, 190, 211, 255), 0,
+            pano_runtime_coverage_enabled() ?
+                "Street imagery map markers: ON (tap to change)" :
+                "Street imagery map markers: OFF (tap to change)");
     } else { /* SETTINGS_TAB_GPS */
         bool client_mode   = (gps_get_source_mode() == GPS_SOURCE_NMEA_CLIENT);
         bool server_mode   = (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER);
