@@ -114,11 +114,15 @@ static void pano_worker(void *unused) {
                                  radii[i], url, sizeof(url))) break;
             u8 *data = NULL;
             u32 len = 0;
-            if (!http_get(curl, url, PANO_JSON_MAX, &data, &len)) break;
+            if (!http_get(curl, url, PANO_JSON_MAX, &data, &len)) {
+                s_pano.outcome = PANO_NETWORK_ERROR;
+                break;
+            }
             s_pano.count = pano_parse_nearby((const char *)data, len,
                                 s_pano.requested_lat, s_pano.requested_lon,
                                 s_pano.candidates, PANO_NEARBY_MAX);
             free(data);
+            s_pano.outcome = s_pano.count ? PANO_NETWORK_ERROR : PANO_NO_COVERAGE;
             if (s_pano.count) {
                 /* A single bad or oversized image must not hide a nearby
                  * valid panorama. Try a few of the nearest alternatives. */
@@ -130,8 +134,6 @@ static void pano_worker(void *unused) {
                 break;
             }
         }
-        if (!s_pano.count && s_pano.outcome == PANO_NETWORK_ERROR)
-            s_pano.outcome = PANO_NO_COVERAGE;
     } else if (s_pano.job == JOB_STEP) {
         const char *next = s_pano.direction > 0 ?
             s_pano.selected.next_id : s_pano.selected.prev_id;
