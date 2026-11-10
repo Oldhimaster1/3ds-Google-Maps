@@ -19,6 +19,7 @@
 #include "explore.h"
 #include "pano_runtime.h"
 #include "pano_gyro.h"
+#include "street_look_input.h"
 #include "street_sources.h"
 #include <jansson.h>
 #include <zlib.h>
@@ -1074,8 +1075,14 @@ static void update_explore(void) {
     }
     circlePosition stick;
     hidCircleRead(&stick);
-    float x = explore_axis(stick.dx), y = explore_axis(stick.dy);
-    if (g_explore_mode != EXPLORE_STREET) {
+    float x=0, y=0;
+    if (g_explore_mode == EXPLORE_STREET) {
+        /* Independent stick axes can cause unintended camera tilt while
+         * panning left/right. Apply a dominant-axis lock and safer deadzone. */
+        street_look_axes(stick.dx, stick.dy, &x, &y);
+    } else {
+        x = explore_axis(stick.dx);
+        y = explore_axis(stick.dy);
         x = fmaxf(-1, fminf(1, x + !!(held & KEY_DRIGHT) - !!(held & KEY_DLEFT)));
         y = fmaxf(-1, fminf(1, y + !!(held & KEY_DUP) - !!(held & KEY_DDOWN)));
     }
