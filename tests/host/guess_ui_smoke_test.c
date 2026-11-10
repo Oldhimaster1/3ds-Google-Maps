@@ -85,6 +85,26 @@ bool pano_runtime_jump_game_google(const char *id,double lat,double lon){(void)i
 #define TEST(x) do{if(!(x)){fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 static void press(u32 k){down=k;held=k;milliseconds+=16;guess_ui_update();down=held=0;}
 static void frame(void){milliseconds+=16;guess_ui_update();}
+static void emit_le32(unsigned char *p,unsigned v){
+    p[0]=(unsigned char)v;p[1]=(unsigned char)(v>>8);
+    p[2]=(unsigned char)(v>>16);p[3]=(unsigned char)(v>>24);
+}
+static void install_fake_road_pack(void){
+    FILE *f=fopen("sdmc:/3ds_google_maps/streetguess_roads.bin","wb");
+    TEST(f!=NULL);
+    unsigned char hdr[16]={0};
+    memcpy(hdr,"SGROAD1\0",8);
+    emit_le32(hdr+8,1);emit_le32(hdr+12,20);
+    TEST(fwrite(hdr,1,16,f)==16);
+    unsigned char segment[20]={0};
+    emit_le32(segment+0,40000000);
+    emit_le32(segment+4,(unsigned)-74000000);
+    emit_le32(segment+8,40001000);
+    emit_le32(segment+12,(unsigned)-73999000);
+    emit_le32(segment+16,1|2);
+    TEST(fwrite(segment,1,20,f)==20);
+    fclose(f);
+}
 static void pick_pin(void){
     down=held=KEY_TOUCH;touch=(touchPosition){.px=170,.py=95};frame();
     down=held=0;frame();
@@ -111,6 +131,17 @@ int main(void){
     (void)mkdir("sdmc:/3ds_google_maps",0700);
     remove("sdmc:/3ds_google_maps/streetguess_records.txt");
     remove("sdmc:/3ds_google_maps/streetguess_records.txt.tmp");
+    /* Full UI + compact road pack: expect a road-derived candidate rather
+     * than the fallback hub sampler, before Google imagery acceptance. */
+    install_fake_road_pack();
+    TEST(guess_ui_enter());TEST(ui.roads.file!=NULL);
+    press(KEY_A);frame();frame();
+    TEST(ui.game.phase==GUESS_PLAYING);
+    TEST(query_lat>=40&&query_lat<=40.001);
+    TEST(query_lon>=-74&&query_lon<=-73.999);
+    guess_ui_leave();
+    remove("sdmc:/3ds_google_maps/streetguess_roads.bin");
+    finish_count=0;
     TEST(guess_ui_enter());TEST(guess_ui_active());
     /* NMPZ: the panorama must never rotate or move even if keys are held. */
     ui.game.rules=GUESS_NMPZ;
@@ -178,6 +209,6 @@ int main(void){
     remove("sdmc:/3ds_google_maps/streetguess_records.txt.tmp");
     (void)rmdir("sdmc:/3ds_google_maps");
     (void)rmdir("sdmc:");
-    puts("StreetGuess UI simulated five-round / restrictions / error / records tests passed");
+    puts("StreetGuess UI simulated five-round / road pack / restrictions / error / records tests passed");
     return 0;
 }
