@@ -77,9 +77,17 @@ static bool parse_picture(json_t *feature, PanoLiveImage *out) {
     if (json_is_number(az)) out->azimuth = (float)json_number_value(az);
     copy_string(out->license, sizeof(out->license),
         json_string_value(json_object_get(props, "license")), "Check source license");
-    const char *credit = json_string_value(json_object_get(props, "geovisio:producer"));
+    json_t *producer = json_object_get(props, "geovisio:producer");
+    const char *credit = json_string_value(producer);
+    if (!credit) credit = json_string_value(json_object_get(producer, "name"));
     if (!credit) credit = json_string_value(json_object_get(props, "author"));
     if (!credit) credit = json_string_value(json_object_get(props, "copyright"));
+    json_t *providers = json_object_get(props, "providers");
+    if (!credit && json_is_array(providers)) {
+        json_t *provider = json_array_get(providers, 0);
+        credit = json_string_value(json_object_get(provider, "name"));
+        if (!credit) credit = json_string_value(json_object_get(provider, "label"));
+    }
     copy_string(out->credit, sizeof(out->credit), credit, "Panoramax contributor");
 
     json_t *links = json_object_get(feature, "links");
