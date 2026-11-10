@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 #define PANO_NEARBY_MAX 16
+#define PANO_LINK_MAX 8
 #define PANO_API_BASE "https://api.panoramax.xyz/api"
 
 typedef enum {
@@ -16,6 +17,13 @@ typedef enum {
     STREET_PROVIDER_BING = 5,
     STREET_PROVIDER_COUNT = 6
 } StreetProvider;
+
+typedef struct {
+    char id[48];
+    double lat, lon;
+    float bearing; /* degrees clockwise from geographic north */
+    bool has_location;
+} PanoLiveLink;
 
 typedef struct {
     StreetProvider provider;
@@ -30,6 +38,8 @@ typedef struct {
     double lat, lon;
     float azimuth;
     bool is_pano; /* Never wrap an ordinary street photo on a 360 sphere. */
+    PanoLiveLink links[PANO_LINK_MAX];
+    unsigned char link_count;
 } PanoLiveImage;
 
 /* Search is limited to a square around the displayed map's coordinates. */

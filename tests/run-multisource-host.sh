@@ -17,6 +17,6 @@ if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists jansson; the
 fi
 cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=undefined \
    -Iinclude $(pkg-config --cflags jansson) \
-   tests/host/street_sources_test.c source/street_sources.c source/panorama_live.c \
+   tests/host/street_sources_test.c source/street_sources.c source/panorama_live.c source/street_nav.c \
    -lm $(pkg-config --libs jansson) -o "$tmp/providers"
 "$tmp/providers"

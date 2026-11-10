@@ -1,5 +1,7 @@
 #include "pano_runtime.h"
 #include "street_sources.h"
+#include "street_nav.h"
+#include "street_image.h"
 #include "explore.h"
 #include "network.h"
 #include "logging.h"
@@ -22,7 +24,7 @@
 
 typedef enum { JOB_NONE, JOB_SEARCH, JOB_NEXT, JOB_UPGRADE } Job;
 typedef enum { OK, NO_COVERAGE, NETWORK_ERROR, INVALID_IMAGE,
-               OUT_OF_MEMORY, TOKEN_MISSING, ACCESS_DENIED, RATE_LIMITED } PanoResult;
+               OUT_OF_MEMORY, TOKEN_MISSING, ACCESS_DENIED, RATE_LIMITED, NO_LINK } PanoResult;
 
 static struct {
     Thread thread;
@@ -40,6 +42,10 @@ static struct {
     PanoLiveImage candidates[PANO_NEARBY_MAX];
     PanoLiveImage coverage[PANO_NEARBY_MAX];
     PanoLiveImage selected, next_selected;
+    PanoLiveImage history[8];
+    unsigned history_count;
+    PanoLiveLink target_link;
+    bool target_valid, going_back;
     u16 *pending;
     char status[124];
 } state;
@@ -337,11 +343,62 @@ static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview)
     stbi_image_free(rgb);
     state.pending=tiled;
     state.next_selected=*p;
-    state.has_preview=preview && p->preview_url[0] &&
-                        strcmp(p->preview_url,p->image_url);
+    state.has_preview = (preview && p->provider==STREET_PROVIDER_GOOGLE) ||
+        (preview && p->preview_url[0] && strcmp(p->preview_url,p->image_url));
     state.upgrade_pending=state.has_preview;
     state.outcome=OK;
     return true;
+}
+
+/* Keep the working Google-only request identity; never leak it to other providers. */
+static bool google_tile_get(void *handle, const char *url, u8 **jpeg, u32 *size) {
+    CURL *curl=(CURL *)handle;
+    curl_easy_setopt(curl,CURLOPT_FOLLOWLOCATION,0L);
+    curl_easy_setopt(curl,CURLOPT_USERAGENT,
+        "Mozilla/5.0 (Windows NT 11.0; Win64; x64; rv:151.0) Gecko/20100101 Firefox/151.0");
+    bool ok=get(handle,url,PANO_JPEG_MAX,jpeg,size);
+    curl_easy_setopt(curl,CURLOPT_USERAGENT,"3DS-Google-Maps/1.0 (Nintendo 3DS)");
+    curl_easy_setopt(curl,CURLOPT_FOLLOWLOCATION,1L);
+    return ok;
+}
+
+/* The visible zoom-0 preview remains usable if either zoom-1 tile fails.
+ * One compressed JPEG, one decoded 512x512 RGB image and a 1 MiB target
+ * texture coexist at a time; no high-resolution texture reaches the GPU
+ * until both halves are complete. */
+static bool decode_google_hires(void *handle, const PanoLiveImage *p) {
+    if (p->provider != STREET_PROVIDER_GOOGLE || strlen(p->id)!=22) return false;
+    u16 *tiled=malloc(PANO_PIXELS*sizeof(*tiled));
+    if (!tiled) {state.outcome=OUT_OF_MEMORY;return false;}
+    bool ok=false;
+    for (unsigned tile=0;tile<2;tile++) {
+        if (atomic_load(&state.cancelled)) goto done;
+        char url[192];
+        int n=snprintf(url,sizeof(url),
+            "https://streetviewpixels-pa.googleapis.com/v1/tile"
+            "?cb_client=maps_sv.tactile&panoid=%s&x=%u&y=0&zoom=1",
+            p->id,tile);
+        if (n<=0 || (size_t)n>=sizeof(url)) goto done;
+        u8 *jpeg=NULL; u32 size=0;
+        if (!google_tile_get(handle,url,&jpeg,&size)) goto done;
+        int w=0,h=0,comp=0;
+        if (!stbi_info_from_memory(jpeg,(int)size,&w,&h,&comp) ||
+            w!=512 || h!=512) {free(jpeg);state.outcome=INVALID_IMAGE;goto done;}
+        unsigned char *rgb=stbi_load_from_memory(jpeg,(int)size,&w,&h,&comp,3);
+        free(jpeg);
+        if (!rgb) {state.outcome=INVALID_IMAGE;goto done;}
+        if (atomic_load(&state.cancelled)) {stbi_image_free(rgb);goto done;}
+        street_google_write_half_rgb565(rgb,tile,tiled);
+        stbi_image_free(rgb);
+    }
+    state.pending=tiled;tiled=NULL;
+    state.next_selected=*p;
+    state.has_preview=state.upgrade_pending=false;
+    state.outcome=OK;
+    ok=true;
+done:
+    free(tiled);
+    return ok;
 }
 
 static bool lookup_next(void *handle, const char *id, PanoLiveImage *out) {
@@ -372,9 +429,10 @@ static bool search_provider(void *curl, StreetProvider src,
             if (state.outcome == NO_COVERAGE) state.outcome = NETWORK_ERROR;
             for (unsigned k=0;k<count&&k<3&&!atomic_load(&state.cancelled);k++) {
                 state.new_index=(int)k;
-                bool preview=src==STREET_PROVIDER_PANORAMAX;
+                bool preview=src==STREET_PROVIDER_PANORAMAX || src==STREET_PROVIDER_GOOGLE;
                 if (decode_candidate(curl,&state.candidates[k],preview) ||
-                    (preview && decode_candidate(curl,&state.candidates[k],false)))
+                    (src==STREET_PROVIDER_PANORAMAX &&
+                     decode_candidate(curl,&state.candidates[k],false)))
                     return true;
                 if ((src==STREET_PROVIDER_GOOGLE || src==STREET_PROVIDER_BING) &&
                     (state.outcome==ACCESS_DENIED || state.outcome==RATE_LIMITED))
@@ -426,52 +484,58 @@ static void worker(void *unused) {
     } else if (state.job==JOB_NEXT) {
         PanoLiveImage p={0};
         bool found=false;
-        state.outcome=NO_COVERAGE;
+        state.outcome=NO_LINK;
         StreetProvider provider=state.selected.provider;
-        if (provider==STREET_PROVIDER_PANORAMAX ||
-            provider==STREET_PROVIDER_GOOGLE || provider==STREET_PROVIDER_BING) {
-            const char *id=state.direction>0?state.selected.next_id:
-                                                state.selected.prev_id;
-            if (*id && !atomic_load(&state.cancelled)) {
-                /* Reuse search metadata when the neighboring sequence photo
-                 * is already among nearby results: skips an HTTPS request. */
-                for (unsigned i=0;i<state.coverage_count;i++)
-                    if (!strcmp(id,state.coverage[i].id)) {
-                        p=state.coverage[i];
-                        state.new_index=(int)i;
-                        found=true;
-                        break;
-                    }
-                if (!found && provider==STREET_PROVIDER_PANORAMAX)
-                    found=lookup_next(curl,id,&p);
-                else if (!found) {
-                    char url[256];
-                    bool valid;
-                    if (provider==STREET_PROVIDER_GOOGLE) {
-                        valid=street_source_url(provider,state.search_lat,state.search_lon,.003,
-                                                NULL,url,sizeof(url));
-                    } else {
-                        int length=snprintf(url,sizeof(url),
-                            "https://t.ssl.ak.tiles.virtualearth.net/tiles/cmd/"
-                            "StreetSideBubbleMetaData?id=%s",id);
-                        valid=length>0 && (size_t)length<sizeof(url);
-                    }
-                    u8 *bytes=NULL;
-                    u32 size=0;
-                    if (valid && get(curl,url,PANO_JSON_MAX,&bytes,&size)) {
-                        if (provider==STREET_PROVIDER_GOOGLE)
-                            found=street_google_find_id((const char*)bytes,size,id,&p);
-                        else
-                            found=street_parse_candidates(provider,(const char*)bytes,size,
-                                state.selected.lat,state.selected.lon,&p,1)==1 &&
-                                !strcmp(p.id,id);
-                        free(bytes);
-                    }
+        const char *id = state.target_valid ? state.target_link.id :
+            (state.direction>0 ? state.selected.next_id:state.selected.prev_id);
+        if (state.going_back && state.history_count) {
+            p=state.history[state.history_count-1];
+            for (unsigned i=0;i<state.coverage_count;i++) {
+                if (state.coverage[i].provider==p.provider &&
+                    !strcmp(state.coverage[i].id,p.id)) {
+                    state.new_index=(int)i;
+                    break;
+                }
+            }
+            found=true;
+        } else if (*id && !atomic_load(&state.cancelled)) {
+            for (unsigned i=0;i<state.coverage_count;i++) {
+                if (!strcmp(id,state.coverage[i].id) &&
+                    state.coverage[i].provider==provider) {
+                    p=state.coverage[i];state.new_index=(int)i;found=true;break;
+                }
+            }
+            if (!found && provider==STREET_PROVIDER_PANORAMAX)
+                found=lookup_next(curl,id,&p);
+            else if (!found && (provider==STREET_PROVIDER_GOOGLE ||
+                                provider==STREET_PROVIDER_BING)) {
+                char url[256]={0};
+                bool valid=false;
+                if (provider==STREET_PROVIDER_GOOGLE) {
+                    /* Link coordinates identify the adjacent coverage tile, not
+                     * the original tile. The latter caused R to appear stuck. */
+                    double lat=state.target_valid && state.target_link.has_location ?
+                               state.target_link.lat:state.selected.lat;
+                    double lon=state.target_valid && state.target_link.has_location ?
+                               state.target_link.lon:state.selected.lon;
+                    valid=street_source_url(provider,lat,lon,.003,NULL,url,sizeof(url));
+                } else {
+                    int n=snprintf(url,sizeof(url),
+                        "https://t.ssl.ak.tiles.virtualearth.net/tiles/cmd/"
+                        "StreetSideBubbleMetaData?id=%s",id);
+                    valid=n>0 && (size_t)n<sizeof(url);
+                }
+                u8 *bytes=NULL;u32 size=0;
+                if (valid && get(curl,url,PANO_JSON_MAX,&bytes,&size)) {
+                    if (provider==STREET_PROVIDER_GOOGLE)
+                        found=street_google_find_id((const char*)bytes,size,id,&p);
+                    else found=street_bing_find_id((const char*)bytes,size,id,&p);
+                    free(bytes);
                 }
             }
         }
-        if (!found && state.coverage_count>1 && provider!=STREET_PROVIDER_GOOGLE &&
-            provider!=STREET_PROVIDER_BING) {
+        if (!found && !state.target_valid && state.coverage_count>1 &&
+            provider!=STREET_PROVIDER_GOOGLE && provider!=STREET_PROVIDER_BING) {
             int next=(int)state.index+(state.direction>0?1:-1);
             if (next>=0 && next<(int)state.coverage_count) {
                 p=state.coverage[next];state.new_index=next;found=true;
@@ -479,13 +543,17 @@ static void worker(void *unused) {
         }
         if (found && !atomic_load(&state.cancelled)) {
             state.outcome=NETWORK_ERROR;
-            bool preview=p.provider==STREET_PROVIDER_PANORAMAX;
-            if (!decode_candidate(curl,&p,preview) && preview)
+            bool preview=p.provider==STREET_PROVIDER_PANORAMAX ||
+                         p.provider==STREET_PROVIDER_GOOGLE;
+            if (!decode_candidate(curl,&p,preview) &&
+                p.provider==STREET_PROVIDER_PANORAMAX)
                 decode_candidate(curl,&p,false);
         }
     } else if (state.job==JOB_UPGRADE) {
         state.outcome=NETWORK_ERROR;
-        decode_candidate(curl,&state.selected,false);
+        if (state.selected.provider==STREET_PROVIDER_GOOGLE)
+            decode_google_hires(curl,&state.selected);
+        else decode_candidate(curl,&state.selected,false);
         state.upgrade_pending=false;
     }
     network_free_tile_curl(curl);
@@ -527,13 +595,44 @@ bool pano_runtime_start(double lat,double lon) {
     snprintf(state.status,sizeof(state.status),"Could not start street image search");
     return false;
 }
-bool pano_runtime_step(int direction) {
+bool pano_runtime_follow(unsigned index) {
     if (state.thread)cancel_upgrade();
-    if (state.thread || !state.live || !direction)return false;
-    state.direction=direction;state.new_index=(int)state.index;
+    if (state.thread || !state.live || index>=state.selected.link_count ||
+        index>=PANO_LINK_MAX) return false;
+    state.direction=1;
+    state.target_valid=true;
+    state.going_back=false;
+    state.target_link=state.selected.links[index];
+    state.new_index=(int)state.index;
+    snprintf(state.status,sizeof(state.status),"Moving to linked panorama...");
+    return launch(JOB_NEXT);
+}
+
+bool pano_runtime_step_at(int direction, float view_yaw_rad) {
+    if (state.thread)cancel_upgrade();
+    if (state.thread || !state.live || !direction) return false;
+    state.direction=direction;
+    state.new_index=(int)state.index;
+    state.target_valid=false;
+    state.going_back=direction<0 && state.history_count>0;
+    int link=direction>0 ? street_nav_forward(&state.selected,view_yaw_rad) :
+                            street_nav_backward(&state.selected);
+    if (!state.going_back && link>=0) {
+        state.target_link=state.selected.links[link];
+        state.target_valid=true;
+    }
+    if (!state.going_back && !state.target_valid &&
+        !(direction>0 ? state.selected.next_id[0] :state.selected.prev_id[0]) &&
+        (state.selected.provider==STREET_PROVIDER_GOOGLE ||
+         state.selected.provider==STREET_PROVIDER_BING)) {
+        snprintf(state.status,sizeof(state.status),"No connected panorama in that direction");
+        return false;
+    }
     snprintf(state.status,sizeof(state.status),"Loading nearby street photo...");
     return launch(JOB_NEXT);
 }
+
+bool pano_runtime_step(int direction) {return pano_runtime_step_at(direction,0.f);}
 void pano_runtime_poll(void) {
     if (!state.thread || !atomic_load(&state.done))return;
     Job job=state.job;
@@ -541,6 +640,18 @@ void pano_runtime_poll(void) {
     threadFree(state.thread);state.thread=NULL;
     if (state.outcome==OK && state.pending &&
         explore_load_street_pixels(state.pending,state.next_selected.is_pano)) {
+        if (job==JOB_NEXT && state.live) {
+            if (state.going_back) {
+                if (state.history_count) --state.history_count;
+            } else if (strcmp(state.selected.id,state.next_selected.id) ||
+                       state.selected.provider!=state.next_selected.provider) {
+                if (state.history_count==8) {
+                    memmove(state.history,state.history+1,7*sizeof(state.history[0]));
+                    state.history_count=7;
+                }
+                state.history[state.history_count++]=state.selected;
+            }
+        } else if (job==JOB_SEARCH) state.history_count=0;
         state.selected=state.next_selected;
         state.index=(unsigned)state.new_index;
         state.live=true;
@@ -562,6 +673,8 @@ void pano_runtime_poll(void) {
                  state.selected.is_pano ? "360" : "photo");
     } else if (state.outcome==TOKEN_MISSING)
         snprintf(state.status,sizeof(state.status),"Mapillary: configure mapillary.token");
+    else if (state.outcome==NO_LINK)
+        snprintf(state.status,sizeof(state.status),"No connected panorama here; current image retained");
     else if (state.outcome==NO_COVERAGE)
         snprintf(state.status,sizeof(state.status),
                  state.pref==STREET_PROVIDER_AUTO ?
@@ -593,10 +706,30 @@ void pano_runtime_stop(void) {
     }
     free(state.pending);state.pending=NULL;
     state.live=false;state.count=0;state.job=JOB_NONE;
+    state.history_count=0;state.target_valid=false;state.going_back=false;
     state.upgrade_pending=false;
     state.status[0]=0;
     /* Keep coverage markers until the next successful search. */
 }
+/* Switch without resetting the visible scene. A completed request is cancelled
+ * and joined before replacing its parameters, preventing stale GPU updates. */
+bool pano_runtime_switch_provider(StreetProvider provider,double lat,double lon) {
+    initialize();
+    if (provider<STREET_PROVIDER_AUTO || provider>=STREET_PROVIDER_COUNT)return false;
+    if (state.thread) {
+        atomic_store(&state.cancelled,true);
+        threadJoin(state.thread,U64_MAX);
+        threadFree(state.thread);state.thread=NULL;
+    }
+    free(state.pending);state.pending=NULL;
+    state.upgrade_pending=false;
+    pano_runtime_set_provider(provider);
+    state.lat=lat;state.lon=lon;
+    snprintf(state.status,sizeof(state.status),"Searching selected provider...");
+    return launch(JOB_SEARCH);
+}
+
+bool pano_runtime_network_active(void) {return state.thread!=NULL;}
 bool pano_runtime_busy(void) {return state.thread!=NULL && state.job!=JOB_UPGRADE;}
 bool pano_runtime_has_live(void) {return state.live;}
 const char *pano_runtime_status(void) {return state.status;}

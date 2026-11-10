@@ -21,6 +21,7 @@
 #include "pano_gyro.h"
 #include "street_look_input.h"
 #include "street_sources.h"
+#include "street_nav.h"
 #include <jansson.h>
 #include <zlib.h>
 
@@ -162,6 +163,7 @@ static PanoGyroFilter g_explore_gyro_filter;
 static float g_explore_gyro_counts_per_dps;
 static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
 static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
+static bool g_globe_from_zoom0, g_provider_picker;
 
 // Smooth camera state.
 static double g_target_lat = 0.0;
@@ -551,7 +553,7 @@ static void load_session(void) {
                         &version, &lat, &lon, &zoom, &source, &night, &cache, &coverage, &gps_mode);
     fclose(f);
     if (fields != 9 || version != 1 || !isfinite(lat) || fabs(lat) > 90 ||
-        !isfinite(lon) || fabs(lon) > 180 || zoom < 1 || zoom > 18 ||
+        !isfinite(lon) || fabs(lon) > 180 || zoom < 0 || zoom > 18 ||
         source > 1 || night > 1 || cache > 1 || coverage > 1 || gps_mode > 1) return;
     network_set_tile_source((TileSource)source);
     network_set_disk_cache_enabled(cache);
@@ -656,6 +658,7 @@ int main(int argc, char* argv[]) {
         if (g_explore_mode) {
             update_explore();
             if (g_should_exit) break;
+            map_tiles_process_downloads();
             if (g_explore_mode) render_explore();
             else render_map();
             continue;
@@ -988,6 +991,8 @@ static bool handle_touch_button_action(TouchAction action) {
 }
 
 static void close_explore(void) {
+    g_provider_picker=false;
+    g_globe_from_zoom0=false;
     pano_runtime_stop();
     if (g_explore_gyro) HIDUSER_DisableGyroscope();
     g_explore_gyro = false;
@@ -1013,6 +1018,7 @@ static void open_explore(ExploreMode mode) {
         return;
     }
     g_explore_mode = mode;
+    g_provider_picker=false;
     g_explore_yaw = mode == EXPLORE_GLOBE ? C3D_AngleFromDegrees((float)map_state.lon) :
                     mode == EXPLORE_TERRAIN ? .58f : 0;
     g_explore_pitch = mode == EXPLORE_GLOBE ?
@@ -1035,7 +1041,7 @@ static void explore_show_map(void) {
     if (g_explore_mode == EXPLORE_GLOBE) {
         lat = g_explore_pitch * (180.0 / M_PI);
         lon = g_explore_yaw * (180.0 / M_PI);
-        zoom = 2;
+        zoom = g_globe_from_zoom0 ? 0 : 2;
     } else {
         const ExplorePlace *place = g_explore_mode == EXPLORE_TERRAIN ?
             &explore_terrain_place : &explore_street_places[g_street_stop];
@@ -1046,9 +1052,16 @@ static void explore_show_map(void) {
         zoom = g_explore_mode == EXPLORE_TERRAIN ? 11 : 17;
     }
     close_explore();
+    g_globe_from_zoom0=false;
     map_state.gps_tracking = false;
     set_camera_target(lat, lon, zoom, true);
     g_map_fade_ms = osGetTime();
+}
+
+static void choose_street_provider(StreetProvider p) {
+    g_provider_picker=false;
+    if (!pano_runtime_switch_provider(p,map_state.lat,map_state.lon))
+        set_status_message("Could not start selected source");
 }
 
 static float explore_axis(int value) {
@@ -1059,6 +1072,10 @@ static void update_explore(void) {
     pano_runtime_poll();
     hidScanInput();
     u32 keys = hidKeysDown(), held = hidKeysHeld();
+    if ((keys & KEY_B) && !(keys & KEY_START) && g_provider_picker) {
+        g_provider_picker=false;
+        return;
+    }
     if (keys & (KEY_B | KEY_START)) {
         close_explore();
         if (keys & KEY_START) g_should_exit = true;
@@ -1098,8 +1115,8 @@ static void update_explore(void) {
         if (keys & (KEY_L | KEY_R | KEY_DLEFT | KEY_DRIGHT)) {
             int dir = (keys & (KEY_L | KEY_DLEFT)) ? -1 : 1;
             if (pano_runtime_has_live()) {
-                if (!pano_runtime_step(dir))
-                    set_status_message("Panorama loading; try again");
+                if (!pano_runtime_step_at(dir,g_explore_yaw))
+                    set_status_message(pano_runtime_status());
             } else if (!pano_runtime_busy()) {
                 /* Preserve the bundled photos as an offline fallback. */
                 unsigned next = g_street_stop ^ 1;
@@ -1120,26 +1137,34 @@ static void update_explore(void) {
             pano_runtime_start(map_state.lat, map_state.lon);
         }
         if (keys & KEY_Y) {
-            StreetProvider next = (StreetProvider)((pano_runtime_provider()+1)
-                                                    % STREET_PROVIDER_COUNT);
-            pano_runtime_stop();
-            pano_runtime_set_provider(next);
-            /* A new source must not masquerade as the previous provider. */
-            explore_load(EXPLORE_STREET, g_street_stop);
-            g_explore_yaw = g_explore_pitch = 0;
-            pano_runtime_start(map_state.lat, map_state.lon);
+            StreetProvider next=(StreetProvider)((pano_runtime_provider()+1)%STREET_PROVIDER_COUNT);
+            choose_street_provider(next);
         }
         if (keys & KEY_TOUCH) {
             touchPosition touch;
             hidTouchRead(&touch);
-            if (touch.py >= 65 && touch.py < 90) {
-                StreetProvider next = (StreetProvider)((pano_runtime_provider()+1)
-                                                        % STREET_PROVIDER_COUNT);
-                pano_runtime_stop();
-                pano_runtime_set_provider(next);
-                explore_load(EXPLORE_STREET, g_street_stop);
-                g_explore_yaw = g_explore_pitch = 0;
-                pano_runtime_start(map_state.lat, map_state.lon);
+            if (g_provider_picker) {
+                if (touch.px>=12 && touch.px<308 && touch.py>=60 && touch.py<180) {
+                    int index=(touch.py-60)/20;
+                    if (index>=0 && index<STREET_PROVIDER_COUNT)
+                        choose_street_provider((StreetProvider)index);
+                } else g_provider_picker=false;
+            } else if (touch.px>=12 && touch.px<308 && touch.py>=57 && touch.py<88) {
+                g_provider_picker=true;
+            } else if (touch.px>=164 && touch.px<308 && touch.py>=105 && touch.py<171) {
+                int col=(touch.px-164)/48, row=(touch.py-105)/22;
+                int cell=row*3+col;
+                const PanoLiveImage *live=pano_runtime_current();
+                int link=street_nav_at_cell(live,g_explore_yaw,cell);
+                if (link>=0) {
+                    if (!pano_runtime_follow((unsigned)link))
+                        set_status_message("Panorama loading; try again");
+                } else if (live && live->provider==STREET_PROVIDER_PANORAMAX &&
+                           ((cell==1 && live->next_id[0]) ||
+                            (cell==7 && live->prev_id[0]))) {
+                    if (!pano_runtime_step_at(cell==1 ? 1:-1,g_explore_yaw))
+                        set_status_message(pano_runtime_status());
+                }
             }
         }
         if (keys & KEY_X) {
@@ -1233,26 +1258,65 @@ static void render_explore(void) {
     draw_ui_text(12, 9, .58f, .58f, white, 0, title);
     draw_ui_text(12, 34, .40f, .40f, dim, 0, place);
     if (g_explore_mode == EXPLORE_STREET) {
-        char source_label[48];
-        snprintf(source_label, sizeof(source_label), "Y / Tap  Source: %s",
+        char source_label[64];
+        snprintf(source_label,sizeof(source_label),"Y / Source: %s  [Select]",
                  street_provider_name(pano_runtime_provider()));
-        draw_ui_text(14, 67, .40f, .40f, accent, 0, source_label);
-        draw_ui_text(14, 89, .32f, .32f, dim, 0, pano_runtime_status());
-        draw_ui_text(14, 108, .35f, .35f, white, 0,
-                     "L/R Next photo     Down Retry");
-        draw_ui_text(14, 130, .35f, .35f, white, 0,
-                     live && !live->is_pano ?
-                        "Flat photo  (gyro only for 360)" :
-                        (g_explore_gyro && !g_explore_gyro_filter.ready ?
-                            "Gyro: HOLD STILL to calibrate" :
-                            (g_explore_gyro ? "X Gyro ON   Up Calibrate" :
-                                              "X Gyro OFF  Up Calibrate")));
-        draw_ui_text(14, 151, .32f, .32f, dim, 0,
-                     g_explore_gyro_inverted ? "Select Reverse gyro: ON" :
-                                              "Select Reverse gyro: OFF");
-        draw_ui_text(14, 169, .30f, .30f, dim, 0,
-                     live ? live->credit : "G. Edward Johnson / CC BY 4.0");
-        if (live) draw_ui_text(14, 178, .26f, .26f, dim, 0, live->license);
+        C2D_DrawRectSolid(12,58,.15f,296,27,C2D_Color32(30,48,65,255));
+        draw_ui_text(16,67,.38f,.38f,accent,0,source_label);
+        draw_ui_text(14,91,.32f,.32f,dim,0,pano_runtime_status());
+        /* Cached/offline map tiles only; any missing tile enters a throttled
+         * low-priority queue, never synchronous HTTP on the render thread. */
+        const double mlat=live?live->lat:map_state.lat;
+        const double mlon=live?live->lon:map_state.lon;
+        map_tiles_draw_minimap(mlat,mlon,15,12,106,144,66,
+                               !pano_runtime_network_active());
+        if (live) {
+            for (unsigned i=0;i<live->link_count;i++) {
+                const PanoLiveLink *l=&live->links[i];
+                if (!l->has_location) continue;
+                int cx,cy,nx,ny;
+                lat_lon_to_pixel(mlat,mlon,15,&cx,&cy);
+                lat_lon_to_pixel(l->lat,l->lon,15,&nx,&ny);
+                int dx=nx-cx;
+                int world=(1<<15)*256;
+                if (dx>world/2)dx-=world;
+                if (dx<-world/2)dx+=world;
+                float px=84+dx*.34f,py=139+(ny-cy)*.34f;
+                if (px>=15 && px<153 && py>=109 && py<169)
+                    C2D_DrawCircleSolid(px,py,.65f,2.2f,accent);
+            }
+        }
+        /* A short cyan pointing ray plus position dot shows camera direction. */
+        float heading=live ? live->azimuth+g_explore_yaw*180.f/(float)M_PI : 0.f;
+        float ang=heading*(float)(M_PI/180.0);
+        C2D_DrawCircleSolid(84+13*sinf(ang),139-13*cosf(ang),.72f,3.2f,accent);
+        C2D_DrawCircleSolid(84,139,.73f,4.f,white);
+        static const char *arrows[]={"NW","N","NE","W","","E","SW","S","SE"};
+        for(int cell=0;cell<9;cell++) {
+            int row=cell/3,col=cell%3;
+            float x=164+col*48, y=105+row*22;
+            int link=street_nav_at_cell(live,g_explore_yaw,cell);
+            bool enabled=link>=0 || (live && live->provider==STREET_PROVIDER_PANORAMAX &&
+                ((cell==1 && live->next_id[0]) || (cell==7 && live->prev_id[0])));
+            C2D_DrawRectSolid(x+2,y+1,.35f,44,20,
+                C2D_Color32(enabled?36:30,enabled?108:49,enabled?126:63,255));
+            if(cell!=4)draw_ui_text(x+14,y+4,.34f,.34f,
+                enabled?white:dim,0,arrows[cell]);
+        }
+        draw_ui_text(14,174,.27f,.27f,dim,0,
+            live ? live->credit : "G. Edward Johnson / CC BY 4.0");
+        if (live && live->license[0])
+            draw_ui_text(200,174,.26f,.26f,dim,0,live->license);
+        if (g_provider_picker) {
+            C2D_DrawRectSolid(10,57,.78f,300,127,C2D_Color32(20,33,48,255));
+            for(int i=0;i<STREET_PROVIDER_COUNT;i++) {
+                float y=60+i*20;
+                if(i==pano_runtime_provider())
+                    C2D_DrawRectSolid(14,y,.80f,292,19,C2D_Color32(36,91,106,255));
+                draw_ui_text(19,y+4,.38f,.38f,white,0,
+                             street_provider_name((StreetProvider)i));
+            }
+        }
     } else {
         draw_ui_text(14, 76, .44f, .44f, white, 0, "Circle Pad / D-Pad  Rotate");
         draw_ui_text(14, 101, .44f, .44f, white, 0, "X / Y  Zoom in / out");
@@ -1263,7 +1327,17 @@ static void render_explore(void) {
                      g_explore_mode == EXPLORE_GLOBE ? "NASA / GSFC Blue Marble" : "USGS 3DEP  |  2.2x vertical exaggeration");
     }
     C2D_DrawRectSolid(0, 184, .1f, 320, 56, C2D_Color32(23, 32, 45, 255));
-    draw_ui_text(14, 196, .44f, .44f, dim, 0, "A  Open map     B  Back");
+    if (g_explore_mode==EXPLORE_STREET) {
+        draw_ui_text(12,190,.34f,.34f,dim,0,
+            live && !live->is_pano ? "Flat photo  (gyro only for 360)" :
+            g_explore_gyro && !g_explore_gyro_filter.ready ? "Gyro: HOLD STILL to calibrate" :
+            g_explore_gyro ? "X Gyro ON  Up Calibrate" : "X Gyro OFF  Up Calibrate");
+        draw_ui_text(12,205,.31f,.31f,dim,0,
+            g_explore_gyro_inverted ? "Select Reverse gyro: ON" :
+                                      "Select Reverse gyro: OFF");
+        draw_ui_text(12,224,.33f,.33f,dim,0,
+            "L/R Move   Down Retry   A Map   B Back");
+    } else draw_ui_text(14, 196, .44f, .44f, dim, 0, "A  Open map     B  Back");
     if (g_debug_overlay) {
         char fps[24];
         snprintf(fps, sizeof(fps), "%lu FPS", (unsigned long)g_fps);
@@ -1299,9 +1373,14 @@ void zoom_in(void) {
 }
 
 void zoom_out(void) {
-    if (g_target_zoom > 1) {
+    if (g_target_zoom > 0) {
         g_target_zoom--;
         g_last_interaction_ms = osGetTime();
+    } else if (map_state.zoom==0) {
+        /* Only a distinct, subsequent keydown after Z0 is reached enters the
+         * globe. Holding Y or pressing during zoom animation does nothing. */
+        open_explore(EXPLORE_GLOBE);
+        if (g_explore_mode == EXPLORE_GLOBE) g_globe_from_zoom0=true;
     }
 }
 
@@ -2896,7 +2975,7 @@ static void open_offline_download(void) {
             RegionPoint center = { map_state.lat, map_state.lon };
             count = region_plan(plan, REGION_LIMIT, min_zoom, max_zoom,
                                 route ? g_route_geometry : &center,
-                                route ? g_route_geometry_count : 1, map_state.zoom, 420);
+                                route ? g_route_geometry_count : 1, map_state.zoom<1?1:map_state.zoom, 420);
             snprintf(region_detail, sizeof(region_detail), "%s  |  Zoom %d-%d",
                      route ? "Route corridor" : "Current map area", min_zoom, max_zoom);
             if (count > REGION_LIMIT) {

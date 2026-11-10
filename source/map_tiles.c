@@ -445,7 +445,7 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
             int tile_x = start_tile_x + tx;
             int tile_y = start_tile_y + ty;
             if (tile_y < 0 || tile_y >= max_tile) continue;
-            tile_x = (tile_x + max_tile) % max_tile;
+            tile_x = ((tile_x % max_tile) + max_tile) % max_tile;
             if (!find_cached_tile(tile_x, tile_y, zoom) && npq < 16) {
                 int dx = start_tile_x + tx - center_tile_x;
                 int dy = tile_y - center_tile_y;
@@ -485,7 +485,7 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
             int tile_x = start_tile_x + tx;
             int tile_y = start_tile_y + ty;
             if (tile_y < 0 || tile_y >= max_tile) continue;
-            tile_x = (tile_x + max_tile) % max_tile;
+            tile_x = ((tile_x % max_tile) + max_tile) % max_tile;
 
             CachedTile *cached = find_cached_tile(tile_x, tile_y, zoom);
 
@@ -644,6 +644,53 @@ void map_tiles_prefetch_step(double lat, double lon, int zoom, int screen_width,
 
     // Queue finished.
     prefetch_active = false;
+}
+
+/* Small Street View minimap, clipped to a fixed rectangle. Uses the SAME
+ * tile cache, offline packs and low-priority worker queue as the 2D map. */
+void map_tiles_draw_minimap(double lat,double lon,int zoom,
+                            float x,float y,float width,float height,
+                            bool allow_requests) {
+    if (!initialized || zoom<0 || zoom>18) return;
+    C2D_DrawRectSolid(x,y,.30f,width,height,C2D_Color32(31,48,62,255));
+    int cx,cy;lat_lon_to_pixel(lat,lon,zoom,&cx,&cy);
+    const float scale=.34f;
+    int half_w=(int)ceilf(width/(2*scale));
+    int half_h=(int)ceilf(height/(2*scale));
+    int tx0=(int)floor((cx-half_w)/256.0),tx1=(int)floor((cx+half_w)/256.0);
+    int ty0=(int)floor((cy-half_h)/256.0),ty1=(int)floor((cy+half_h)/256.0);
+    int n=1<<zoom;
+    static u64 last_request_ms;
+    u64 now=osGetTime();
+    bool queued=false;
+    allow_requests=allow_requests && (!last_request_ms || now-last_request_ms>=300);
+    for(int ty=ty0;ty<=ty1;ty++) for(int tx=tx0;tx<=tx1;tx++) {
+        if(ty<0 || ty>=n)continue;
+        int wrapped=((tx%n)+n)%n;
+        CachedTile *tile=find_cached_tile(wrapped,ty,zoom);
+        if(!tile && !queued && allow_requests) {
+            CachedTile *slot=get_cache_slot();
+            if(slot) {
+                enqueue_tile_download(wrapped,ty,zoom,slot,true);
+                last_request_ms=now;
+                queued=true;
+            }
+        }
+        if(!tile || !tile->valid || !tile->image.tex)continue;
+        float left=x+width*.5f+(tx*256-cx)*scale;
+        float top=y+height*.5f+(ty*256-cy)*scale;
+        float x0=fmaxf(x,left), y0=fmaxf(y,top);
+        float x1=fminf(x+width,left+256*scale);
+        float y1=fminf(y+height,top+256*scale);
+        if(x1<=x0 || y1<=y0)continue;
+        float u0=(x0-left)/(256*scale),u1=(x1-left)/(256*scale);
+        float v0=(y0-top)/(256*scale),v1=(y1-top)/(256*scale);
+        Tex3DS_SubTexture sub={.width=(u16)roundf((x1-x0)/scale),
+            .height=(u16)roundf((y1-y0)/scale),
+            .left=u0,.right=u1,.top=1.f-v0,.bottom=1.f-v1};
+        C2D_Image part={tile->image.tex,&sub};
+        C2D_DrawImageAt(part,x0,y0,.31f,NULL,scale,scale);
+    }
 }
 
 void lat_lon_to_tile(double lat, double lon, int zoom, int* tile_x, int* tile_y) {

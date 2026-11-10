@@ -1,4 +1,5 @@
 #include "street_sources.h"
+#include "street_nav.h"
 #include <jansson.h>
 #include <math.h>
 #include <ctype.h>
@@ -277,6 +278,15 @@ static bool parse_google(json_t *array, json_t *entry, PanoLiveImage *out) {
         if (distance == 0) continue;
         double direction = (sin(heading * rad) * x + cos(heading * rad) * y)
                            / distance;
+        if (out->link_count < PANO_LINK_MAX) {
+            PanoLiveLink *dst = &out->links[out->link_count++];
+            memset(dst, 0, sizeof(*dst));
+            strcpy(dst->id, id);
+            dst->lat = lat;
+            dst->lon = lon;
+            dst->has_location = true;
+            dst->bearing = street_nav_bearing(out->lat, out->lon, lat, lon);
+        }
         if (direction > front) {
             front = direction;
             strcpy(out->next_id, id);
@@ -317,8 +327,20 @@ static bool parse_bing(json_t *entry, PanoLiveImage *out) {
         char id[48];
         double bearing;
         if (!bing_id(json_object_get(neighbor, "id"), id, sizeof(id)) ||
-            !strcmp(id, out->id) || !strcmp(id, out->prev_id) ||
+            !strcmp(id, out->id) ||
             !numberfield(json_object_get(neighbor, "az"), &bearing)) continue;
+        if (out->link_count < PANO_LINK_MAX) {
+            bool already = false;
+            for (unsigned k=0; k<out->link_count; k++)
+                if (!strcmp(out->links[k].id,id)) already = true;
+            if (!already) {
+                PanoLiveLink *dst = &out->links[out->link_count++];
+                memset(dst,0,sizeof(*dst));
+                strcpy(dst->id,id);
+                dst->bearing = (float)bearing;
+            }
+        }
+        if (!strcmp(id, out->prev_id)) continue;
         double forward = cos((bearing - out->azimuth) * .017453292519943295);
         if (forward > best) {
             best = forward;
@@ -359,6 +381,27 @@ bool street_google_find_id(const char *json, size_t len, const char *id,
             json_array_get(json_array_get(entry, 0), 0), 1));
         if (value && !strcmp(value, id)) {
             found = parse_google(array, entry, out);
+            break;
+        }
+    }
+    json_decref(root);
+    return found;
+}
+
+/* Do not assume that the first returned Bing metadata item matches the ID. */
+bool street_bing_find_id(const char *json, size_t len, const char *id,
+                         PanoLiveImage *out) {
+    if (!json || !id || !out || len > 512u*1024u) return false;
+    json_t *root = json_loadb(json,len,JSON_REJECT_DUPLICATES,NULL);
+    if (!json_is_array(root)) { json_decref(root); return false; }
+    bool found = false;
+    size_t index;
+    json_t *entry;
+    json_array_foreach(root,index,entry) {
+        PanoLiveImage candidate;
+        if (parse_bing(entry,&candidate) && !strcmp(id,candidate.id)) {
+            *out = candidate;
+            found = true;
             break;
         }
     }

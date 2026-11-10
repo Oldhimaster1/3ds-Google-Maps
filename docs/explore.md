@@ -6,7 +6,7 @@ Open **R → Explore** and tap a scene. All three scenes work with Wi-Fi off. **
 | --- | --- |
 | World globe | Circle Pad or D-Pad rotates across all longitudes and up to 89° latitude. **X / Y** zoom. Press **X** at the closest zoom or **A** for an animated dive into the existing map at the selected coordinates. The 2D map clamps to the Web Mercator latitude limit and loads details from its normal sources. |
 | Terrain in 3D | Orbit and zoom a roughly 32 × 29 km Grand Canyon relief model. Raise the 3D slider for distinct left and right views on a stereoscopic console. With the slider down or on 2DS, the same relief is visible in mono. Elevation is exaggerated 2.2× for readability. |
-| Street View Explorer | Searches photos near the **current map center**. **Y** (or tap the provider row) cycles **Automatic / Panoramax / Mapillary / KartaView**; **Down** retries. **L / R** browses photos; **X** toggles gyro; **Up** recalibrates while stationary and **Select** reverses gyro motion. Genuine 360° images use the sphere, while ordinary street photos are displayed flat rather than distorted. Both bundled Bethesda panoramas remain available offline. |
+| Street View Explorer | Searches imagery near the **current map center**. Tap the source row to choose **Automatic, Panoramax, Mapillary, KartaView, Google (experimental), or Bing (experimental)**; **Y** remains a cycling shortcut. **R** follows a verified forward link, **L** backtracks when history exists, and touchscreen arrows choose intersection branches. **Down** retries; **X** toggles gyro, **Up** recalibrates and **Select** reverses gyro motion. The bottom minimap tracks live panoramas; available higher-quality Google tiles replace the initial preview when valid. Ordinary street photos remain flat. Both bundled Bethesda panoramas remain offline. |
 
 
 ## Multi-provider Street View
@@ -18,7 +18,7 @@ toggle to `street_coverage.cfg`. Neither file contains credentials.
 
 | Provider | Setup | Notes |
 | --- | --- | --- |
-| Automatic | None | Tries Mapillary first **if a token is configured**, then Panoramax. KartaView is excluded from automatic mode because its public API can be slow. |
+| Automatic | None | Tries Mapillary first **if a token is configured**, then Panoramax and finally KartaView. Google and Bing remain experimental explicit selections. |
 | Panoramax | No key | Open federated STAC search; genuine 360° images, progressive low-res thumbnail while the SD image loads in the background. Individual licenses and attribution apply. |
 | Mapillary | Own free API token | Request nearby photos from the Graph API, preferably true spherical panoramas. Regular photos display as flat images. |
 | KartaView | No key | Experimental: small-radius public search, mainly **flat** street photos. Public API may time out or require authentication. Do not misrepresent these as 360° panoramas. |

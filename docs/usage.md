@@ -7,7 +7,7 @@ terrain, or two nearby street-level panoramas. See [Explore controls and data cr
 
 ## Map and settings
 
-The top screen displays the map. The touch panel opens **Search**, **Favorites**, **Recents**, **Route**, **Identify**, **GPS**, **Track**, and **Menu**. Use the D-Pad or Circle Pad to pan, **X/Y** to change zoom, and **Start** to exit. You can drag in the upper area of the touch panel to pan. The app saves the view, layer, night mode, GPS mode, and related settings when it exits normally.
+The top screen displays the map. The touch panel opens **Search**, **Favorites**, **Recents**, **Route**, **Identify**, **GPS**, **Track**, and **Menu**. Zoom out with **Y** from Z1 to Z0; another deliberate **Y** press at Z0 opens the 3D globe at the same coordinates. Zoom into the globe with **X** until the normal map returns. Use the D-Pad or Circle Pad to pan, **X/Y** to change zoom, and **Start** to exit. You can drag in the upper area of the touch panel to pan. The app saves the view, layer, night mode, GPS mode, and related settings when it exits normally.
 
 In **Menu → View**, choose **Street** or **Sat** and adjust night mode or the debug overlay. Press **Select** in that tab for per-tile SD, network, decode, and GPU upload timings. In **Menu → Data**, manage the optional LAN proxy, browsing cache, and offline packs. Clearing the browsing cache preserves saved packs.
 

@@ -6,10 +6,14 @@
 /* HTTP / image decode run on a worker; GPU swap runs in poll on the UI thread. */
 bool pano_runtime_start(double lat, double lon);
 bool pano_runtime_step(int direction);
+bool pano_runtime_step_at(int direction,float view_yaw_rad);
+bool pano_runtime_follow(unsigned index);
+bool pano_runtime_switch_provider(StreetProvider provider,double lat,double lon);
 void pano_runtime_poll(void);
 void pano_runtime_stop(void);
 bool pano_runtime_busy(void);
 bool pano_runtime_has_live(void);
+bool pano_runtime_network_active(void);
 const char *pano_runtime_status(void);
 const PanoLiveImage *pano_runtime_current(void);
 

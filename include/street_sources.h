@@ -14,6 +14,8 @@ unsigned street_parse_candidates(StreetProvider provider,
 bool street_bing_face_url(const char *id, unsigned face, char *url, size_t cap);
 bool street_google_find_id(const char *json, size_t len, const char *id,
                            PanoLiveImage *out);
+bool street_bing_find_id(const char *json, size_t len, const char *id,
+                         PanoLiveImage *out);
 /* Mapillary client tokens contain only printable, URL-escaped ASCII. */
 bool street_mapillary_token_valid(const char *token);
 #endif
