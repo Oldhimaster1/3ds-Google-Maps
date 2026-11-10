@@ -21,13 +21,13 @@
 
 typedef enum { JOB_NONE, JOB_SEARCH, JOB_NEXT, JOB_UPGRADE } Job;
 typedef enum { OK, NO_COVERAGE, NETWORK_ERROR, INVALID_IMAGE,
-               OUT_OF_MEMORY, TOKEN_MISSING } Result;
+               OUT_OF_MEMORY, TOKEN_MISSING } PanoResult;
 
 static struct {
     Thread thread;
     atomic_bool cancelled, done;
     Job job;
-    Result outcome;
+    PanoResult outcome;
     bool initialized, live, has_preview, upgrade_pending;
     bool coverage_enabled;
     StreetProvider pref;
@@ -112,7 +112,7 @@ static bool url_safe(const char *url) {
 }
 
 static bool get(void *handle, const char *url, size_t max, u8 **bytes, u32 *size) {
-    if (!url_safe(url)) return false;
+    if (!url_safe(url) || atomic_load(&state.cancelled)) return false;
     return network_request(handle, url, max, &state.cancelled, bytes, size);
 }
 
@@ -163,8 +163,8 @@ static bool query_source(void *handle, StreetProvider provider,
         curl_easy_setopt(curl,CURLOPT_POSTFIELDS,form);
         curl_easy_setopt(curl,CURLOPT_POSTFIELDSIZE,(long)strlen(form));
         ok=get(handle,url,PANO_JSON_MAX,&response,&length);
-        curl_easy_setopt(curl,CURLOPT_HTTPGET,1L);
         curl_easy_setopt(curl,CURLOPT_POSTFIELDS,NULL);
+        curl_easy_setopt(curl,CURLOPT_HTTPGET,1L);
         curl_easy_setopt(curl,CURLOPT_HTTPHEADER,NULL);
         curl_slist_free_all(headers);
     } else {
@@ -252,10 +252,14 @@ static bool search_provider(void *curl, StreetProvider src,
     static const double radii[]={.0025,.012};
     for (unsigned i=0;i<2&&!atomic_load(&state.cancelled);i++) {
         unsigned count=0;
-        if (!query_source(curl,src,radii[i],token,&count))return false;
+        if (!query_source(curl,src,radii[i],token,&count)) {
+            if (state.outcome == NO_COVERAGE) state.outcome = NETWORK_ERROR;
+            return false;
+        }
         if (count) {
             state.count=count;
             state.used=src;
+            if (state.outcome == NO_COVERAGE) state.outcome = NETWORK_ERROR;
             for (unsigned k=0;k<count&&k<3&&!atomic_load(&state.cancelled);k++) {
                 state.new_index=(int)k;
                 bool preview=src==STREET_PROVIDER_PANORAMAX;
@@ -326,6 +330,7 @@ static void worker(void *unused) {
         }
         state.outcome=NO_COVERAGE;
         if (found && !atomic_load(&state.cancelled)) {
+            state.outcome=NETWORK_ERROR;
             bool preview=p.provider==STREET_PROVIDER_PANORAMAX;
             if (!decode_candidate(curl,&p,preview) && preview)
                 decode_candidate(curl,&p,false);
