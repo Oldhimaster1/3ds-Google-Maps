@@ -256,7 +256,11 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
     handle_map_touch(keys,held,touch);
     if(keys&KEY_TOUCH&&touch.py>=199){
         if(touch.px>=175&&ui.game.has_pin){guess_submit(&ui.game);result_center();}
-        else if(touch.px<175){ui.map_zoom=ui.map_zoom<17?ui.map_zoom+1:0;}
+        else if(touch.px<175){
+            if(ui.game.rules==GUESS_MOVING&&ui.start_id[0])
+                pano_runtime_jump_game_google(ui.start_id,ui.game.start.lat,ui.game.start.lon);
+            else ui.map_zoom=ui.map_zoom<17?ui.map_zoom+1:0;
+        }
     }
     if(ui.game.rules!=GUESS_NMPZ){
         circlePosition stick;
@@ -268,7 +272,7 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
         ui.yaw+=(x + !!(held&KEY_DRIGHT)-!!(held&KEY_DLEFT))*1.7f*dt;
         ui.pitch+=y*1.7f*dt;
         if(keys&KEY_DUP&&ui.fov>28)ui.fov-=5;
-        if(keys&KEY_DDOWN&&ui.game.rules!=GUESS_MOVING&&ui.fov<80)ui.fov+=5;
+        if(keys&KEY_DDOWN&&ui.fov<80)ui.fov+=5;
         if(ui.pitch>1.5533f)ui.pitch=1.5533f;
         if(ui.pitch< -1.5533f)ui.pitch=-1.5533f;
         ui.yaw=remainderf(ui.yaw,2*PI);
@@ -292,9 +296,6 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
         if(keys&(KEY_L|KEY_R)){
             int direction=keys&KEY_L?-1:1;
             pano_runtime_step_at(direction,ui.yaw);
-        }
-        if(keys&KEY_DDOWN&&ui.start_id[0]){
-            pano_runtime_jump_game_google(ui.start_id,ui.game.start.lat,ui.game.start.lon);
         }
     }
     pano_runtime_poll();
@@ -361,6 +362,8 @@ static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
     }
     C2D_DrawRectSolid(0,194,1,320,46,C2D_Color32(15,30,46,255));
     print(12,199,.31f,C2D_Color32(184,211,229,255),"X/Y map zoom  Touch pan/pin");
+    if(!result&&ui.game.rules==GUESS_MOVING&&ui.start_id[0])
+        print(12,220,.35f,C2D_Color32(120,228,245,255),"RETURN TO START");
     if(result){
         char line[96];
         snprintf(line,sizeof(line),"%.1f km  +%u pts",ui.game.distances_km[ui.game.round],ui.game.score[ui.game.round]);
