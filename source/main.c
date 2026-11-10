@@ -804,6 +804,22 @@ void update_input(void) {
             }
             return;
         }
+        /* Drag the Street View transition slider without writing SD every frame. */
+        if (g_settings_tab==SETTINGS_TAB_EXPLORE) {
+            if (!(kHeld & KEY_TOUCH) && g_street_fly_dragging) {
+                street_fly_save();
+                g_street_fly_dragging=false;
+            }
+            if ((kHeld & KEY_TOUCH) && touch.px>=130 && touch.px<=302 &&
+                touch.py>=194 && touch.py<225) {
+                int x=touch.px;
+                if (x<150) x=150;
+                if (x>294) x=294;
+                g_street_fly_ms=street_fly_clamp_ms((x-150)*1600/144);
+                g_street_fly_dragging=true;
+                return;
+            }
+        }
         if ((kDown & KEY_TOUCH) && touch.px >= 0 && touch.py >= 0) {
             apply_settings_hit(get_settings_hit(&touch));
         }
@@ -1595,10 +1611,10 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
             if (point_in_rect(touch->px, touch->py, 166, 154, 142, 60)) return SETTINGS_HIT_DOWNLOAD_REGION;
             break;
         case SETTINGS_TAB_EXPLORE:
-            if (point_in_rect(touch->px, touch->py, 12, 86, 296, 39)) return SETTINGS_HIT_GLOBE;
-            if (point_in_rect(touch->px, touch->py, 12, 132, 296, 39)) return SETTINGS_HIT_TERRAIN;
-            if (point_in_rect(touch->px, touch->py, 12, 178, 296, 39)) return SETTINGS_HIT_STREET_EXPLORER;
-            if (point_in_rect(touch->px, touch->py, 12, 220, 296, 20)) return SETTINGS_HIT_STREET_COVERAGE;
+            if (point_in_rect(touch->px, touch->py, 12, 82, 296, 32)) return SETTINGS_HIT_GLOBE;
+            if (point_in_rect(touch->px, touch->py, 12, 119, 296, 32)) return SETTINGS_HIT_TERRAIN;
+            if (point_in_rect(touch->px, touch->py, 12, 156, 296, 32)) return SETTINGS_HIT_STREET_EXPLORER;
+            if (point_in_rect(touch->px, touch->py, 12, 225, 296, 15)) return SETTINGS_HIT_STREET_COVERAGE;
             break;
         case SETTINGS_TAB_GPS:
             /* [Client] / [Server] source mode buttons (same position as tile source) */
@@ -1962,20 +1978,29 @@ static void render_settings_panel(void) {
         draw_ui_text(12.0f, 222.0f, 0.30f, 0.30f, C2D_Color32f(0.56f, 0.62f, 0.70f, 1.0f), 0, line);
     } else if (g_settings_tab == SETTINGS_TAB_EXPLORE) {
         static const char *names[] = {"World globe", "Terrain in 3D", "Street View Explorer"};
-        static const char *details[] = {"Rotate Earth and zoom into the map",
-                                       "Grand Canyon with 3D slider support",
-                                       "Explore nearby 360 and street photos"};
+        static const char *details[] = {"Rotate Earth and return to map",
+                                       "Grand Canyon with stereo 3D",
+                                       "Explore nearby panoramas"};
         for (int i = 0; i < 3; i++) {
-            float y = 86 + i * 46;
-            C2D_DrawRectSolid(12, y, .2f, 296, 39, C2D_Color32(30, 42, 58, 255));
-            C2D_DrawRectSolid(12, y, .3f, 3, 39, C2D_Color32(113, 215, 235, 255));
-            draw_ui_text(24, y + 4, .45f, .45f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
-            draw_ui_text(24, y + 22, .34f, .34f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
+            float y = 82 + i * 37;
+            C2D_DrawRectSolid(12, y, .2f, 296, 32, C2D_Color32(30, 42, 58, 255));
+            C2D_DrawRectSolid(12, y, .3f, 3, 32, C2D_Color32(113, 215, 235, 255));
+            draw_ui_text(24, y + 2, .42f, .42f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
+            draw_ui_text(24, y + 17, .30f, .30f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
         }
-        draw_ui_text(20, 223, .30f, .30f, C2D_Color32(164, 190, 211, 255), 0,
+        char fly_label[45];
+        if (g_street_fly_ms==0) snprintf(fly_label,sizeof(fly_label),"Fly-in: OFF");
+        else snprintf(fly_label,sizeof(fly_label),"Fly-in: %d ms",g_street_fly_ms);
+        draw_ui_text(20, 202, .34f, .34f, C2D_Color32(238, 246, 253, 255), 0, fly_label);
+        C2D_DrawRectSolid(150,210,.5f,144,5,C2D_Color32(48,74,92,255));
+        C2D_DrawRectSolid(150,210,.6f,144*g_street_fly_ms/(float)STREET_FLY_MAX_MS,5,
+                          C2D_Color32(75,190,215,255));
+        C2D_DrawCircleSolid(150+144*g_street_fly_ms/(float)STREET_FLY_MAX_MS,212.5f,.8f,6,
+                            C2D_Color32(200,247,255,255));
+        draw_ui_text(20, 227, .29f, .29f, C2D_Color32(164, 190, 211, 255), 0,
             pano_runtime_coverage_enabled() ?
-                "Street imagery map markers: ON (tap to change)" :
-                "Street imagery map markers: OFF (tap to change)");
+                "Street imagery markers: ON (tap to toggle)" :
+                "Street imagery markers: OFF (tap to toggle)");
     } else { /* SETTINGS_TAB_GPS */
         bool client_mode   = (gps_get_source_mode() == GPS_SOURCE_NMEA_CLIENT);
         bool server_mode   = (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER);
