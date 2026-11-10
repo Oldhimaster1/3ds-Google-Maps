@@ -793,5 +793,21 @@ bool pano_runtime_switch_provider(StreetProvider provider,double lat,double lon)
 bool pano_runtime_network_active(void) {return state.thread!=NULL;}
 bool pano_runtime_busy(void) {return state.thread!=NULL && state.job!=JOB_UPGRADE;}
 bool pano_runtime_has_live(void) {return state.live;}
-const char *pano_runtime_status(void) {return state.status;}
+bool pano_runtime_next_ready(void) {
+    return state.thread && state.job==JOB_NEXT &&
+           atomic_load(&state.done) && state.outcome==OK && state.pending;
+}
+const char *pano_runtime_status(void) {
+    if (state.thread && !atomic_load(&state.done)) {
+        switch ((TransferPhase)atomic_load(&transfer_phase)) {
+            case TRANSFER_SEARCH: return "Searching for nearby panoramas...";
+            case TRANSFER_FETCH: return "Downloading street imagery...";
+            case TRANSFER_DECODE: return "Preparing panorama...";
+            case TRANSFER_ENHANCE: return "Sharpening panorama...";
+            case TRANSFER_MOVE: return "Following connected street...";
+            default: break;
+        }
+    }
+    return state.status;
+}
 const PanoLiveImage *pano_runtime_current(void) {return state.live?&state.selected:NULL;}
