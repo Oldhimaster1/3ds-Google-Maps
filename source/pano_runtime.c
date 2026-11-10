@@ -168,6 +168,7 @@ static bool get(void *handle, const char *url, size_t max, u8 **bytes, u32 *size
 
 static bool query_source(void *handle, StreetProvider provider,
                          double radius, const char *token, unsigned *count) {
+    atomic_store(&transfer_phase,TRANSFER_SEARCH);
     char url[1400];
     if (!street_source_url(provider,state.lat,state.lon,radius,token,url,sizeof(url)))
         return false;
@@ -241,6 +242,7 @@ static unsigned tiled_index(unsigned x, unsigned y) {
 }
 
 static bool decode_bing(void *handle, const PanoLiveImage *p) {
+    atomic_store(&transfer_phase,TRANSFER_FETCH);
     unsigned char *faces[6] = {0};
     u16 *pixels = NULL;
     for (unsigned face=0; face<6; face++) {
@@ -309,6 +311,7 @@ static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview)
     if (!url_safe(url)) return false;
     u8 *jpeg=NULL;
     u32 bytes=0;
+    atomic_store(&transfer_phase,TRANSFER_FETCH);
     bool google_tile = p->provider == STREET_PROVIDER_GOOGLE &&
         strncmp(url, "https://streetviewpixels-pa.googleapis.com/v1/tile?",
                 sizeof("https://streetviewpixels-pa.googleapis.com/v1/tile?") - 1) == 0;
@@ -324,6 +327,7 @@ static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview)
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     }
     if (!downloaded) return false;
+    atomic_store(&transfer_phase,TRANSFER_DECODE);
     int width=0,height=0,comp=0;
     bool valid=stbi_info_from_memory(jpeg,(int)bytes,&width,&height,&comp) &&
                width>=240 && height>=120 &&
@@ -400,6 +404,7 @@ static bool google_tile_get(void *handle, const char *url, u8 **jpeg, u32 *size)
  * texture coexist at a time; no high-resolution texture reaches the GPU
  * until both halves are complete. */
 static bool decode_google_hires(void *handle, const PanoLiveImage *p) {
+    atomic_store(&transfer_phase,TRANSFER_ENHANCE);
     if (p->provider != STREET_PROVIDER_GOOGLE || strlen(p->id)!=22) return false;
     u16 *tiled=malloc(PANO_PIXELS*sizeof(*tiled));
     if (!tiled) {state.outcome=OUT_OF_MEMORY;return false;}
@@ -515,6 +520,7 @@ static void worker(void *unused) {
         }
         memset(token,0,sizeof(token));
     } else if (state.job==JOB_NEXT) {
+        atomic_store(&transfer_phase,TRANSFER_MOVE);
         PanoLiveImage p={0};
         bool found=false;
         state.outcome=NO_LINK;
@@ -536,6 +542,15 @@ static void worker(void *unused) {
                 if (!strcmp(id,state.coverage[i].id) &&
                     state.coverage[i].provider==provider) {
                     p=state.coverage[i];state.new_index=(int)i;found=true;break;
+                }
+            }
+            /* Reuse exact-ID metadata from recent navigation history. */
+            if (!found) {
+                for (unsigned i=0;i<state.history_count;i++) {
+                    const PanoLiveImage *old=&state.history[i];
+                    if (old->provider==provider && !strcmp(old->id,id)) {
+                        p=*old;found=true;break;
+                    }
                 }
             }
             if (!found && provider==STREET_PROVIDER_PANORAMAX)
@@ -595,6 +610,8 @@ end:
 }
 static bool launch(Job job) {
     if (state.thread) return false;
+    atomic_store(&transfer_phase,job==JOB_SEARCH ? TRANSFER_SEARCH :
+                 job==JOB_UPGRADE ? TRANSFER_ENHANCE : TRANSFER_MOVE);
     state.job=job;
     state.pending=NULL;
     state.outcome=NETWORK_ERROR;
@@ -637,6 +654,8 @@ bool pano_runtime_follow(unsigned index) {
     state.going_back=false;
     state.target_link=state.selected.links[index];
     state.new_index=(int)state.index;
+    if (restore_recent(state.selected.provider,state.target_link.id,false))
+        return true;
     snprintf(state.status,sizeof(state.status),"Moving to linked panorama...");
     return launch(JOB_NEXT);
 }
@@ -654,6 +673,12 @@ bool pano_runtime_step_at(int direction, float view_yaw_rad) {
         state.target_link=state.selected.links[link];
         state.target_valid=true;
     }
+    const char *wanted=state.going_back ?
+        state.history[state.history_count-1].id :
+        state.target_valid ? state.target_link.id :
+        direction>0 ? state.selected.next_id : state.selected.prev_id;
+    if (restore_recent(state.selected.provider,wanted,state.going_back))
+        return true;
     if (!state.going_back && !state.target_valid &&
         !(direction>0 ? state.selected.next_id[0] :state.selected.prev_id[0]) &&
         (state.selected.provider==STREET_PROVIDER_GOOGLE ||
