@@ -35,6 +35,7 @@ static struct {
     double lat, lon;
     int direction, new_index;
     unsigned count, index, coverage_count;
+    bool search_network_error, search_had_response;
     PanoLiveImage candidates[PANO_NEARBY_MAX];
     PanoLiveImage coverage[PANO_NEARBY_MAX];
     PanoLiveImage selected, next_selected;
@@ -170,7 +171,11 @@ static bool query_source(void *handle, StreetProvider provider,
     } else {
         ok=get(handle,url,PANO_JSON_MAX,&response,&length);
     }
-    if (!ok) return false;
+    if (!ok) {
+        state.search_network_error = true;
+        return false;
+    }
+    state.search_had_response = true;
     *count=street_parse_candidates(provider,(const char*)response,length,
                                 state.lat,state.lon,state.candidates,PANO_NEARBY_MAX);
     free(response);
@@ -249,8 +254,12 @@ static bool lookup_next(void *handle, const char *id, PanoLiveImage *out) {
 
 static bool search_provider(void *curl, StreetProvider src,
                             const char *token) {
-    static const double radii[]={.0025,.012};
-    for (unsigned i=0;i<2&&!atomic_load(&state.cancelled);i++) {
+    static const double radii[]={.003,.015,.045};
+    /* A few city blocks is insufficient for sparse crowdsourced 360
+     * coverage. Expand to roughly a 5-km search only if the first
+     * attempts yield nothing. KartaView accepts only a small radius. */
+    const unsigned passes = src==STREET_PROVIDER_KARTAVIEW ? 1 : 3;
+    for (unsigned i=0;i<passes&&!atomic_load(&state.cancelled);i++) {
         unsigned count=0;
         if (!query_source(curl,src,radii[i],token,&count)) {
             if (state.outcome == NO_COVERAGE) state.outcome = NETWORK_ERROR;
@@ -287,11 +296,16 @@ static void worker(void *unused) {
         char token[256]={0};
         bool has_token=mapillary_token(token);
         StreetProvider selected=state.pref;
-        StreetProvider order[2];
+        StreetProvider order[3];
         unsigned count=0;
+        state.search_network_error=false;
+        state.search_had_response=false;
         if (selected==STREET_PROVIDER_AUTO) {
             if (has_token)order[count++]=STREET_PROVIDER_MAPILLARY;
             order[count++]=STREET_PROVIDER_PANORAMAX;
+            /* Only run KartaView's slower search as a final fallback,
+             * avoiding long waits when Panoramax already has images. */
+            order[count++]=STREET_PROVIDER_KARTAVIEW;
         } else order[count++]=selected;
         if (selected==STREET_PROVIDER_MAPILLARY&&!has_token) {
             state.outcome=TOKEN_MISSING;
@@ -301,6 +315,9 @@ static void worker(void *unused) {
                 StreetProvider p=order[i];
                 if (search_provider(curl,p,token))break;
             }
+            if (state.outcome!=OK && state.outcome!=INVALID_IMAGE &&
+                state.outcome!=OUT_OF_MEMORY && state.search_network_error)
+                state.outcome=NETWORK_ERROR;
         }
         memset(token,0,sizeof(token));
     } else if (state.job==JOB_NEXT) {
