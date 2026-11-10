@@ -1,5 +1,6 @@
 #include "guess_ui.h"
 #include "guess_core.h"
+#include "guess_roads.h"
 #include "pano_runtime.h"
 #include "explore.h"
 #include "map_tiles.h"
@@ -14,6 +15,7 @@
 #include <sys/stat.h>
 #define PI 3.14159265358979323846f
 #define GUESS_SAVES "sdmc:/3ds_google_maps/streetguess_records.txt"
+#define GUESS_ROADS_FILE "sdmc:/3ds_google_maps/streetguess_roads.bin"
 #define GUESS_MAP_HEIGHT 194
 
 typedef struct {
@@ -25,6 +27,8 @@ typedef struct {
     GuessPoint candidate, map_center;
     char start_id[48], note[96];
     GuessGame game;
+    GuessRoads roads;
+    uint64_t road_rng;
     unsigned best[GUESS_MAP_COUNT][GUESS_RULE_COUNT], games;
     C2D_TextBuf text;
     bool record_screen;
@@ -83,6 +87,7 @@ void guess_ui_leave(void){
     if(!ui.active)return;
     drop_scene();
     pano_runtime_end_game_google();
+    guess_roads_close(&ui.roads);
     if(ui.text){C2D_TextBufDelete(ui.text);ui.text=NULL;}
     ui.active=false;
     gfxSet3D(false);
@@ -99,6 +104,10 @@ bool guess_ui_enter(void){
     if(!ui.text)return false;
     ui.active=true;
     ui.last_ms=osGetTime();
+    ui.road_rng=ui.game.rng^UINT64_C(0x6a09e667f3bcc909);
+    /* Optional road geometry lives on SD; if absent, the self-contained
+     * global geographic sampler remains fully functional. */
+    guess_roads_open(&ui.roads,GUESS_ROADS_FILE);
     load_records();
     gfxSet3D(false);
     C2D_Prepare();
@@ -146,6 +155,14 @@ static void find_round(u64 now){
             snprintf(ui.note,sizeof(ui.note),"No playable Google panorama found. Retry or exit.");
             guess_error(&ui.game);return;
         }
+        /* Prefer independently sourced road geometry when a valid pack is
+         * installed. Never store Google's panorama IDs or create an index of
+         * Google locations. Reject near-repeats before selecting the road. */
+        GuessPoint road;
+        if(ui.roads.file&&guess_roads_sample(&ui.roads,&ui.road_rng,
+                                            ui.game.region,&road)&&
+           guess_candidate_acceptable(&ui.game,road))
+            ui.candidate=road;
         /* Reject recently visited geographic cells BEFORE an HTTP lookup.
          * This does not store or index Google's imagery. */
         if(!guess_candidate_acceptable(&ui.game,ui.candidate)){
