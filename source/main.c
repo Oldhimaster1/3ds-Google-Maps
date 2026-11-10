@@ -1243,8 +1243,10 @@ static void render_explore(void) {
         draw_ui_text(14, 130, .35f, .35f, white, 0,
                      live && !live->is_pano ?
                         "Flat photo  (gyro only for 360)" :
-                        (g_explore_gyro ? "X Gyro ON   Up Calibrate" :
-                                         "X Gyro OFF  Up Calibrate"));
+                        (g_explore_gyro && !g_explore_gyro_filter.ready ?
+                            "Gyro: HOLD STILL to calibrate" :
+                            (g_explore_gyro ? "X Gyro ON   Up Calibrate" :
+                                              "X Gyro OFF  Up Calibrate")));
         draw_ui_text(14, 151, .32f, .32f, dim, 0,
                      g_explore_gyro_inverted ? "Select Reverse gyro: ON" :
                                               "Select Reverse gyro: OFF");
