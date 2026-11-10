@@ -39,7 +39,7 @@ bool pano_search_url(double lat, double lon, double radius, char *out, size_t ca
         lon - radius < -180 || lon + radius > 180)
         return false;
     int n = snprintf(out, capacity, PANO_API_BASE
-        "/search?bbox=%.6f,%.6f,%.6f,%.6f&limit=80",
+        "/search?bbox=%.6f,%.6f,%.6f,%.6f&limit=24",
         lon - radius, lat - radius, lon + radius, lat + radius);
     return n > 0 && (size_t)n < capacity;
 }
@@ -58,11 +58,13 @@ static bool parse_picture(json_t *feature, PanoLiveImage *out) {
     json_t *props = json_object_get(feature, "properties");
     json_t *lens = json_object_get(props, "pers:interior_orientation");
     json_t *fov = json_object_get(lens, "field_of_view");
-    /* Panoramax includes normal photographs too: don't wrap them on a sphere. */
+    const char *shape = json_string_value(json_object_get(lens, "type"));
+    /* STAC items can identify equirectangular panoramas without FOV. */
+    bool pano = (json_is_number(fov) && json_number_value(fov) >= 340.0) ||
+                (shape && !strcmp(shape, "equirectangular"));
     if (!valid_uuid(id) || !json_is_array(coord) || json_array_size(coord) < 2 ||
         !json_is_number(json_array_get(coord, 0)) ||
-        !json_is_number(json_array_get(coord, 1)) ||
-        !json_is_number(fov) || json_number_value(fov) < 340.0)
+        !json_is_number(json_array_get(coord, 1)) || !pano)
         return false;
     double lon = json_number_value(json_array_get(coord, 0));
     double lat = json_number_value(json_array_get(coord, 1));
@@ -71,10 +73,20 @@ static bool parse_picture(json_t *feature, PanoLiveImage *out) {
 
     memset(out, 0, sizeof(*out));
     out->provider = STREET_PROVIDER_PANORAMAX;
+    out->is_pano = true;
     copy_string(out->id, sizeof(out->id), id, "");
     pano_image_url(id, out->image_url, sizeof(out->image_url));
     snprintf(out->preview_url, sizeof(out->preview_url),
              PANO_API_BASE "/pictures/%s/thumb.jpg", id);
+    /* The federated catalog does not host original pictures. Prefer URLs
+     * returned by the STAC asset objects to avoid an unnecessary proxy hop. */
+    json_t *assets = json_object_get(feature, "assets");
+    const char *sd = json_string_value(json_object_get(json_object_get(assets,"sd"),"href"));
+    const char *thumb = json_string_value(json_object_get(json_object_get(assets,"thumb"),"href"));
+    if (sd && !strncmp(sd,"https://",8) && strlen(sd)<sizeof(out->image_url))
+        copy_string(out->image_url,sizeof(out->image_url),sd,"");
+    if (thumb && !strncmp(thumb,"https://",8) && strlen(thumb)<sizeof(out->preview_url))
+        copy_string(out->preview_url,sizeof(out->preview_url),thumb,"");
     out->lat = lat;
     out->lon = lon;
     json_t *az = json_object_get(props, "view:azimuth");
@@ -161,8 +173,8 @@ void pano_apply_gyro(float raw_pitch, float raw_yaw, float coefficient,
         !isfinite(dt) || dt <= 0 || dt > 0.1f) return;
     const float rad = 0.017453292519943295f;
     const float sign = invert ? -1.0f : 1.0f;
-    float pitch_dps = raw_pitch * coefficient;
-    float yaw_dps = raw_yaw * coefficient;
+    float pitch_dps = raw_pitch / coefficient;
+    float yaw_dps = raw_yaw / coefficient;
     if (fabsf(pitch_dps) > 2.0f) *pitch += sign * pitch_dps * rad * dt;
     if (fabsf(yaw_dps) > 2.0f) *yaw += sign * yaw_dps * rad * dt;
 }
