@@ -120,8 +120,13 @@ static void pano_worker(void *unused) {
                                 s_pano.candidates, PANO_NEARBY_MAX);
             free(data);
             if (s_pano.count) {
-                s_pano.new_index = 0;
-                load_candidate(curl, &s_pano.candidates[0]);
+                /* A single bad or oversized image must not hide a nearby
+                 * valid panorama. Try a few of the nearest alternatives. */
+                for (unsigned candidate = 0; candidate < s_pano.count &&
+                     candidate < 4 && !atomic_load(&s_pano.cancel); candidate++) {
+                    s_pano.new_index = (int)candidate;
+                    if (load_candidate(curl, &s_pano.candidates[candidate])) break;
+                }
                 break;
             }
         }
