@@ -104,7 +104,7 @@ static bool http_get(void *handle, const char *url, unsigned limit,
                      StreetProvider provider, u8 **buf, u32 *size) {
     if (!handle || !url || strncmp(url, "https://", 8)) return false;
     CURL *curl = (CURL *)handle;
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 7L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 6L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
     /* Never send a Mapillary access token using unchecked TLS. The existing
      * map tile transport still needs its own separate TLS migration. */
@@ -199,6 +199,7 @@ static void worker(void *userdata) {
     if (!curl) goto done;
 
     if (s.job == JOB_SEARCH) {
+        u64 search_started = osGetTime();
         StreetProvider chosen = pano_runtime_provider();
         StreetProvider order[3];
         unsigned providers = 0;
@@ -211,12 +212,14 @@ static void worker(void *userdata) {
             order[providers++] = STREET_PROVIDER_KARTAVIEW;
         }
         bool had_connection = false;
-        for (unsigned pi = 0; pi < providers && !atomic_load(&s.cancel); pi++) {
+        for (unsigned pi = 0; pi < providers && !atomic_load(&s.cancel) &&
+             osGetTime() - search_started < 13000; pi++) {
             StreetProvider p = order[pi];
             if (p == STREET_PROVIDER_MAPILLARY && !s.token[0]) continue;
             /* Fast first search: one small bbox; try a second only when empty. */
             static const double radii[] = { .003, .015 };
-            for (unsigned ri = 0; ri < 2 && !atomic_load(&s.cancel); ri++) {
+            for (unsigned ri = 0; ri < 2 && !atomic_load(&s.cancel) &&
+                 osGetTime() - search_started < 13000; ri++) {
                 char url[1200];
                 if (!street_source_url(p, s.latitude, s.longitude, radii[ri],
                                        s.token, url, sizeof(url))) break;
