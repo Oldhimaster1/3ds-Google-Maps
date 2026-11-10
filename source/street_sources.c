@@ -165,6 +165,32 @@ static bool karta_proxy_url(const char *url, char *out, size_t capacity) {
     return result > 0 && (size_t)result < capacity;
 }
 
+static bool karta_normalize_path(const char *path, char *url, size_t cap) {
+    if (!path || !*path) return false;
+    if (!strncmp(path, "http://storage", 14)) {
+        int n = snprintf(url, cap, "https://%s", path + 7);
+        return n > 0 && (size_t)n < cap && remote_url(url);
+    }
+    if (!strncmp(path, "https://", 8)) {
+        int n = snprintf(url, cap, "%s", path);
+        return n > 0 && (size_t)n < cap && remote_url(url);
+    }
+    while (*path == '/') path++;
+    /* Older KartaView API exposes bucket paths such as "5/img/....jpg". */
+    unsigned bucket = 0, digits = 0;
+    const char *q = path;
+    while (*q >= '0' && *q <= '9' && digits < 3) {
+        bucket = bucket * 10 + (unsigned)(*q++ - '0');
+        digits++;
+    }
+    if (!digits || *q != '/') return false;
+    for (const char *p = q + 1; *p; p++)
+        if ((unsigned char)*p < 33 || *p == '#' || *p == '\\') return false;
+    int n = snprintf(url, cap, "https://storage%u.openstreetcam.org/%s",
+                     bucket, q + 1);
+    return n > 0 && (size_t)n < cap && remote_url(url);
+}
+
 static bool parse_kartaview(json_t *v, PanoLiveImage *p) {
     if (!json_is_object(v)) return false;
     const char *proj = json_string_value(json_object_get(v, "projection"));
@@ -178,10 +204,18 @@ static bool parse_kartaview(json_t *v, PanoLiveImage *p) {
         fabs(lat) > 90 || fabs(lon) > 180) return false;
     memset(p, 0, sizeof(*p));
     if (!numstring(json_object_get(v, "id"), p->id, sizeof(p->id))) return false;
-    const char *url = json_string_value(json_object_get(v, "fileurlLTh"));
-    if (!remote_url(url)) url = json_string_value(json_object_get(v, "fileurlProc"));
-    if (!remote_url(url)) url = json_string_value(json_object_get(v, "fileurl"));
-    if (!remote_url(url)) return false;
+    const char *path = json_string_value(json_object_get(v, "fileurlLTh"));
+    char url[768];
+    bool found_url = karta_normalize_path(path, url, sizeof(url));
+    if (!found_url) {
+        path = json_string_value(json_object_get(v, "fileurlProc"));
+        found_url = karta_normalize_path(path, url, sizeof(url));
+    }
+    if (!found_url) {
+        path = json_string_value(json_object_get(v, "fileurl"));
+        found_url = karta_normalize_path(path, url, sizeof(url));
+    }
+    if (!found_url) return false;
     p->provider = STREET_PROVIDER_KARTAVIEW;
     p->lat = lat; p->lon = lon;
     if (!karta_proxy_url(url, p->image_url, sizeof(p->image_url)))
