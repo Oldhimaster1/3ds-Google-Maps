@@ -19,4 +19,6 @@ StreetProvider pano_runtime_provider(void);
 void pano_runtime_set_coverage(bool enabled);
 bool pano_runtime_coverage_enabled(void);
 unsigned pano_runtime_coverage(PanoLiveImage *items, unsigned max_items);
+unsigned pano_runtime_coverage_count(void);
+const PanoLiveImage *pano_runtime_coverage_at(unsigned i);
 #endif
