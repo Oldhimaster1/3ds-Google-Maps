@@ -134,6 +134,34 @@ static bool numberfield(json_t *v, double *out) {
     } else return false;
     return isfinite(*out);
 }
+/* KartaView's older storageN.openstreetcam.org image URLs increasingly return
+ * 404. Its public image CDN accepts an unpadded base64-encoded storage URL,
+ * as used by the osm-editor-kit street-imagery adapter. */
+static bool karta_proxy_url(const char *url, char *out, size_t capacity) {
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (!remote_url(url)) return false;
+    if (strstr(url, "cdn.kartaview.org/") == url + 8) {
+        return snprintf(out, capacity, "%s", url) > 0 && strlen(url) < capacity;
+    }
+    char b64[1024];
+    size_t n = strlen(url), w = 0;
+    if (n > 600 || capacity < 64) return false;
+    for (size_t i = 0; i < n; i += 3) {
+        unsigned a = (unsigned char)url[i];
+        unsigned b = i + 1 < n ? (unsigned char)url[i + 1] : 0;
+        unsigned c = i + 2 < n ? (unsigned char)url[i + 2] : 0;
+        if (w + 4 >= sizeof(b64)) return false;
+        b64[w++] = alphabet[a >> 2];
+        b64[w++] = alphabet[((a & 3u) << 4) | (b >> 4)];
+        if (i + 1 < n) b64[w++] = alphabet[((b & 15u) << 2) | (c >> 6)];
+        if (i + 2 < n) b64[w++] = alphabet[c & 63u];
+    }
+    b64[w] = 0;
+    int result = snprintf(out, capacity, "https://cdn.kartaview.org/pr:sharp/%s", b64);
+    return result > 0 && (size_t)result < capacity;
+}
+
 static bool parse_kartaview(json_t *v, PanoLiveImage *p) {
     if (!json_is_object(v)) return false;
     const char *proj = json_string_value(json_object_get(v, "projection"));
@@ -153,7 +181,8 @@ static bool parse_kartaview(json_t *v, PanoLiveImage *p) {
     if (!remote_url(url)) return false;
     p->provider = STREET_PROVIDER_KARTAVIEW;
     p->lat = lat; p->lon = lon;
-    snprintf(p->image_url, sizeof(p->image_url), "%s", url);
+    if (!karta_proxy_url(url, p->image_url, sizeof(p->image_url)))
+        snprintf(p->image_url, sizeof(p->image_url), "%s", url);
     snprintf(p->credit, sizeof(p->credit), "KartaView contributor");
     snprintf(p->license, sizeof(p->license), "KartaView");
     numstring(json_object_get(v, "sequenceId"), p->sequence, sizeof(p->sequence));
