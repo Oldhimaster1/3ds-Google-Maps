@@ -1298,14 +1298,55 @@ static void render_explore(void) {
     if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW)) return;
     float fov = C3D_AngleFromDegrees(g_explore_mode == EXPLORE_STREET ? 55 : 40);
     float eye = stereo ? slider * .065f : 0;
-    explore_draw(top_screen, g_explore_yaw, g_explore_pitch, g_explore_distance, fov, -eye);
-    if (stereo)
-        explore_draw(g_explore_right, g_explore_yaw, g_explore_pitch, g_explore_distance, fov, eye);
+    u64 frame_now=osGetTime();
+    bool flying=g_explore_mode==EXPLORE_STREET && g_street_entering &&
+                g_street_fly_ms>0 && !g_street_reveal_ms;
+    if (flying) {
+        /* Simulate a camera diving toward the selected map point using only
+         * already-cached tile textures. Never download tiles for the effect. */
+        float p=street_fly_progress(frame_now,g_street_enter_ms,g_street_fly_ms);
+        float descend=fminf(1.0f,p/.75f);
+        C2D_TargetClear(top_screen,C2D_Color32(13,20,29,255));
+        C2D_SceneBegin(top_screen);
+        map_tiles_draw_fly(g_street_origin_lat,g_street_origin_lon,
+                           g_street_origin_zoom,g_street_origin_x,g_street_origin_y,
+                           street_fly_scale(descend));
+        C2D_DrawCircleSolid(200,120,.75f,6.0f+descend*14.0f,
+                            C2D_Color32(66,205,234,60));
+        C2D_DrawCircleSolid(200,120,.78f,3.0f,C2D_Color32(130,245,255,220));
+        C2D_DrawRectSolid(0,0,.9f,400,240,
+            C2D_Color32f(0.015f,0.035f,0.055f,.12f+.34f*descend));
+    } else {
+        explore_draw(top_screen, g_explore_yaw, g_explore_pitch,
+                     g_explore_distance, fov, -eye);
+        if (stereo)
+            explore_draw(g_explore_right, g_explore_yaw, g_explore_pitch,
+                         g_explore_distance, fov, eye);
+    }
     C2D_Prepare();
     if (g_explore_dive_ms) {
         C2D_SceneBegin(top_screen);
-        float fade = fmaxf(0, fminf(1, ((float)(osGetTime() - g_explore_dive_ms) - 250) / 180));
+        float fade = fmaxf(0, fminf(1, ((float)(frame_now - g_explore_dive_ms) - 250) / 180));
         C2D_DrawRectSolid(0, 0, 1, 400, 240, C2D_Color32f(0, 0, 0, fade));
+    } else if (g_explore_mode==EXPLORE_STREET && !flying) {
+        float darkness=0.0f;
+        if (g_street_entering && g_street_reveal_ms) {
+            float t=(frame_now-g_street_reveal_ms)/200.0f;
+            darkness=fmaxf(0.0f,.95f*(1.0f-t));
+        }
+        if (g_street_swap_start_ms) {
+            float t=(frame_now-g_street_swap_start_ms)/90.0f;
+            darkness=fmaxf(darkness,.82f*fminf(1.0f,t));
+        } else if (g_street_swap_end_ms) {
+            float t=(frame_now-g_street_swap_end_ms)/150.0f;
+            if (t>=1.0f) g_street_swap_end_ms=0;
+            else darkness=fmaxf(darkness,.82f*fmaxf(0.0f,1.0f-t));
+        }
+        if (darkness>0.0f) {
+            C2D_SceneBegin(top_screen);
+            C2D_DrawRectSolid(0,0,1,400,240,
+                C2D_Color32f(0.0f,0.0f,0.0f,darkness));
+        }
     }
     C2D_TargetClear(bottom_screen, C2D_Color32(13, 18, 26, 255));
     C2D_SceneBegin(bottom_screen);
