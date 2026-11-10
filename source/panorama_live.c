@@ -70,7 +70,11 @@ static bool parse_picture(json_t *feature, PanoLiveImage *out) {
         return false;
 
     memset(out, 0, sizeof(*out));
+    out->provider = STREET_PROVIDER_PANORAMAX;
     copy_string(out->id, sizeof(out->id), id, "");
+    pano_image_url(id, out->image_url, sizeof(out->image_url));
+    snprintf(out->preview_url, sizeof(out->preview_url),
+             PANO_API_BASE "/pictures/%s/thumb.jpg", id);
     out->lat = lat;
     out->lon = lon;
     json_t *az = json_object_get(props, "view:azimuth");
