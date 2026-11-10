@@ -118,6 +118,24 @@ bool explore_load(ExploreMode mode, unsigned street_stop) {
     return true;
 }
 
+
+/* Swap the panorama only after the new 1024x512 Morton RGB565 image is complete.
+ * The old scene remains visible if allocation fails. Call on the render thread
+ * outside C3D_FrameBegin/C3D_FrameEnd. */
+bool explore_load_street_pixels(const void *pixels) {
+    if (!pixels || loaded != EXPLORE_STREET) return false;
+    C3D_FrameSync();
+    C3D_Tex next;
+    if (!C3D_TexInit(&next, 1024, 512, GPU_RGB565)) return false;
+    C3D_TexUpload(&next, pixels);
+    C3D_TexSetFilter(&next, GPU_LINEAR, GPU_LINEAR);
+    C3D_TexSetWrap(&next, GPU_REPEAT, GPU_CLAMP_TO_EDGE);
+    C3D_FrameSync();
+    C3D_TexDelete(&texture);
+    texture = next;
+    return true;
+}
+
 void explore_unload(void) {
     if (!loaded) return;
     C3D_FrameSync();
