@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "guess_ui.h"
 #include "guess_core.h"
 #include <citro2d.h>
@@ -103,6 +105,12 @@ static void play_all(void){
     guess_ui_draw(&top,&bot);press(KEY_A);
 }
 int main(void){
+    /* Exercise the actual versioned record file; the emulator-independent
+     * host path deliberately mimics sdmc:/ for a temporary test directory. */
+    (void)mkdir("sdmc:",0700);
+    (void)mkdir("sdmc:/3ds_google_maps",0700);
+    remove("sdmc:/3ds_google_maps/streetguess_records.txt");
+    remove("sdmc:/3ds_google_maps/streetguess_records.txt.tmp");
     TEST(guess_ui_enter());TEST(guess_ui_active());
     /* NMPZ: the panorama must never rotate or move even if keys are held. */
     ui.game.rules=GUESS_NMPZ;
@@ -115,11 +123,18 @@ int main(void){
     for(int r=1;r<GUESS_ROUNDS;r++)play_all();
     TEST(ui.game.phase==GUESS_COMPLETE&&ui.game.round==5);
     TEST(ui.games==1&&ui.game.total<=25000);
+    FILE *records=fopen("sdmc:/3ds_google_maps/streetguess_records.txt","r");
+    TEST(records!=NULL);
+    unsigned ver=0,saved_games=0;
+    TEST(fscanf(records,"%u %u",&ver,&saved_games)==2);
+    fclose(records);
+    TEST(ver==1&&saved_games==1);
     press(KEY_B);TEST(ui.game.phase==GUESS_MENU);
     guess_ui_leave();
     TEST(!guess_ui_active()&&scene_count==0&&finish_count==1);
     /* No Move: controls may rotate the camera, but cannot navigate. */
     TEST(guess_ui_enter());
+    TEST(ui.games==1);
     ui.game.rules=GUESS_NO_MOVE;
     press(KEY_A);frame();TEST(ui.game.phase==GUESS_PLAYING);
     initial=ui.yaw;
@@ -152,6 +167,10 @@ int main(void){
     TEST(ui.game.attempt==GUESS_MAX_CANDIDATE_TRIES);
     guess_ui_leave();
     mock_no_coverage=false;
-    puts("StreetGuess UI simulated five-round / restrictions / error tests passed");
+    remove("sdmc:/3ds_google_maps/streetguess_records.txt");
+    remove("sdmc:/3ds_google_maps/streetguess_records.txt.tmp");
+    (void)rmdir("sdmc:/3ds_google_maps");
+    (void)rmdir("sdmc:");
+    puts("StreetGuess UI simulated five-round / restrictions / error / records tests passed");
     return 0;
 }
