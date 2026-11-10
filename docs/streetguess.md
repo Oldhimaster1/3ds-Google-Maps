@@ -48,20 +48,58 @@ The current game renderer uses the shared Google preview and progressive
 higher-quality imagery routines. No Google image cache or persistent panorama
 index is created.
 
-## Candidate sampling caveat
+## Random round generation and optional road packs
 
-This is **not yet the proposed OpenStreetMap road-centerline data pack**.
-The self-contained sampler generates a continuous range of coordinates near
-many worldwide population centers and in broad geographic regions. It does
-not select from a small, fixed panorama list. Google validates coverage at
-runtime, with a bounded 24-candidate attempt count and a 35-km recent-round
-proximity filter. It cannot currently guarantee worldwide road accuracy,
-balanced coverage, acceptable loading time, or near-zero repetition across
-multiple launches. The proposed large road-geometry pack remains a separate
-feasibility and packaging task.
+The default self-contained sampler generates a continuous range of coordinates
+near worldwide population centers and in broad geographic regions. It is **not**
+a small list of predetermined Google panoramas. Live Google Street View
+validation selects actual playable 360-degree imagery, while a rolling
+35-km recent-round filter rejects nearby repeated starts. The default
+sampler does not know which geographic points actually contain roads, so
+its live success rate and first-image latency still need on-device testing.
 
-United States and Europe modes currently use coarse geographic bounding
-boxes; they do not enforce precise political boundaries.
+**New:** an optional, binary **road-geometry pack reader** is implemented in
+`source/guess_roads.c`. When the SD card contains
+`sdmc:/3ds_google_maps/streetguess_roads.bin`, StreetGuess samples random
+points on independently sourced road segments and then validates them using
+Google's live Street View request path. No Google images, IDs, or coverage
+indexes are stored in this pack. If the pack is unavailable, invalid, or has
+no suitable road for the chosen region, the default sampler still works.
+
+To generate a pack from your own properly licensed road GeoJSON or
+line-delimited GeoJSON/NDJSON sources on a desktop:
+
+```sh
+python3 tools/build_guess_roads.py \
+  --input global_roads.ndjson world \
+  --input us_roads.ndjson usa \
+  --input eu_roads.ndjson europe \
+  --output streetguess_roads.bin \
+  --max-records 150000 --segment-km 0.7 --seed 1
+```
+
+Copy the resulting file to `/3ds_google_maps/streetguess_roads.bin` on your
+3DS SD card. You do not need to operate a server or provide an API token for
+this independent geometry pack. The builder filters for normal drivable
+public roads, subdivides long segments into compact records and bounds the
+pack to 1,000,000 records (20 MB of geometry plus a 16-byte header). The
+3DS seeks to individual records without loading the whole file into RAM.
+World and region-specific input groups must be tagged with the appropriate
+`--input <file> <region>` argument; they do not automatically infer accurate
+national borders. Follow the OpenStreetMap ODbL attribution and database
+requirements for any OSM-derived geometry you ship.
+
+**A complete worldwide road pack is not bundled or validated yet.** This
+branch ships the generator and optional reader, not a downloaded global
+road dataset. Any real pack needs data provenance, geographic QA and
+on-device performance/coverage benchmarks. The source falls back
+automatically until such a pack exists.
+
+The numeric sampling stress test covers 48,000 candidate coordinates across
+5,935 distinct one-degree geographic cells with independently mixed test
+seeds. **This is not a count of confirmed Google Street View panoramas.**
+United States and Europe fallback modes still use coarse bounding boxes,
+not exact political boundaries.
 
 ## Host tests
 
@@ -74,7 +112,7 @@ git diff --check
 
 The new suites cover deterministic state, five rounds, scoring and Haversine
 geography, antimeridian wrapping, 48,000 generated candidates, timer and pause
-behavior, simulated Google-only round success/denial/no-coverage, rule
+behavior, simulated Google-only round success/denial/no-coverage, generated road-pack\nroundtrip and integrated UI selection, rule
 restrictions, independent map coordinates and returning to Maps.
 
 Run the rest of the repository's host suites as well.
