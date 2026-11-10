@@ -6,7 +6,47 @@ Open **R → Explore** and tap a scene. All three scenes work with Wi-Fi off. **
 | --- | --- |
 | World globe | Circle Pad or D-Pad rotates across all longitudes and up to 89° latitude. **X / Y** zoom. Press **X** at the closest zoom or **A** for an animated dive into the existing map at the selected coordinates. The 2D map clamps to the Web Mercator latitude limit and loads details from its normal sources. |
 | Terrain in 3D | Orbit and zoom a roughly 32 × 29 km Grand Canyon relief model. Raise the 3D slider for distinct left and right views on a stereoscopic console. With the slider down or on 2DS, the same relief is visible in mono. Elevation is exaggerated 2.2× for readability. |
-| Street View Explorer | Look around with the Circle Pad. **L / R** or Left / Right jumps between two nearby Bethesda intersections. **X** toggles optional gyro input. These are individual street-level photographs with full spherical coverage. |
+| Street View Explorer | First searches the public Panoramax catalog for real 360° photos near your **current map center**. **L / R** or Left / Right moves through linked photos in the sequence (or nearby candidates). Circle Pad looks around; **X** enables gyro, **Select** reverses gyro direction and **Y** retries the search. If offline, unavailable, or no panoramas exist nearby, the two included Bethesda photos remain available as a fallback. |
+
+
+## Live panoramas — current limitations
+
+Live Street View uses the open Panoramax federated catalog at
+[api.panoramax.xyz](https://api.panoramax.xyz/api). It queries a small bounding
+box around the map center, expands the search only if necessary, accepts only
+images whose STAC \`pers:interior_orientation.field_of_view\` is at least 340
+degrees, and downloads the selected panorama via the provider's \`sd.jpg\`
+endpoint. The image is decoded on a background CPU thread and rescaled to a
+1024 × 512 RGB565 GPU texture; camera drawing stays on the render thread.
+
+Coverage depends on contributors and is **not** comparable with Google's
+commercial Street View coverage. No API key is required. Individual picture
+licenses and contributors vary; the bottom screen attempts to display their
+metadata. The provider catalogs are publicly reusable subject to their
+specific licenses. The 3DS must be online for uncached live images. The app
+does not persist newly downloaded live panoramas.
+
+For low memory usage, images above 2048 × 1024 or 5 MiB compressed are
+rejected rather than risking an Old 3DS crash. Unsupported images are skipped
+in favor of nearby alternatives when possible. The live provider may be
+unreachable on networks with unsupported TLS or DNS paths. HTTP requests
+currently inherit the existing app's libcurl certificate-checking configuration;
+**certificate verification needs a separate security review before production
+use**. This branch should be treated as a hardware-test preview, not a verified
+retail-ready release.
+
+### Test on original Nintendo 3DS
+
+1. Select a map coordinate with Panoramax 360° photo coverage; enter Street
+   View, verify the label changes to **Panoramax live 360 image**, and check
+   correct imagery and coordinates when returning with **A**.
+2. Try **L** and **R** to follow the sequence and **Y** to refresh.
+3. Enable **X** gyro and physically turn left/right and tilt up/down; press
+   **Select** if the hardware's apparent gyro directions need reversing.
+4. With Wi-Fi disconnected, confirm both bundled demonstration panoramas still
+   work. Test **B**, re-entry, repeated scene changes, and memory stability.
+5. Run with **View → Debug overlay** enabled, record FPS and time needed to
+   find/download a live image; verify the lower-screen labels don't overlap.
 
 ## Old 3DS design
 
