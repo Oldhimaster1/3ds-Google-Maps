@@ -18,6 +18,7 @@
 #include "region.h"
 #include "explore.h"
 #include "pano_runtime.h"
+#include "pano_gyro.h"
 #include <jansson.h>
 #include <zlib.h>
 
@@ -154,6 +155,8 @@ static C3D_RenderTarget *g_explore_right;
 static unsigned g_street_stop;
 static bool g_explore_gyro;
 static bool g_explore_gyro_inverted = true;
+static PanoGyroFilter g_explore_gyro_filter;
+static float g_explore_gyro_counts_per_dps;
 static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
 static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
 
@@ -1092,25 +1095,39 @@ static void update_explore(void) {
                 } else set_status_message("Could not open demo panorama");
             }
         }
-        if (keys & KEY_SELECT) g_explore_gyro_inverted = !g_explore_gyro_inverted;
+        if (keys & KEY_SELECT) {
+            g_explore_gyro_inverted = !g_explore_gyro_inverted;
+            pano_gyro_reset(&g_explore_gyro_filter);
+        }
+        if (keys & KEY_DUP) pano_gyro_reset(&g_explore_gyro_filter);
         if ((keys & KEY_Y) && !pano_runtime_busy())
             pano_runtime_start(map_state.lat, map_state.lon);
         if (keys & KEY_X) {
             if (g_explore_gyro) {
                 HIDUSER_DisableGyroscope();
                 g_explore_gyro = false;
-            } else g_explore_gyro = R_SUCCEEDED(HIDUSER_EnableGyroscope());
+            } else {
+                g_explore_gyro = R_SUCCEEDED(HIDUSER_EnableGyroscope());
+                g_explore_gyro_counts_per_dps = 0;
+                pano_gyro_reset(&g_explore_gyro_filter);
+                if (g_explore_gyro &&
+                    (R_FAILED(HIDUSER_GetGyroscopeRawToDpsCoefficient(
+                        &g_explore_gyro_counts_per_dps)) ||
+                     g_explore_gyro_counts_per_dps <= 0)) {
+                    HIDUSER_DisableGyroscope();
+                    g_explore_gyro = false;
+                }
+            }
         }
         if (g_explore_gyro) {
             angularRate gyro;
             hidGyroRead(&gyro);
-            float scale = 0;
-            if (R_SUCCEEDED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&scale)) && scale > 0) {
-                /* libctru: gyro.y = pitch, gyro.z = yaw. Raw-to-DPS conversion
-                 * is multiplication. Select reverses both signs if needed. */
-                pano_apply_gyro((float)gyro.y, (float)gyro.z, scale, dt,
-                                g_explore_gyro_inverted, &g_explore_pitch, &g_explore_yaw);
-            }
+            /* Verified raw counts = angular rate in dps times coefficient.
+             * Smooth and subtract stationary bias before integrating. */
+            pano_gyro_step(&g_explore_gyro_filter,
+                (float)gyro.y, (float)gyro.z,
+                g_explore_gyro_counts_per_dps, dt,
+                g_explore_gyro_inverted, &g_explore_pitch, &g_explore_yaw);
         }
     } else {
         float minimum = g_explore_mode == EXPLORE_TERRAIN ? 1.65f : 1.45f;
