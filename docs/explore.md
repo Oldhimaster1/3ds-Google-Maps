@@ -6,47 +6,74 @@ Open **R → Explore** and tap a scene. All three scenes work with Wi-Fi off. **
 | --- | --- |
 | World globe | Circle Pad or D-Pad rotates across all longitudes and up to 89° latitude. **X / Y** zoom. Press **X** at the closest zoom or **A** for an animated dive into the existing map at the selected coordinates. The 2D map clamps to the Web Mercator latitude limit and loads details from its normal sources. |
 | Terrain in 3D | Orbit and zoom a roughly 32 × 29 km Grand Canyon relief model. Raise the 3D slider for distinct left and right views on a stereoscopic console. With the slider down or on 2DS, the same relief is visible in mono. Elevation is exaggerated 2.2× for readability. |
-| Street View Explorer | First searches the public Panoramax catalog for real 360° photos near your **current map center**. **L / R** or Left / Right moves through linked photos in the sequence (or nearby candidates). Circle Pad looks around; **X** enables gyro, **Select** reverses gyro direction and **Y** retries the search. If offline, unavailable, or no panoramas exist nearby, the two included Bethesda photos remain available as a fallback. |
+| Street View Explorer | Searches photos near the **current map center**. **Y** (or tap the provider row) cycles **Automatic / Panoramax / Mapillary / KartaView**; **Down** retries. **L / R** browses photos; **X** toggles gyro; **Up** recalibrates while stationary and **Select** reverses gyro motion. Genuine 360° images use the sphere, while ordinary street photos are displayed flat rather than distorted. Both bundled Bethesda panoramas remain available offline. |
 
 
-## Live panoramas — current limitations
+## Multi-provider Street View
 
-Live Street View uses the open Panoramax federated catalog at
-[api.panoramax.xyz](https://api.panoramax.xyz/api). It queries a small bounding
-box around the map center, expands the search only if necessary, accepts only
-images whose STAC `pers:interior_orientation.field_of_view` is at least 340
-degrees, and downloads the selected panorama via the provider's `sd.jpg`
-endpoint. The image is decoded on a background CPU thread and rescaled to a
-1024 × 512 RGB565 GPU texture; camera drawing stays on the render thread.
+The app runs native lightweight HTTPS/JSON client code on the original
+Nintendo 3DS, with a single download worker. The provider preference is
+saved to `sdmc:/3ds_google_maps/street_provider.cfg` and the imagery-dot
+toggle to `street_coverage.cfg`. Neither file contains credentials.
 
-Coverage depends on contributors and is **not** comparable with Google's
-commercial Street View coverage. No API key is required. Individual picture
-licenses and contributors vary; the bottom screen attempts to display their
-metadata. The provider catalogs are publicly reusable subject to their
-specific licenses. The 3DS must be online for uncached live images. The app
-does not persist newly downloaded live panoramas.
+| Provider | Setup | Notes |
+| --- | --- | --- |
+| Automatic | None | Tries Mapillary first **if a token is configured**, then Panoramax. KartaView is excluded from automatic mode because its public API can be slow. |
+| Panoramax | No key | Open federated STAC search; genuine 360° images, progressive low-res thumbnail while the SD image loads in the background. Individual licenses and attribution apply. |
+| Mapillary | Own free API token | Request nearby photos from the Graph API, preferably true spherical panoramas. Regular photos display as flat images. |
+| KartaView | No key | Experimental: small-radius public search, mainly **flat** street photos. Public API may time out or require authentication. Do not misrepresent these as 360° panoramas. |
 
-For low memory usage, images above 2048 × 1024 or 5 MiB compressed are
-rejected rather than risking an Old 3DS crash. Unsupported images are skipped
-in favor of nearby alternatives when possible. The live provider may be
-unreachable on networks with unsupported TLS or DNS paths. HTTP requests
-currently inherit the existing app's libcurl certificate-checking configuration;
-**certificate verification needs a separate security review before production
-use**. This branch should be treated as a hardware-test preview, not a verified
-retail-ready release.
+### Mapillary setup (optional)
 
-### Test on original Nintendo 3DS
+1. Obtain a personal Mapillary API access token through the official developer
+   portal. Do **not** commit your token to GitHub or distribute it in a CIA.
+2. Create `sdmc:/3ds_google_maps/mapillary.token` containing your token
+   on a single line (such as `MLY|...`), without surrounding quotes.
+3. Select **Mapillary** or **Automatic** using **Y** on the Street Explorer
+   bottom screen. The app only sends the token to Mapillary's Graph API
+   and enables TLS certificate verification for that request. Depending on
+   your libcurl / mbedTLS configuration, you may need an updated trusted CA
+   bundle for this to work on an original 3DS.
 
-1. Select a map coordinate with Panoramax 360° photo coverage; enter Street
-   View, verify the label changes to **Panoramax live 360 image**, and check
-   correct imagery and coordinates when returning with **A**.
-2. Try **L** and **R** to follow the sequence and **Y** to refresh.
-3. Enable **X** gyro and physically turn left/right and tilt up/down; press
-   **Select** if the hardware's apparent gyro directions need reversing.
-4. With Wi-Fi disconnected, confirm both bundled demonstration panoramas still
-   work. Test **B**, re-entry, repeated scene changes, and memory stability.
-5. Run with **View → Debug overlay** enabled, record FPS and time needed to
-   find/download a live image; verify the lower-screen labels don't overlap.
+### Speed and reliability
+
+Searches request at most 24 Panoramax / Mapillary results initially and try
+small geographical areas before widening them. **KartaView is searched only
+when selected manually**, with a strict request timeout and a 140 m maximum
+radius. JPEG decoding and CPU Morton conversion take place on a worker;
+texture uploads and geometry updates stay on the render thread.
+
+Panoramax thumbnail previews are displayed quickly when available, and the
+full SD image replaces them in the background. Failed upgrades preserve the
+usable preview. When moving to another panorama, known metadata is reused
+instead of making a redundant metadata request. Image downloads are limited
+to 4 MiB compressed and 2048×1024 decoded pixels to bound memory use.
+
+The **Street imagery map markers** toggle on the Explore settings tab displays
+photo points from the most recent successful nearby search (cyan Mapillary,
+green Panoramax, amber KartaView). These are **local photo points, not
+continuous Google-style road coverage lines or worldwide coverage tiles**.
+The markers draw without extra network requests while browsing the map.
+
+Gyroscope readings are divided by the hardware raw-counts-per-degree-per-second
+coefficient, not multiplied. Initial still-device calibration, low-pass
+velocity smoothing, a motion dead zone and spike rejection reduce the
+previously excessive sensitivity and jitter. No gyroscope-only solution can
+guarantee absolute compass heading without drift; **Up** recalibrates the
+zero bias and **Select** reverses both look directions. Physical gyro
+orientation needs hardware confirmation.
+
+### Verification still required
+
+Build and test on an **original Nintendo 3DS**, not just New 3DS or Azahar:
+provider switch, live Panoramax photos, Mapillary with a user token, flat
+KartaView image, offline fallback, quick repeated L/R navigation, 30-minute
+stability, Wi-Fi loss and reconnect, low SD space, gyro in four directions,
+memory use and FPS. Real provider availability, rate limits and licensing
+remain external dependencies. The inherited network backend disables
+certificate verification for some noncredentialed requests; this must be
+hardened before a production release. Mapillary credentialed requests
+explicitly enable certificate validation.
 
 ## Old 3DS design
 
