@@ -75,6 +75,37 @@ certificate verification for some noncredentialed requests; this must be
 hardened before a production release. Mapillary credentialed requests
 explicitly enable certificate validation.
 
+## New York imagery and input troubleshooting
+
+The Street View API selector is **not** Google's proprietary Street View.
+In Automatic mode, Mapillary is used **only if its own client token file**
+(`sdmc:/3ds_google_maps/mapillary.token`) exists. Panoramax is otherwise
+searched, followed by KartaView. Crowdsourced availability is uneven even
+in cities with comprehensive Google Street View coverage.
+
+The older build often incorrectly reported **no imagery** because it
+examined only 24 Panoramax records in a narrow area and looked for the wrong
+STAC `pers:projection` field location. The newer search processes up to 80
+records, expands across three ranges (~300 m / 1.5 km / 5 km), recognizes
+equirectangular projection, accepts ordinary street photographs in the flat
+viewer, and checks KartaView as the last automatic fallback. An empty
+provider response never proves that the city lacks imagery.
+
+When using the Circle Pad, a dominant-axis lock removes small vertical
+analog cross-talk while turning horizontally. This is only applied to
+Street View; the globe and terrain keep their existing controls. The
+gyroscope now requires 45 stationary samples before movement is accepted,
+rejects noisy cross-axis readings, and stops when rotation settles.
+**Up** recalibrates; hold the console still and watch for the calibration
+message to disappear.
+
+Individual photographs may have an inherently tilted horizon due to how
+they were captured. The viewer currently does not use full sensor-fusion
+roll correction or per-image leveling metadata, so these cases require
+additional original-3DS validation and a separate renderer correction.
+No actual New York coverage or on-device gyro stability has been verified
+for this branch; host tests don't establish live provider compatibility.
+
 ## Old 3DS design
 
 The release CIA uses the 64 MiB application memory profile. The renderer draws one indexed mesh on the PICA200 with an RGB565 texture, using the existing Citro2D UI on the other screen. Sphere scenes draw 4,096 triangles and use a 1 MiB texture plus about 66 KiB of geometry. Terrain draws 8,192 triangles per eye and uses 128 KiB of texture plus 131 KiB of geometry. The extra stereo render target uses approximately 563 KiB for color and depth before alignment. The second eye is submitted only with a raised slider. Mesh generation and decompression happen on entry, and GPU resources are synchronized before deletion. Switching street stops briefly uses two 1 MiB textures to preserve the current view if the new allocation fails. The existing 2D map cache remains available.
