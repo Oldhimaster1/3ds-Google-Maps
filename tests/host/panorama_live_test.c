@@ -65,14 +65,14 @@ static void test_malformed_inputs(void) {
 
 static void test_gyro(void) {
     float pitch = 0, yaw = 0;
-    pano_apply_gyro(100, 200, .1f, .05f, true, &pitch, &yaw);
+    pano_apply_gyro(100, 200, 14.375f, .05f, true, &pitch, &yaw);
     assert(pitch < 0 && yaw < 0);
     float prev = yaw;
-    pano_apply_gyro(0, 0, .1f, .05f, true, &pitch, &yaw);
+    pano_apply_gyro(0, 0, 14.375f, .05f, true, &pitch, &yaw);
     assert(yaw == prev);
-    pano_apply_gyro(100, 200, .1f, .05f, false, &pitch, &yaw);
+    pano_apply_gyro(100, 200, 14.375f, .05f, false, &pitch, &yaw);
     assert(fabsf(yaw) < .00001f && fabsf(pitch) < .00001f);
-    pano_apply_gyro(100, 200, .1f, 100.0f, true, &pitch, &yaw);
+    pano_apply_gyro(100, 200, 14.375f, 100.0f, true, &pitch, &yaw);
     assert(yaw == 0);
 }
 int main(void) {
