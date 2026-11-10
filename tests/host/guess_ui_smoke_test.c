@@ -17,7 +17,7 @@ static u32 down,held;
 static touchPosition touch;
 static PanoLiveImage current;
 static bool live,rendered,mock_denied,mock_no_coverage;
-static int search_count,moves_count,finish_count,scene_count;
+static int search_count,moves_count,finish_count,scene_count,return_count;
 static double query_lat,query_lon,last_map_lat,last_map_lon;
 struct C3D_RenderTarget { int n; };
 struct C2D_TextBuf_s { int n; };
@@ -80,7 +80,7 @@ bool pano_runtime_network_active(void){return false;}
 const char *pano_runtime_status(void){return mock_denied?"Imagery provider denied access (HTTP 403)":"No matching photos";}
 const PanoLiveImage *pano_runtime_current(void){return live?&current:NULL;}
 bool pano_runtime_step_at(int direction,float yaw){(void)direction;(void)yaw;moves_count++;return true;}
-bool pano_runtime_jump_game_google(const char *id,double lat,double lon){(void)id;(void)lat;(void)lon;return true;}
+bool pano_runtime_jump_game_google(const char *id,double lat,double lon){(void)id;(void)lat;(void)lon;return_count++;return true;}
 #include "../../source/guess_ui.c"
 #define TEST(x) do{if(!(x)){fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 static void press(u32 k){down=k;held=k;milliseconds+=16;guess_ui_update();down=held=0;}
@@ -149,6 +149,13 @@ int main(void){
     ui.game.rules=GUESS_MOVING;
     press(KEY_A);frame();TEST(ui.game.phase==GUESS_PLAYING);
     press(KEY_R);TEST(moves_count>0);
+    /* Return to Start is a distinct lower-screen action; D-Down must still
+     * zoom the panorama out in Moving mode. */
+    down=held=KEY_TOUCH;touch=(touchPosition){.px=45,.py=224};frame();
+    TEST(return_count==1);
+    down=held=0;frame();
+    ui.fov=55;
+    press(KEY_DDOWN);TEST(ui.fov==60&&return_count==1);
     guess_ui_leave();
     /* Failed official imagery access must not silently fall back to another provider. */
     TEST(guess_ui_enter());
