@@ -47,6 +47,22 @@ static void test_search(void) {
     assert(pano_parse_nearby(collection, strlen(collection), 48.85, 2.29,
                              items, 1) == 1);
 }
+static void test_malformed_inputs(void) {
+    PanoLiveImage items[PANO_NEARBY_MAX];
+    unsigned seed = 0x5d1e11u;
+    char garbage[512];
+    for (int k = 0; k < 2000; k++) {
+        seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+        unsigned len = seed % sizeof(garbage);
+        for (unsigned i = 0; i < len; i++) {
+            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+            garbage[i] = (char)(1 + (seed % 126));
+        }
+        assert(pano_parse_nearby(garbage, len, 0, 0,
+                                 items, PANO_NEARBY_MAX) <= PANO_NEARBY_MAX);
+    }
+}
+
 static void test_gyro(void) {
     float pitch = 0, yaw = 0;
     pano_apply_gyro(100, 200, .1f, .05f, true, &pitch, &yaw);
@@ -60,7 +76,7 @@ static void test_gyro(void) {
     assert(yaw == 0);
 }
 int main(void) {
-    test_urls(); test_search(); test_gyro();
+    test_urls(); test_search(); test_malformed_inputs(); test_gyro();
     puts("Street View: URL, STAC parsing, 360 filter, nearest sort, sequence and gyro passed");
     return 0;
 }
