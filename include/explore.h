@@ -6,7 +6,6 @@
 typedef enum { EXPLORE_NONE, EXPLORE_GLOBE, EXPLORE_TERRAIN, EXPLORE_STREET } ExploreMode;
 typedef struct { const char *name; double lat, lon; } ExplorePlace;
 
-extern const ExplorePlace explore_street_places[2];
 extern const ExplorePlace explore_terrain_place;
 
 /* Load outside a frame. Failure preserves the previous scene. */
