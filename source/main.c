@@ -19,6 +19,7 @@
 #include "explore.h"
 #include "pano_runtime.h"
 #include "pano_gyro.h"
+#include "street_sources.h"
 #include <jansson.h>
 #include <zlib.h>
 
@@ -1301,6 +1302,37 @@ void pan_map(int dx, int dy) {
     y = fmax(0.0, fmin(world, y + dy));
     g_target_lat = atan(sinh(M_PI * (1.0 - 2.0 * y / world))) * 180.0 / M_PI;
     g_target_lon = fmod(g_target_lon + dx * 360.0 / world + 540.0, 360.0) - 180.0;
+}
+
+/* The nearby imagery list is reused from the last Street View discovery.
+ * These are truthful photo markers, not fabricated road coverage lines.
+ * No network requests, allocations or image decoding occur while drawing. */
+static void draw_street_coverage(void) {
+    if (!pano_runtime_coverage_enabled() || map_state.zoom < 12) return;
+    unsigned count = pano_runtime_coverage_count();
+    if (!count) return;
+    int cx, cy;
+    lat_lon_to_pixel(map_state.lat,map_state.lon,map_state.zoom,&cx,&cy);
+    const int world = (1 << map_state.zoom) * TILE_SIZE;
+    for (unsigned i=0;i<count;i++) {
+        const PanoLiveImage *p = pano_runtime_coverage_at(i);
+        if (!p) continue;
+        int px,py;
+        lat_lon_to_pixel(p->lat,p->lon,map_state.zoom,&px,&py);
+        int dx=px-cx;
+        if (dx>world/2) dx-=world;
+        if (dx<-world/2) dx+=world;
+        float x=(float)(200+dx+map_state.offset_x);
+        float y=(float)(120+py-cy+map_state.offset_y);
+        if (x<-6 || x>406 || y<-6 || y>246)continue;
+        u32 color=p->provider==STREET_PROVIDER_MAPILLARY ?
+            C2D_Color32(53,181,255,235) :
+            p->provider==STREET_PROVIDER_KARTAVIEW ?
+            C2D_Color32(255,196,81,235) : C2D_Color32(82,224,170,235);
+        C2D_DrawCircleSolid(x,y,.86f,p->is_pano?4.0f:2.8f,
+                            C2D_Color32(13,20,27,245));
+        C2D_DrawCircleSolid(x,y,.87f,p->is_pano?2.9f:1.8f,color);
+    }
 }
 
 static void draw_gps_fix(void) {
