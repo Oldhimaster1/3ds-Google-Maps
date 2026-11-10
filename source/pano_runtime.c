@@ -111,6 +111,14 @@ static bool http_get(void *handle, const char *url, unsigned limit,
     if (provider == STREET_PROVIDER_MAPILLARY) {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        /* Optional trusted CA bundle for 3DS mbedTLS builds without a system
+         * CA store. Never downgrade verification to make token requests work. */
+        static const char *ca_path = "sdmc:/3ds_google_maps/cacert.pem";
+        FILE *ca = fopen(ca_path, "rb");
+        if (ca) {
+            fclose(ca);
+            curl_easy_setopt(curl, CURLOPT_CAINFO, ca_path);
+        }
     } else {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
