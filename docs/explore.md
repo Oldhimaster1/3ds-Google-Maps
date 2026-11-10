@@ -14,8 +14,8 @@ Open **R → Explore** and tap a scene. All three scenes work with Wi-Fi off. **
 Live Street View uses the open Panoramax federated catalog at
 [api.panoramax.xyz](https://api.panoramax.xyz/api). It queries a small bounding
 box around the map center, expands the search only if necessary, accepts only
-images whose STAC \`pers:interior_orientation.field_of_view\` is at least 340
-degrees, and downloads the selected panorama via the provider's \`sd.jpg\`
+images whose STAC `pers:interior_orientation.field_of_view` is at least 340
+degrees, and downloads the selected panorama via the provider's `sd.jpg`
 endpoint. The image is decoded on a background CPU thread and rescaled to a
 1024 × 512 RGB565 GPU texture; camera drawing stays on the render thread.
 
