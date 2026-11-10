@@ -39,7 +39,7 @@ bool pano_search_url(double lat, double lon, double radius, char *out, size_t ca
         lon - radius < -180 || lon + radius > 180)
         return false;
     int n = snprintf(out, capacity, PANO_API_BASE
-        "/search?bbox=%.6f,%.6f,%.6f,%.6f&limit=24",
+        "/search?bbox=%.6f,%.6f,%.6f,%.6f&limit=80",
         lon - radius, lat - radius, lon + radius, lat + radius);
     return n > 0 && (size_t)n < capacity;
 }
@@ -58,13 +58,16 @@ static bool parse_picture(json_t *feature, PanoLiveImage *out) {
     json_t *props = json_object_get(feature, "properties");
     json_t *lens = json_object_get(props, "pers:interior_orientation");
     json_t *fov = json_object_get(lens, "field_of_view");
-    const char *shape = json_string_value(json_object_get(lens, "type"));
-    /* STAC items can identify equirectangular panoramas without FOV. */
+    /* Panoramax uses a top-level STAC perspective-projection property.
+     * Old code wrongly searched orientation.type and rejected most 360
+     * images without field_of_view metadata. Flat photos are also useful
+     * and must be rendered on a plane, not reported as no imagery. */
+    const char *shape = json_string_value(json_object_get(props, "pers:projection"));
     bool pano = (json_is_number(fov) && json_number_value(fov) >= 340.0) ||
                 (shape && !strcmp(shape, "equirectangular"));
     if (!valid_uuid(id) || !json_is_array(coord) || json_array_size(coord) < 2 ||
         !json_is_number(json_array_get(coord, 0)) ||
-        !json_is_number(json_array_get(coord, 1)) || !pano)
+        !json_is_number(json_array_get(coord, 1)))
         return false;
     double lon = json_number_value(json_array_get(coord, 0));
     double lat = json_number_value(json_array_get(coord, 1));
@@ -73,7 +76,7 @@ static bool parse_picture(json_t *feature, PanoLiveImage *out) {
 
     memset(out, 0, sizeof(*out));
     out->provider = STREET_PROVIDER_PANORAMAX;
-    out->is_pano = true;
+    out->is_pano = pano;
     copy_string(out->id, sizeof(out->id), id, "");
     pano_image_url(id, out->image_url, sizeof(out->image_url));
     snprintf(out->preview_url, sizeof(out->preview_url),
@@ -133,9 +136,12 @@ bool pano_parse_image(const char *json, size_t length, PanoLiveImage *out) {
 
 static double dist2(double lat, double lon, const PanoLiveImage *p) {
     const double rad = 0.017453292519943295;
-    double dx = (p->lon - lon) * cos(lat * rad);
-    double dy = p->lat - lat;
-    return dx * dx + dy * dy;
+    double dx = (p->lon - lon) * cos(lat * rad) * 111320.0;
+    double dy = (p->lat - lat) * 111320.0;
+    double distance = hypot(dx, dy);
+    /* Prefer true panoramas when similarly close, while still accepting
+     * standard street photos where no 360 coverage exists. */
+    return distance + (p->is_pano ? 0.0 : 160.0);
 }
 
 unsigned pano_parse_nearby(const char *json, size_t length,
