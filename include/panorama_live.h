@@ -7,8 +7,20 @@
 #define PANO_NEARBY_MAX 16
 #define PANO_API_BASE "https://api.panoramax.xyz/api"
 
+typedef enum {
+    STREET_PROVIDER_AUTO = 0,
+    STREET_PROVIDER_PANORAMAX = 1,
+    STREET_PROVIDER_MAPILLARY = 2,
+    STREET_PROVIDER_KARTAVIEW = 3,
+    STREET_PROVIDER_COUNT = 4
+} StreetProvider;
+
 typedef struct {
-    char id[40];
+    StreetProvider provider;
+    char id[48];
+    char sequence[64];
+    char image_url[1024];
+    char preview_url[1024];
     char next_id[40];
     char prev_id[40];
     char credit[96];
