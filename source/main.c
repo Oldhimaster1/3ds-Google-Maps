@@ -710,6 +710,12 @@ int main(int argc, char* argv[]) {
 
         update_input();
         if (g_should_exit) break;
+        if (guess_ui_active()) {
+            /* Do not flash the underlying map on the frame StreetGuess opens. */
+            map_tiles_process_downloads();
+            guess_ui_draw(top_screen,bottom_screen);
+            continue;
+        }
 
         update_camera_smooth();
 
