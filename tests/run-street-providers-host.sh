@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cc -std=c11 -g -O1 -Wall -Wextra -Werror -fsanitize=undefined \
-    -Iinclude tests/host/gyro_stable_test.c source/gyro_stable.c -lm -o "$tmp/gyro"
+    -Iinclude tests/host/pano_gyro_test.c source/pano_gyro.c -lm -o "$tmp/gyro"
 "$tmp/gyro"
 if ! command -v pkg-config >/dev/null || ! pkg-config --exists jansson; then
     echo "SKIP provider C tests: install the host jansson development headers"
