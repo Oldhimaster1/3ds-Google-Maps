@@ -7,6 +7,7 @@
 bool pano_runtime_start(double lat, double lon);
 /* Google-only game lookup; never modifies normal user provider preference. */
 bool pano_runtime_start_game_google(double lat,double lon);
+void pano_runtime_end_game_google(void);
 bool pano_runtime_jump_game_google(const char *id,double lat,double lon);
 bool pano_runtime_step(int direction);
 bool pano_runtime_step_at(int direction,float view_yaw_rad);
