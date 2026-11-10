@@ -258,6 +258,35 @@ static void worker(void *userdata) {
             if (*id && !atomic_load(&s.cancel))
                 found = lookup_panorama(curl, id, &target);
         }
+        /* Keep Mapillary/KartaView navigation on the same captured road
+         * sequence when image metadata contains usable ordering. */
+        if (!found && s.selected.sequence[0] && s.count > 1) {
+            long long current = s.selected.provider == STREET_PROVIDER_MAPILLARY ?
+                s.selected.captured_at_ms : s.selected.sequence_index;
+            int best = -1;
+            long long best_diff = 0x7fffffffffffffffLL;
+            for (unsigned j = 0; j < s.count; j++) {
+                const PanoLiveImage *p = &s.candidates[j];
+                if (p->provider != s.selected.provider ||
+                    strcmp(p->sequence, s.selected.sequence) ||
+                    !strcmp(p->id, s.selected.id)) continue;
+                long long position = p->provider == STREET_PROVIDER_MAPILLARY ?
+                    p->captured_at_ms : p->sequence_index;
+                if (p->provider == STREET_PROVIDER_MAPILLARY && (!current || !position))
+                    continue;
+                long long delta = position - current;
+                if ((s.direction > 0 && delta > 0) ||
+                    (s.direction < 0 && delta < 0)) {
+                    long long magnitude = delta > 0 ? delta : -delta;
+                    if (magnitude < best_diff) { best_diff = magnitude; best = (int)j; }
+                }
+            }
+            if (best >= 0) {
+                s.new_index = (unsigned)best;
+                target = s.candidates[best];
+                found = true;
+            }
+        }
         if (!found && s.count > 1) {
             int idx = (int)s.index + (s.direction > 0 ? 1 : -1);
             if (idx >= 0 && idx < (int)s.count) {
