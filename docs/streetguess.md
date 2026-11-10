@@ -34,7 +34,9 @@ verified game release until those are complete.
 - **Circle Pad / D-Pad Left and Right:** look around (except NMPZ).
 - **Select:** gyro toggle (disabled in NMPZ).
 - **L / R:** move along linked Google panoramas in Moving mode only.
-- **D-Pad Down:** Return to Start in Moving mode, panorama zoom out in No Move.
+- **D-Pad Down:** panorama zoom out outside NMPZ.
+- **Bottom-left RETURN TO START button:** go back to the starting Google panorama
+  in Moving mode. It is separate from zoom controls.
 - **D-Pad Up:** panorama zoom in outside NMPZ.
 - **X / Y:** zoom the bottom guess map.
 - **Touchscreen:** drag to pan the guessing map, tap to place a pin.
