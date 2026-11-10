@@ -113,6 +113,9 @@ static bool parse_mapillary(json_t *v, PanoLiveImage *p) {
     snprintf(p->license, sizeof(p->license), "Mapillary");
     textfield(p->sequence, sizeof(p->sequence),
               json_object_get(v, "sequence"), "");
+    json_t *time = json_object_get(v, "captured_at");
+    if (json_is_integer(time))
+        p->captured_at_ms = (long long)json_integer_value(time);
     return true;
 }
 static bool numstring(json_t *v, char *out, size_t cap) {
@@ -186,6 +189,11 @@ static bool parse_kartaview(json_t *v, PanoLiveImage *p) {
     snprintf(p->credit, sizeof(p->credit), "KartaView contributor");
     snprintf(p->license, sizeof(p->license), "KartaView");
     numstring(json_object_get(v, "sequenceId"), p->sequence, sizeof(p->sequence));
+    json_t *index = json_object_get(v, "sequenceIndex");
+    if (json_is_integer(index))
+        p->sequence_index = (int)json_integer_value(index);
+    else if (json_is_string(index))
+        p->sequence_index = atoi(json_string_value(index));
     return true;
 }
 static double dist2(double lat, double lon, const PanoLiveImage *p) {
