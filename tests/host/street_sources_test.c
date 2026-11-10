@@ -14,7 +14,7 @@ int main(void) {
                              "bad\n",url,sizeof(url)));
     assert(street_source_url(STREET_PROVIDER_PANORAMAX,40.7,-74,.003,
                              NULL,url,sizeof(url)));
-    assert(strstr(url,"limit=24"));
+    assert(strstr(url,"limit=80"));
     assert(street_source_url(STREET_PROVIDER_KARTAVIEW,40.7,-74,.003,
                              NULL,url,sizeof(url)));
     assert(strstr(url,"nearby-photos/"));
@@ -42,6 +42,29 @@ int main(void) {
     assert(strstr(images[0].image_url,"cdn.kartaview.org/pr:sharp/"));
     assert(street_parse_candidates(STREET_PROVIDER_MAPILLARY,"{",1,0,0,
                                    images,PANO_NEARBY_MAX)==0);
-    puts("PASS provider URL escaping, Panoramax limits, Mapillary 360, KartaView flat/CDN");
+    const char *google = ")]}'\n[null,[null,["
+        "[[[2,\"abcdefghijklmnopqrstuv\"],null,[[null,null,40.7,-74],null,[0]]],[1,99]],"
+        "[[[2,\"abcdefghijklmnopqrstuw\"],null,[[null,null,40.701,-74],null,[0]]],[0]]"
+        "]]]";
+    n=street_parse_candidates(STREET_PROVIDER_GOOGLE,google,strlen(google),
+                               40.7,-74,images,PANO_NEARBY_MAX);
+    assert(n==2 && images[0].is_pano);
+    assert(!strcmp(images[0].next_id,images[1].id));
+    assert(!strcmp(images[1].prev_id,images[0].id));
+    assert(strstr(images[0].image_url,"zoom=0"));
+    assert(street_google_find_id(google,strlen(google),images[1].id,&images[0]));
+    assert(!strcmp(images[0].id,images[1].id));
+    const char *bing = "[{\"elapsed\":1},"
+        "{\"id\":1340983819,\"la\":40.758,\"lo\":-73.986,"
+        "\"pr\":10,\"he\":300,\"nbn\":[{\"id\":42,\"az\":302}]}]";
+    n=street_parse_candidates(STREET_PROVIDER_BING,bing,strlen(bing),
+                               40.7,-74,images,PANO_NEARBY_MAX);
+    assert(n==1 && images[0].is_pano && !strcmp(images[0].prev_id,"10"));
+    assert(!strcmp(images[0].next_id,"42"));
+    assert(street_bing_face_url(images[0].id,5,url,sizeof(url)));
+    assert(strstr(url,"hs103332313022002312.jpg"));
+    assert(!street_bing_face_url("12&x=1",5,url,sizeof(url)));
+    assert(!street_bing_face_url("4294967296",5,url,sizeof(url)));
+    puts("PASS provider URL escaping, Panoramax limits, Mapillary 360, KartaView flat/CDN, Google links, Bing metadata and face keys");
     return 0;
 }

@@ -2,6 +2,7 @@
 #include "street_sources.h"
 #include "explore.h"
 #include "network.h"
+#include "logging.h"
 #include "stb_image.h"
 #include <3ds.h>
 #include <curl/curl.h>
@@ -21,7 +22,7 @@
 
 typedef enum { JOB_NONE, JOB_SEARCH, JOB_NEXT, JOB_UPGRADE } Job;
 typedef enum { OK, NO_COVERAGE, NETWORK_ERROR, INVALID_IMAGE,
-               OUT_OF_MEMORY, TOKEN_MISSING } PanoResult;
+               OUT_OF_MEMORY, TOKEN_MISSING, ACCESS_DENIED, RATE_LIMITED } PanoResult;
 
 static struct {
     Thread thread;
@@ -31,11 +32,11 @@ static struct {
     bool initialized, live, has_preview, upgrade_pending;
     bool coverage_enabled;
     StreetProvider pref;
-    StreetProvider used;
     double lat, lon;
     int direction, new_index;
     unsigned count, index, coverage_count;
-    bool search_network_error, search_had_response;
+    bool search_network_error;
+    double search_lat, search_lon;
     PanoLiveImage candidates[PANO_NEARBY_MAX];
     PanoLiveImage coverage[PANO_NEARBY_MAX];
     PanoLiveImage selected, next_selected;
@@ -114,7 +115,16 @@ static bool url_safe(const char *url) {
 
 static bool get(void *handle, const char *url, size_t max, u8 **bytes, u32 *size) {
     if (!url_safe(url) || atomic_load(&state.cancelled)) return false;
-    return network_request(handle, url, max, &state.cancelled, bytes, size);
+    NetworkRequestInfo info;
+    bool ok = network_request_ex(handle, url, max, &state.cancelled, bytes, size, &info);
+    if (!ok && !atomic_load(&state.cancelled))
+        log_write("[STREET] Request failed (HTTP %ld, curl %d)\n",
+                  info.http_status,info.curl_code);
+    if (!ok && (info.http_status == 401 || info.http_status == 403))
+        state.outcome = ACCESS_DENIED;
+    if (!ok && info.http_status == 429)
+        state.outcome = RATE_LIMITED;
+    return ok;
 }
 
 static bool query_source(void *handle, StreetProvider provider,
@@ -175,14 +185,86 @@ static bool query_source(void *handle, StreetProvider provider,
         state.search_network_error = true;
         return false;
     }
-    state.search_had_response = true;
     *count=street_parse_candidates(provider,(const char*)response,length,
                                 state.lat,state.lon,state.candidates,PANO_NEARBY_MAX);
     free(response);
     return true;
 }
 
+static u16 rgb565(const unsigned char *c) {
+    return (u16)(((c[0]>>3)<<11)|((c[1]>>2)<<5)|(c[2]>>3));
+}
+
+static unsigned tiled_index(unsigned x, unsigned y) {
+    unsigned m=(x&1)|((y&1)<<1)|((x&2)<<1)|((y&2)<<2)|
+               ((x&4)<<2)|((y&4)<<3);
+    return ((y>>3)*128+(x>>3))*64+m;
+}
+
+static bool decode_bing(void *handle, const PanoLiveImage *p) {
+    unsigned char *faces[6] = {0};
+    u16 *pixels = NULL;
+    for (unsigned face=0; face<6; face++) {
+        char url[180];
+        u8 *jpeg=NULL;
+        u32 bytes=0;
+        if (!street_bing_face_url(p->id,face,url,sizeof(url)) ||
+            !get(handle,url,256*1024,&jpeg,&bytes)) goto done;
+        int w,h,comp;
+        if (stbi_info_from_memory(jpeg,(int)bytes,&w,&h,&comp) && w==256 && h==256)
+            faces[face]=stbi_load_from_memory(jpeg,(int)bytes,&w,&h,&comp,3);
+        free(jpeg);
+        if (!faces[face]) { state.outcome=INVALID_IMAGE; goto done; }
+    }
+    pixels=malloc(PANO_PIXELS*sizeof(*pixels));
+    if (!pixels) { state.outcome=OUT_OF_MEMORY; goto done; }
+
+    /* Face order is front, right, back, left, up, down. The outer
+     * pixel on each side is an overlap border, leaving 254 samples. */
+    const float pi=3.14159265358979323846f;
+    float sin_lon[1024], cos_lon[1024];
+    for (unsigned x=0;x<1024;x++) {
+        float lon=(2*(x+.5f)/1024-1)*pi;
+        sin_lon[x]=sinf(lon);
+        cos_lon[x]=cosf(lon);
+    }
+    for (unsigned y=0;y<512;y++) {
+        if (atomic_load(&state.cancelled)) goto done;
+        float lat=((y+.5f)/512-.5f)*pi;
+        float dy=sinf(lat), radius=cosf(lat);
+        for (unsigned x=0;x<1024;x++) {
+            float dx=sin_lon[x]*radius,dz=cos_lon[x]*radius;
+            float ax=fabsf(dx),ay=fabsf(dy),az=fabsf(dz);
+            float s,t,depth;
+            unsigned face;
+            if (ay>=ax && ay>=az) {
+                face=dy>0 ? 4 : 5;
+                s=dx; t=dy>0 ? dz : -dz; depth=ay;
+            } else if (ax>az) {
+                face=dx>0 ? 1 : 3;
+                s=dx>0 ? -dz : dz; t=-dy; depth=ax;
+            } else {
+                face=dz>0 ? 0 : 2;
+                s=dz>0 ? dx : -dx; t=-dy; depth=az;
+            }
+            unsigned sx=1+(unsigned)((s/depth+1)*126.5f);
+            unsigned sy=1+(unsigned)((t/depth+1)*126.5f);
+            pixels[tiled_index(x,y)]=rgb565(faces[face]+(sy*256+sx)*3);
+        }
+    }
+    state.pending=pixels;
+    pixels=NULL;
+    state.next_selected=*p;
+    state.has_preview=state.upgrade_pending=false;
+    state.outcome=OK;
+done:
+    free(pixels);
+    for (unsigned face=0;face<6;face++) stbi_image_free(faces[face]);
+    return state.outcome==OK;
+}
+
 static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview) {
+    if (p->provider==STREET_PROVIDER_BING) return decode_bing(handle,p);
     const char *url=(preview && p->preview_url[0]) ?
                          p->preview_url : p->image_url;
     if (!url_safe(url)) return false;
@@ -193,7 +275,8 @@ static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview)
     bool valid=stbi_info_from_memory(jpeg,(int)bytes,&width,&height,&comp) &&
                width>=240 && height>=120 &&
                width<=2048 && height<=1024;
-    if (valid && p->is_pano) {
+    bool padded_google=p->provider==STREET_PROVIDER_GOOGLE && width==512 && height==512;
+    if (valid && p->is_pano && !padded_google) {
         double ratio=width/(double)height;
         if (ratio<1.92 || ratio>2.08) valid=false;
     }
@@ -204,6 +287,7 @@ static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview)
                                              &width,&height,&comp,3);
     free(jpeg);
     if (!rgb) {state.outcome=INVALID_IMAGE;return false;}
+    if (padded_google) height=256;
     u16 *tiled=malloc(PANO_PIXELS*sizeof(*tiled));
     if (!tiled) {
         stbi_image_free(rgb);state.outcome=OUT_OF_MEMORY;return false;
@@ -218,6 +302,11 @@ static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview)
     }
     unsigned pad_x=(1024-fit_width)/2, pad_y=(512-fit_height)/2;
     for (unsigned y=0;y<512;y++) {
+        if (atomic_load(&state.cancelled)) {
+            stbi_image_free(rgb);
+            free(tiled);
+            return false;
+        }
         bool row=y>=pad_y && y-pad_y<fit_height;
         unsigned sy=row ? (unsigned)(height-1) -
                           (y-pad_y)*(unsigned)height/fit_height : 0;
@@ -226,11 +315,9 @@ static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview)
             if (row && x>=pad_x && x-pad_x<fit_width) {
                 unsigned sx=(x-pad_x)*(unsigned)width/fit_width;
                 const unsigned char *c=rgb+(sy*(unsigned)width+sx)*3;
-                pixel=(u16)(((c[0]>>3)<<11)|((c[1]>>2)<<5)|(c[2]>>3));
+                pixel=rgb565(c);
             }
-            unsigned m=(x&1)|((y&1)<<1)|((x&2)<<1)|((y&2)<<2)|
-                       ((x&4)<<2)|((y&4)<<3);
-            tiled[((y>>3)*128+(x>>3))*64+m]=pixel;
+            tiled[tiled_index(x,y)]=pixel;
         }
     }
     stbi_image_free(rgb);
@@ -258,7 +345,8 @@ static bool search_provider(void *curl, StreetProvider src,
     /* A few city blocks is insufficient for sparse crowdsourced 360
      * coverage. Expand to roughly a 5-km search only if the first
      * attempts yield nothing. KartaView accepts only a small radius. */
-    const unsigned passes = src==STREET_PROVIDER_KARTAVIEW ? 1 : 3;
+    const unsigned passes = (src==STREET_PROVIDER_KARTAVIEW ||
+                             src==STREET_PROVIDER_GOOGLE) ? 1 : 3;
     for (unsigned i=0;i<passes&&!atomic_load(&state.cancelled);i++) {
         unsigned count=0;
         if (!query_source(curl,src,radii[i],token,&count)) {
@@ -267,7 +355,6 @@ static bool search_provider(void *curl, StreetProvider src,
         }
         if (count) {
             state.count=count;
-            state.used=src;
             if (state.outcome == NO_COVERAGE) state.outcome = NETWORK_ERROR;
             for (unsigned k=0;k<count&&k<3&&!atomic_load(&state.cancelled);k++) {
                 state.new_index=(int)k;
@@ -275,7 +362,9 @@ static bool search_provider(void *curl, StreetProvider src,
                 if (decode_candidate(curl,&state.candidates[k],preview) ||
                     (preview && decode_candidate(curl,&state.candidates[k],false)))
                     return true;
-                if (state.pending) { free(state.pending);state.pending=NULL; }
+                if ((src==STREET_PROVIDER_GOOGLE || src==STREET_PROVIDER_BING) &&
+                    (state.outcome==ACCESS_DENIED || state.outcome==RATE_LIMITED))
+                    return false;
             }
             return false;
         }
@@ -299,7 +388,6 @@ static void worker(void *unused) {
         StreetProvider order[3];
         unsigned count=0;
         state.search_network_error=false;
-        state.search_had_response=false;
         if (selected==STREET_PROVIDER_AUTO) {
             if (has_token)order[count++]=STREET_PROVIDER_MAPILLARY;
             order[count++]=STREET_PROVIDER_PANORAMAX;
@@ -316,36 +404,65 @@ static void worker(void *unused) {
                 if (search_provider(curl,p,token))break;
             }
             if (state.outcome!=OK && state.outcome!=INVALID_IMAGE &&
-                state.outcome!=OUT_OF_MEMORY && state.search_network_error)
+                state.outcome!=OUT_OF_MEMORY && state.outcome!=ACCESS_DENIED &&
+                state.outcome!=RATE_LIMITED && state.search_network_error)
                 state.outcome=NETWORK_ERROR;
         }
         memset(token,0,sizeof(token));
     } else if (state.job==JOB_NEXT) {
         PanoLiveImage p={0};
         bool found=false;
-        if (state.selected.provider==STREET_PROVIDER_PANORAMAX) {
+        state.outcome=NO_COVERAGE;
+        StreetProvider provider=state.selected.provider;
+        if (provider==STREET_PROVIDER_PANORAMAX ||
+            provider==STREET_PROVIDER_GOOGLE || provider==STREET_PROVIDER_BING) {
             const char *id=state.direction>0?state.selected.next_id:
                                                 state.selected.prev_id;
             if (*id && !atomic_load(&state.cancelled)) {
                 /* Reuse search metadata when the neighboring sequence photo
                  * is already among nearby results: skips an HTTPS request. */
-                for (unsigned i=0;i<state.count;i++)
-                    if (!strcmp(id,state.candidates[i].id)) {
-                        p=state.candidates[i];
+                for (unsigned i=0;i<state.coverage_count;i++)
+                    if (!strcmp(id,state.coverage[i].id)) {
+                        p=state.coverage[i];
                         state.new_index=(int)i;
                         found=true;
                         break;
                     }
-                if (!found)found=lookup_next(curl,id,&p);
+                if (!found && provider==STREET_PROVIDER_PANORAMAX)
+                    found=lookup_next(curl,id,&p);
+                else if (!found) {
+                    char url[256];
+                    bool valid;
+                    if (provider==STREET_PROVIDER_GOOGLE) {
+                        valid=street_source_url(provider,state.search_lat,state.search_lon,.003,
+                                                NULL,url,sizeof(url));
+                    } else {
+                        int length=snprintf(url,sizeof(url),
+                            "https://t.ssl.ak.tiles.virtualearth.net/tiles/cmd/"
+                            "StreetSideBubbleMetaData?id=%s",id);
+                        valid=length>0 && (size_t)length<sizeof(url);
+                    }
+                    u8 *bytes=NULL;
+                    u32 size=0;
+                    if (valid && get(curl,url,PANO_JSON_MAX,&bytes,&size)) {
+                        if (provider==STREET_PROVIDER_GOOGLE)
+                            found=street_google_find_id((const char*)bytes,size,id,&p);
+                        else
+                            found=street_parse_candidates(provider,(const char*)bytes,size,
+                                state.selected.lat,state.selected.lon,&p,1)==1 &&
+                                !strcmp(p.id,id);
+                        free(bytes);
+                    }
+                }
             }
         }
-        if (!found && state.count>1) {
+        if (!found && state.coverage_count>1 && provider!=STREET_PROVIDER_GOOGLE &&
+            provider!=STREET_PROVIDER_BING) {
             int next=(int)state.index+(state.direction>0?1:-1);
-            if (next>=0 && next<(int)state.count) {
-                p=state.candidates[next];state.new_index=next;found=true;
+            if (next>=0 && next<(int)state.coverage_count) {
+                p=state.coverage[next];state.new_index=next;found=true;
             }
         }
-        state.outcome=NO_COVERAGE;
         if (found && !atomic_load(&state.cancelled)) {
             state.outcome=NETWORK_ERROR;
             bool preview=p.provider==STREET_PROVIDER_PANORAMAX;
@@ -414,6 +531,8 @@ void pano_runtime_poll(void) {
         state.index=(unsigned)state.new_index;
         state.live=true;
         if (job==JOB_SEARCH) {
+            state.search_lat=state.lat;
+            state.search_lon=state.lon;
             state.coverage_count=state.count;
             memcpy(state.coverage,state.candidates,
                    state.coverage_count*sizeof(*state.coverage));
@@ -434,6 +553,10 @@ void pano_runtime_poll(void) {
                  state.pref==STREET_PROVIDER_AUTO ?
                  "No matching photos from enabled sources" :
                  "No matching photos from selected provider");
+    else if (state.outcome==ACCESS_DENIED)
+        snprintf(state.status,sizeof(state.status),"Imagery provider denied access (HTTP 401/403)");
+    else if (state.outcome==RATE_LIMITED)
+        snprintf(state.status,sizeof(state.status),"Imagery provider rate limited (HTTP 429)");
     else if (state.outcome==INVALID_IMAGE)
         snprintf(state.status,sizeof(state.status),"Photo format unsupported on Old 3DS");
     else if (state.outcome==OUT_OF_MEMORY)

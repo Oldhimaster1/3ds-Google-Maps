@@ -12,6 +12,8 @@ const char *street_provider_name(StreetProvider p) {
         case STREET_PROVIDER_PANORAMAX: return "Panoramax";
         case STREET_PROVIDER_MAPILLARY: return "Mapillary";
         case STREET_PROVIDER_KARTAVIEW: return "KartaView";
+        case STREET_PROVIDER_GOOGLE: return "Google (experimental)";
+        case STREET_PROVIDER_BING: return "Bing (experimental)";
         default: return "Unknown";
     }
 }
@@ -59,6 +61,19 @@ bool street_source_url(StreetProvider source, double lat, double lon,
             "computed_compass_angle,captured_at,creator,sequence"
             "&access_token=%s",
             lon - radius, lat - radius, lon + radius, lat + radius, safe);
+    } else if (source == STREET_PROVIDER_GOOGLE) {
+        if (fabs(lat) > 85.05112878) return false;
+        const double pi = 3.141592653589793;
+        unsigned x = (unsigned)((lon + 180) / 360 * 131072);
+        unsigned y = (unsigned)fmax(0, fmin(131071,
+            (1 - asinh(tan(lat * pi / 180)) / pi) * 65536));
+        n = snprintf(url, capacity, "https://www.google.com/maps/photometa/ac/v1"
+            "?pb=!1m1!1smaps_sv.tactile!6m3!1i%u!2i%u!3i17!8b1", x, y);
+    } else if (source == STREET_PROVIDER_BING) {
+        n = snprintf(url, capacity, "https://t.ssl.ak.tiles.virtualearth.net"
+            "/tiles/cmd/StreetSideBubbleMetaData?count=32"
+            "&north=%.6f&south=%.6f&east=%.6f&west=%.6f",
+            lat + radius, lat - radius, lon + radius, lon - radius);
     } else if (source == STREET_PROVIDER_KARTAVIEW) {
         n = snprintf(url, capacity,
             "https://kartaview.org/1.0/list/nearby-photos/");
@@ -214,6 +229,143 @@ static bool parse_kartaview(json_t *entry, PanoLiveImage *out) {
     return true;
 }
 
+/* Protocol layout references: sk-zk/streetlevel (MIT). */
+static bool google_fields(json_t *entry, char id[48], double *lat, double *lon) {
+    json_t *record = json_array_get(entry, 0);
+    json_t *identity = json_array_get(record, 0);
+    const char *value = json_string_value(json_array_get(identity, 1));
+    if (json_integer_value(json_array_get(identity, 0)) != 2 ||
+        !value || strlen(value) != 22 ||
+        strspn(value, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                     "0123456789_-") != 22) return false;
+    json_t *coords = json_array_get(json_array_get(record, 2), 0);
+    if (!numberfield(json_array_get(coords, 2), lat) || fabs(*lat) > 90 ||
+        !numberfield(json_array_get(coords, 3), lon) || fabs(*lon) > 180)
+        return false;
+    memcpy(id, value, 23);
+    return true;
+}
+
+static bool parse_google(json_t *array, json_t *entry, PanoLiveImage *out) {
+    memset(out, 0, sizeof(*out));
+    if (!google_fields(entry, out->id, &out->lat, &out->lon)) return false;
+    out->provider = STREET_PROVIDER_GOOGLE;
+    out->is_pano = true;
+    strcpy(out->credit, "Imagery: Google Street View");
+    snprintf(out->image_url, sizeof(out->image_url),
+        "https://streetviewpixels-pa.googleapis.com/v1/tile"
+        "?cb_client=maps_sv.tactile&panoid=%s&x=0&y=0&zoom=0", out->id);
+    json_t *angles = json_array_get(json_array_get(json_array_get(entry, 0), 2), 2);
+    double heading = json_number_value(json_array_get(angles, 0));
+    out->azimuth = (float)heading;
+    const double rad = 0.017453292519943295;
+    double front = 0, back = 0;
+    json_t *links = json_array_get(entry, 1);
+    size_t i;
+    json_t *link;
+    json_array_foreach(links, i, link) {
+        if (!json_is_integer(link) || json_integer_value(link) < 0) continue;
+        unsigned long long n = (unsigned long long)json_integer_value(link);
+        if (n >= json_array_size(array)) continue;
+        char id[48];
+        double lat, lon;
+        if (!google_fields(json_array_get(array, n), id, &lat, &lon) ||
+            !strcmp(id, out->id)) continue;
+        double x = (lon - out->lon) * cos(out->lat * rad);
+        double y = lat - out->lat;
+        double distance = hypot(x, y);
+        if (distance == 0) continue;
+        double direction = (sin(heading * rad) * x + cos(heading * rad) * y)
+                           / distance;
+        if (direction > front) {
+            front = direction;
+            strcpy(out->next_id, id);
+        } else if (direction < back) {
+            back = direction;
+            strcpy(out->prev_id, id);
+        }
+    }
+    return true;
+}
+
+static bool bing_id(json_t *v, char *id, size_t capacity) {
+    if (!json_is_integer(v)) return false;
+    json_int_t n = json_integer_value(v);
+    if (n < 1 || n > 4294967295LL) return false;
+    snprintf(id, capacity, "%llu", (unsigned long long)n);
+    return true;
+}
+
+static bool parse_bing(json_t *entry, PanoLiveImage *out) {
+    memset(out, 0, sizeof(*out));
+    if (!bing_id(json_object_get(entry, "id"), out->id, sizeof(out->id)) ||
+        !numberfield(json_object_get(entry, "la"), &out->lat) || fabs(out->lat) > 90 ||
+        !numberfield(json_object_get(entry, "lo"), &out->lon) || fabs(out->lon) > 180)
+        return false;
+    out->provider = STREET_PROVIDER_BING;
+    out->is_pano = true;
+    strcpy(out->credit, "Imagery: Microsoft Bing Streetside");
+    out->azimuth = (float)json_number_value(json_object_get(entry, "he"));
+    bing_id(json_object_get(entry, "ne"), out->next_id, sizeof(out->next_id));
+    bing_id(json_object_get(entry, "pr"), out->prev_id, sizeof(out->prev_id));
+    json_t *neighbors = json_object_get(entry, "nbn");
+    size_t i;
+    json_t *neighbor;
+    double best = 0;
+    char next[sizeof(out->next_id)] = {0};
+    json_array_foreach(neighbors, i, neighbor) {
+        char id[48];
+        double bearing;
+        if (!bing_id(json_object_get(neighbor, "id"), id, sizeof(id)) ||
+            !strcmp(id, out->id) || !strcmp(id, out->prev_id) ||
+            !numberfield(json_object_get(neighbor, "az"), &bearing)) continue;
+        double forward = cos((bearing - out->azimuth) * .017453292519943295);
+        if (forward > best) {
+            best = forward;
+            strcpy(next, id);
+        }
+    }
+    if (!out->next_id[0]) strcpy(out->next_id, next);
+    return true;
+}
+
+bool street_bing_face_url(const char *id, unsigned face, char *url, size_t cap) {
+    if (!id || !*id || strlen(id) > 10 || strspn(id, "0123456789") != strlen(id) ||
+        face >= 6) return false;
+    unsigned long long value = strtoull(id, NULL, 10);
+    if (!value || value > 4294967295ULL) return false;
+    char quad[17] = {0};
+    for (int i = 15; i >= 0; --i) {
+        quad[i] = '0' + (value & 3);
+        value >>= 2;
+    }
+    unsigned key = face + 1;
+    int n = snprintf(url, cap, "https://t.ssl.ak.tiles.virtualearth.net"
+        "/tiles/hs%s%u%u.jpg?g=13716", quad, key / 4, key % 4);
+    return n > 0 && (size_t)n < cap;
+}
+
+bool street_google_find_id(const char *json, size_t len, const char *id,
+                           PanoLiveImage *out) {
+    if (len >= 4 && !memcmp(json, ")]}'", 4)) { json += 4; len -= 4; }
+    json_t *root = json_loadb(json, len, JSON_REJECT_DUPLICATES, NULL);
+    if (!root) return false;
+    json_t *array = json_array_get(json_array_get(root, 1), 1);
+    bool found = false;
+    size_t i;
+    json_t *entry;
+    json_array_foreach(array, i, entry) {
+        const char *value = json_string_value(json_array_get(
+            json_array_get(json_array_get(entry, 0), 0), 1));
+        if (value && !strcmp(value, id)) {
+            found = parse_google(array, entry, out);
+            break;
+        }
+    }
+    json_decref(root);
+    return found;
+}
+
 static double score(double lat, double lon, const PanoLiveImage *p) {
     const double rad = .017453292519943295;
     double dx = (p->lon - lon) * cos(lat * rad) * 111320;
@@ -228,19 +380,32 @@ unsigned street_parse_candidates(StreetProvider source, const char *json,
     if (capacity > PANO_NEARBY_MAX) capacity = PANO_NEARBY_MAX;
     if (source == STREET_PROVIDER_PANORAMAX)
         return pano_parse_nearby(json, len, lat, lon, items, capacity);
+    if (source == STREET_PROVIDER_GOOGLE && len >= 4 && !memcmp(json, ")]}'", 4)) {
+        json += 4;
+        len -= 4;
+    }
     json_t *root = json_loadb(json, len, JSON_REJECT_DUPLICATES, NULL);
     if (!root) return 0;
     json_t *array = source == STREET_PROVIDER_MAPILLARY ?
         json_object_get(root,"data") : json_object_get(root,"currentPageItems");
     if (source == STREET_PROVIDER_KARTAVIEW && !json_is_array(array))
         array = json_object_get(json_object_get(root,"result"),"data");
+    if (source == STREET_PROVIDER_BING) array = root;
+    if (source == STREET_PROVIDER_GOOGLE)
+        array = json_array_get(json_array_get(root, 1), 1);
     unsigned count = 0;
     if (json_is_array(array)) {
         size_t i; json_t *entry;
         json_array_foreach(array, i, entry) {
             PanoLiveImage candidate;
-            bool ok = source == STREET_PROVIDER_MAPILLARY ?
-                parse_mapillary(entry, &candidate) : parse_kartaview(entry, &candidate);
+            bool ok;
+            switch (source) {
+                case STREET_PROVIDER_GOOGLE: ok = parse_google(array, entry, &candidate); break;
+                case STREET_PROVIDER_BING: ok = parse_bing(entry, &candidate); break;
+                case STREET_PROVIDER_MAPILLARY: ok = parse_mapillary(entry, &candidate); break;
+                case STREET_PROVIDER_KARTAVIEW: ok = parse_kartaview(entry, &candidate); break;
+                default: ok = false; break;
+            }
             if (!ok) continue;
             bool exists = false;
             for (unsigned n=0; n<count; n++)

@@ -133,3 +133,17 @@ With NumPy and Pillow installed, run `python3 tools/prepare_explore_assets.py <i
 - [devkitPro's Citro3D stereo rendering example](https://github.com/devkitPro/3ds-examples/blob/master/graphics/gpu/lenny/source/main.c)
 - [NOAA ETOPO global relief](https://www.ncei.noaa.gov/products/etopo-global-relief-model) and [USGS 3DEP](https://www.usgs.gov/faqs/what-types-elevation-datasets-are-available-what-formats-do-they-come-and-where-can-i-download)
 - [MapillaryJS](https://github.com/mapillary/mapillary-js), [KartaView API](https://kartaview.org/doc/), [Google Street View tiles](https://developers.google.com/maps/documentation/tile/streetview) and [Map Tiles API policies](https://developers.google.com/maps/documentation/tile/policies)
+
+### Experimental direct providers
+
+In Street View Explorer, press **Y** to select **Google (experimental)** or
+**Bing (experimental)**. Both request imagery directly over the console's Wi-Fi.
+Automatic mode uses the existing Panoramax, Mapillary, and KartaView sources.
+Use **L/R** to follow available links and **Down** to search again. Google
+currently searches the coverage tile containing the map center, so its links
+are limited to that tile. Bing loads six low-resolution JPEG faces.
+
+The experimental endpoints may change or return HTTP 403 or 429. During
+development, Times Square metadata worked for both providers and Bing returned
+all six JPEG faces. Google's imagery endpoint returned HTTP 403. Console
+performance and cube face alignment still need to be checked on an Old 3DS.
