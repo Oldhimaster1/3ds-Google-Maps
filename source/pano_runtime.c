@@ -122,14 +122,29 @@ static bool query_source(void *handle, StreetProvider provider,
     if (!street_source_url(provider,state.lat,state.lon,radius,token,url,sizeof(url)))
         return false;
     CURL *curl=handle;
+    /* Search requests are latency-sensitive and must never block the UI. */
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, provider==STREET_PROVIDER_KARTAVIEW ? 9L : 6L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, (long)CURLPROTO_HTTPS);
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)CURLPROTO_HTTPS);
     if (provider==STREET_PROVIDER_MAPILLARY) {
-        /* A private token must not be sent over an unauthenticated TLS
-         * session, even though older tile code disables verification. */
+        /* Never send a token over an unverified TLS connection, and don't
+         * automatically follow a redirect containing the token. */
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+        FILE *cert=fopen("sdmc:/3ds_google_maps/cacert.pem", "rb");
+        if (cert) {
+            fclose(cert);
+            curl_easy_setopt(curl, CURLOPT_CAINFO, "sdmc:/3ds_google_maps/cacert.pem");
+        }
+    } else {
+        /* Existing unauthenticated public-image fallback. A production
+         * release must migrate all requests to verified certificates. */
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     }
-    if (provider==STREET_PROVIDER_KARTAVIEW)
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 9L);
     u8 *response=NULL;
     u32 length=0;
     bool ok=false;
@@ -260,6 +275,10 @@ static void worker(void *unused) {
     state.outcome=NETWORK_ERROR;
     void *curl=network_alloc_tile_curl();
     if (!curl) goto end;
+    curl_easy_setopt((CURL*)curl, CURLOPT_TIMEOUT, 6L);
+    curl_easy_setopt((CURL*)curl, CURLOPT_CONNECTTIMEOUT, 3L);
+    curl_easy_setopt((CURL*)curl, CURLOPT_PROTOCOLS, (long)CURLPROTO_HTTPS);
+    curl_easy_setopt((CURL*)curl, CURLOPT_REDIR_PROTOCOLS, (long)CURLPROTO_HTTPS);
     if (state.job==JOB_SEARCH) {
         char token[256]={0};
         bool has_token=mapillary_token(token);
