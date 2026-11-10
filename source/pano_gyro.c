@@ -27,6 +27,10 @@ bool pano_gyro_step(PanoGyroFilter *filter, float raw_pitch, float raw_yaw,
     /* 20 frames is about one third-second at 60fps. Hold still to remove
      * hardware zero drift; do not let calibration itself rotate the camera. */
     if (!filter->ready) {
+        if (filter->samples >= 6 &&
+            (fabsf(p - filter->pitch_sum / filter->samples) > 22 ||
+             fabsf(y - filter->yaw_sum / filter->samples) > 22))
+            pano_gyro_reset(filter); /* Console moved during zeroing. */
         filter->pitch_sum += p;
         filter->yaw_sum += y;
         if (++filter->samples >= 20) {
@@ -46,16 +50,17 @@ bool pano_gyro_step(PanoGyroFilter *filter, float raw_pitch, float raw_yaw,
     }
     /* Low-pass angular rates before integration. No abrupt snap-back. */
     float elapsed = fminf(dt, 0.05f);
-    float alpha = elapsed / (0.045f + elapsed);
-    float wanted_p = fabsf(pv) > 0.85f ? clampf(pv, -250, 250) : 0;
-    float wanted_y = fabsf(yv) > 0.85f ? clampf(yv, -250, 250) : 0;
+    float alpha = 1.0f - expf(-elapsed / 0.10f);
+    float wanted_p = fabsf(pv) > 1.50f ? clampf(pv, -180, 180) : 0;
+    float wanted_y = fabsf(yv) > 1.50f ? clampf(yv, -180, 180) : 0;
     filter->pitch_velocity += alpha * (wanted_p - filter->pitch_velocity);
     filter->yaw_velocity += alpha * (wanted_y - filter->yaw_velocity);
     if (fabsf(filter->pitch_velocity) < 0.12f) filter->pitch_velocity = 0;
     if (fabsf(filter->yaw_velocity) < 0.12f) filter->yaw_velocity = 0;
     float sign = invert ? -1 : 1;
     const float rad = 0.017453292519943295f;
-    *pitch_rad += sign * filter->pitch_velocity * elapsed * rad;
-    *yaw_rad += sign * filter->yaw_velocity * elapsed * rad;
+    /* Cap per-frame deltas: a sensor spike must never swing the world. */
+    *pitch_rad += clampf(sign * filter->pitch_velocity * elapsed * rad * .65f, -.035f, .035f);
+    *yaw_rad += clampf(sign * filter->yaw_velocity * elapsed * rad * .65f, -.035f, .035f);
     return true;
 }
