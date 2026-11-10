@@ -24,11 +24,11 @@ Tap the **provider row** at the top of **R → Explore** to cycle:
 
 `sdmc:/3ds_google_maps/mapillary-token.txt`
 
-The token isn't committed to GitHub or included in packaged CIA/3DSX builds. The app enforces HTTPS certificate verification when requesting Mapillary imagery; this can fail if the console has no usable trust store. Do not disable TLS verification to work around token errors. **Automatic** mode skips Mapillary when the token isn't configured. No Google API keys or billing are required for the default setup.
+The token isn't committed to GitHub or included in packaged CIA/3DSX builds. The app enforces HTTPS certificate verification when requesting Mapillary imagery; this can fail if the console has no usable trust store. You can supply a current trusted CA bundle at `sdmc:/3ds_google_maps/cacert.pem` (obtain it from an authoritative CA-bundle publisher, for example [curl.se CA Extract](https://curl.se/docs/caextract.html)). Do not disable TLS verification to work around token errors. **Automatic** mode skips Mapillary when the token isn't configured. No Google API keys or billing are required for the default setup.
 
 **Speed strategy:** search a tight nearby area first, fetch at most 24 Panoramax results, and use short bounded requests. Panoramax first displays a quick thumbnail on the existing 3D sphere and upgrades it with the standard-definition photo asynchronously, without blocking Circle Pad input. Mapillary requests a 1024-pixel thumbnail directly. Broken or oversized images are skipped when alternatives are available. All photos use the shared 1024×512 RGB565 GPU texture.
 
-**Gyro controls:** press **X** to enable, then hold the 3DS still for about 0.6 seconds. The filtered gyro uses the console's yaw and pitch channels, rejects spikes, limits camera speed and adapts its stationary bias. Press **D-Up** to recalibrate while still, **Select** to reverse both axes. Gyro input is optional; Circle Pad always works.
+**Gyro controls:** press **X** to enable, then hold the 3DS still for about 0.3–0.6 seconds. The filtered gyro uses the console's yaw and pitch channels, rejects spikes, limits camera speed and adapts its stationary bias. Press **D-Up** to recalibrate while still, **Select** to reverse both axes. Gyro input is optional; Circle Pad always works.
 
 **Nearby 360 photo markers:** in the Explore settings menu, tap the final bar to enable or disable colored dots on the regular map. Green = Mapillary, blue = Panoramax, yellow = KartaView. **This shows only the nearby results from the most recent successful Street View search**, not comprehensive citywide coverage lines; it does not automatically crawl roads. Turning off markers also avoids map overlay work.
 
