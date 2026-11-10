@@ -165,7 +165,8 @@ static void find_round(u64 now){
                   guess_accept_start(&ui.game,actual,now);
         if(good){
             snprintf(ui.start_id,sizeof(ui.start_id),"%s",p->id);
-            ui.yaw=(float)(p->azimuth*PI/180.0f);
+            /* Deterministic per-round random initial direction, not always north. */
+            ui.yaw=(float)(((ui.game.rng>>17)%360)*PI/180.0f);
             ui.fetching=false;
             ui.last_ms=now;
             return;
@@ -366,7 +367,6 @@ static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
 }
 void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
     if(!ui.active)return;
-    gfxSet3D(false);
     if(!C3D_FrameBegin(C3D_FRAME_SYNCDRAW))return;
     C2D_TextBufClear(ui.text);
     const u32 fg=C2D_Color32(239,247,254,255),sub=C2D_Color32(154,195,218,255);
@@ -379,7 +379,17 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
         char title[85];
         snprintf(title,sizeof(title),"STREETGUESS     %u / %u      %u pts",ui.game.round+1,GUESS_ROUNDS,ui.game.total);
         print(12,4,.42f,fg,title);
-        print(11,224,.29f,fg,"Google Street View imagery  |  Select: gyro");
+        /* Minimal top-screen compass. Its heading follows the view, while the
+         * independent guess map never follows the secret panorama position. */
+        const float compass=-ui.yaw;
+        C2D_DrawCircleSolid(371,46,.96f,15,C2D_Color32(6,15,27,185));
+        C2D_DrawLine(371,46,C2D_Color32(240,111,105,255),
+                     371+sinf(compass)*12,46-cosf(compass)*12,
+                     C2D_Color32(240,111,105,255),3,1);
+        print(367,62,.27f,C2D_Color32(227,245,252,255),"N");
+        const PanoLiveImage *credit=pano_runtime_current();
+        print(11,224,.29f,fg,
+              credit&&credit->credit[0]?credit->credit:"Imagery: Google Street View");
         if(ui.game.phase==GUESS_PLAYING&&ui.game.time_limit_ms){
             char time[25];unsigned left=(ui.game.remaining_ms+999)/1000;
             snprintf(time,sizeof(time),"%02u:%02u",left/60,left%60);
