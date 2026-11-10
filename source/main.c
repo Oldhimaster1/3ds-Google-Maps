@@ -784,6 +784,10 @@ void update_input(void) {
     }
 
     if (g_screen_mode == APP_SCREEN_SETTINGS) {
+        if (g_street_fly_dragging && !(kHeld & KEY_TOUCH)) {
+            street_fly_save();
+            g_street_fly_dragging=false;
+        }
         if (g_settings_tab == SETTINGS_TAB_VIEW && (kDown & KEY_SELECT)) {
             open_cache_stats();
             return;
@@ -806,10 +810,6 @@ void update_input(void) {
         }
         /* Drag the Street View transition slider without writing SD every frame. */
         if (g_settings_tab==SETTINGS_TAB_EXPLORE) {
-            if (!(kHeld & KEY_TOUCH) && g_street_fly_dragging) {
-                street_fly_save();
-                g_street_fly_dragging=false;
-            }
             if ((kHeld & KEY_TOUCH) && touch.px>=130 && touch.px<=302 &&
                 touch.py>=194 && touch.py<225) {
                 int x=touch.px;
@@ -1311,6 +1311,7 @@ static void render_explore(void) {
          * already-cached tile textures. Never download tiles for the effect. */
         float p=street_fly_progress(frame_now,g_street_enter_ms,g_street_fly_ms);
         float descend=fminf(1.0f,p/.75f);
+        C2D_Prepare();
         C2D_TargetClear(top_screen,C2D_Color32(13,20,29,255));
         C2D_SceneBegin(top_screen);
         map_tiles_draw_fly(g_street_origin_lat,g_street_origin_lon,
