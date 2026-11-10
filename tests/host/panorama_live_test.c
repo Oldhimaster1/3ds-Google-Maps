@@ -9,6 +9,7 @@ static void test_urls(void) {
     char url[256];
     assert(pano_search_url(48.85, 2.29, .002, url, sizeof(url)));
     assert(strstr(url, "bbox=2.288000,48.848000,2.292000,48.852000"));
+    assert(strstr(url, "limit=80"));
     assert(!pano_search_url(NAN, 2.29, .002, url, sizeof(url)));
     assert(!pano_search_url(48.85, 2.29, .002, url, 5));
     assert(pano_image_url(ID_A, url, sizeof(url)));
@@ -29,6 +30,18 @@ static void test_search(void) {
     assert(!strcmp(item.next_id, ID_B));
     assert(!strcmp(item.license, "CC-BY-SA-4.0"));
     assert(!pano_parse_image("{", 1, &item));
+    /* Real STAC projection is on properties, not orientation.type. */
+    const char *nyc_pano =
+        "{\"id\":\"" ID_B "\",\"geometry\":{\"coordinates\":[-73.9855,40.758]},"
+        "\"properties\":{\"pers:projection\":\"equirectangular\"}}";
+    assert(pano_parse_image(nyc_pano, strlen(nyc_pano), &item));
+    assert(item.is_pano);
+    const char *nyc_flat =
+        "{\"id\":\"" ID_B "\",\"geometry\":{\"coordinates\":[-73.9855,40.758]},"
+        "\"properties\":{\"pers:projection\":\"perspective\"}}";
+    assert(pano_parse_image(nyc_flat, strlen(nyc_flat), &item));
+    assert(!item.is_pano);
+
     const char *collection =
         "{\"features\":["
         "{\"id\":\"" ID_A "\",\"geometry\":{\"coordinates\":[2.2902,48.8502]},"
