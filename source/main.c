@@ -19,7 +19,7 @@
 #include "explore.h"
 #include "pano_runtime.h"
 #include "street_sources.h"
-#include "gyro_stable.h"
+#include "pano_gyro.h"
 #include <jansson.h>
 #include <zlib.h>
 
@@ -158,7 +158,7 @@ static C3D_RenderTarget *g_explore_right;
 static unsigned g_street_stop;
 static bool g_explore_gyro;
 static bool g_explore_gyro_inverted = true;
-static GyroStable g_explore_gyro_filter;
+static PanoGyroFilter g_explore_gyro_filter;
 static float g_explore_gyro_coeff;
 static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
 static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
@@ -1025,7 +1025,7 @@ static void open_explore(ExploreMode mode) {
     close_menu(NULL);
     if (mode == EXPLORE_STREET) {
         g_explore_gyro_inverted = true;
-        gyro_stable_reset(&g_explore_gyro_filter);
+        pano_gyro_reset(&g_explore_gyro_filter);
         g_explore_gyro_coeff = 0;
         pano_runtime_start(map_state.lat, map_state.lon);
     }
@@ -1102,9 +1102,9 @@ static void update_explore(void) {
         }
         if (keys & KEY_SELECT) {
             g_explore_gyro_inverted = !g_explore_gyro_inverted;
-            gyro_stable_reset(&g_explore_gyro_filter);
+            pano_gyro_reset(&g_explore_gyro_filter);
         }
-        if (keys & KEY_DUP) gyro_stable_reset(&g_explore_gyro_filter);
+        if (keys & KEY_DUP) pano_gyro_reset(&g_explore_gyro_filter);
         if ((keys & KEY_Y) && !pano_runtime_busy())
             pano_runtime_start(map_state.lat, map_state.lon);
         if (keys & KEY_X) {
@@ -1113,7 +1113,7 @@ static void update_explore(void) {
                 g_explore_gyro = false;
             } else {
                 g_explore_gyro = R_SUCCEEDED(HIDUSER_EnableGyroscope());
-                gyro_stable_reset(&g_explore_gyro_filter);
+                pano_gyro_reset(&g_explore_gyro_filter);
                 g_explore_gyro_coeff = 0;
                 if (g_explore_gyro &&
                     R_FAILED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&g_explore_gyro_coeff)))
@@ -1123,7 +1123,7 @@ static void update_explore(void) {
         if (g_explore_gyro && g_explore_gyro_coeff > 0) {
             angularRate gyro;
             hidGyroRead(&gyro);
-            gyro_stable_step(&g_explore_gyro_filter,
+            pano_gyro_step(&g_explore_gyro_filter,
                              (float)gyro.y, (float)gyro.z,
                              g_explore_gyro_coeff, dt,
                              g_explore_gyro_inverted, &g_explore_pitch, &g_explore_yaw);
