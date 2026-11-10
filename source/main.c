@@ -22,6 +22,7 @@
 #include "street_look_input.h"
 #include "street_sources.h"
 #include "street_fly_logic.h"
+#include "guess_ui.h"
 #include "street_nav.h"
 #include <jansson.h>
 #include <zlib.h>
@@ -113,6 +114,7 @@ typedef enum {
     SETTINGS_HIT_GLOBE,
     SETTINGS_HIT_TERRAIN,
     SETTINGS_HIT_STREET_EXPLORER,
+    SETTINGS_HIT_STREETGUESS,
     SETTINGS_HIT_STREET_COVERAGE
 } SettingsHitTarget;
 
@@ -678,6 +680,17 @@ int main(int argc, char* argv[]) {
         // Update GPS if connected
         gps_update();
 
+        /* Entirely separate game state/rendering path; no normal map camera
+         * or provider preference is modified by StreetGuess. */
+        if (guess_ui_active()) {
+            guess_ui_update();
+            if (g_should_exit) break;
+            map_tiles_process_downloads();
+            if (guess_ui_active()) guess_ui_draw(top_screen,bottom_screen);
+            else render_map();
+            continue;
+        }
+
         if (g_explore_mode) {
             update_explore();
             if (g_should_exit) break;
@@ -724,6 +737,7 @@ int main(int argc, char* argv[]) {
     save_session();
 
 cleanup:
+    if (guess_ui_active()) guess_ui_leave();
     if (g_explore_mode) close_explore();
     free(g_route_geometry);
     // Cleanup
@@ -1700,9 +1714,10 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
             if (point_in_rect(touch->px, touch->py, 166, 154, 142, 60)) return SETTINGS_HIT_DOWNLOAD_REGION;
             break;
         case SETTINGS_TAB_EXPLORE:
-            if (point_in_rect(touch->px, touch->py, 12, 82, 296, 32)) return SETTINGS_HIT_GLOBE;
-            if (point_in_rect(touch->px, touch->py, 12, 119, 296, 32)) return SETTINGS_HIT_TERRAIN;
-            if (point_in_rect(touch->px, touch->py, 12, 156, 296, 32)) return SETTINGS_HIT_STREET_EXPLORER;
+            if (point_in_rect(touch->px, touch->py, 12, 80, 296, 24)) return SETTINGS_HIT_GLOBE;
+            if (point_in_rect(touch->px, touch->py, 12, 107, 296, 24)) return SETTINGS_HIT_TERRAIN;
+            if (point_in_rect(touch->px, touch->py, 12, 134, 296, 24)) return SETTINGS_HIT_STREET_EXPLORER;
+            if (point_in_rect(touch->px, touch->py, 12, 161, 296, 24)) return SETTINGS_HIT_STREETGUESS;
             if (point_in_rect(touch->px, touch->py, 12, 225, 296, 15)) return SETTINGS_HIT_STREET_COVERAGE;
             break;
         case SETTINGS_TAB_GPS:
@@ -1752,6 +1767,11 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             break;
         case SETTINGS_HIT_STREET_EXPLORER:
             open_explore(EXPLORE_STREET);
+            break;
+        case SETTINGS_HIT_STREETGUESS:
+            close_menu(NULL);
+            if (!guess_ui_enter())
+                set_status_message("StreetGuess UI could not start");
             break;
         case SETTINGS_HIT_STREET_COVERAGE:
             pano_runtime_set_coverage(!pano_runtime_coverage_enabled());
@@ -2066,16 +2086,18 @@ static void render_settings_panel(void) {
         snprintf(line, sizeof(line), "backend %s", network_get_effective_tile_backend_name());
         draw_ui_text(12.0f, 222.0f, 0.30f, 0.30f, C2D_Color32f(0.56f, 0.62f, 0.70f, 1.0f), 0, line);
     } else if (g_settings_tab == SETTINGS_TAB_EXPLORE) {
-        static const char *names[] = {"World globe", "Terrain in 3D", "Street View Explorer"};
+        static const char *names[] = {"World globe", "Terrain in 3D",
+                                      "Street View Explorer", "Play StreetGuess"};
         static const char *details[] = {"Rotate Earth and return to map",
                                        "Grand Canyon with stereo 3D",
-                                       "Explore nearby panoramas"};
-        for (int i = 0; i < 3; i++) {
-            float y = 82 + i * 37;
-            C2D_DrawRectSolid(12, y, .2f, 296, 32, C2D_Color32(30, 42, 58, 255));
-            C2D_DrawRectSolid(12, y, .3f, 3, 32, C2D_Color32(113, 215, 235, 255));
-            draw_ui_text(24, y + 2, .42f, .42f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
-            draw_ui_text(24, y + 17, .30f, .30f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
+                                       "Browse actual street imagery",
+                                       "Five rounds, Google imagery, 25,000 pts"};
+        for (int i = 0; i < 4; i++) {
+            float y = 80 + i * 27;
+            C2D_DrawRectSolid(12, y, .2f, 296, 24, C2D_Color32(30, 42, 58, 255));
+            C2D_DrawRectSolid(12, y, .3f, 3, 24, C2D_Color32(113, 215, 235, 255));
+            draw_ui_text(24, y + 1, .37f, .37f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
+            draw_ui_text(24, y + 13, .27f, .27f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
         }
         char fly_label[45];
         if (g_street_fly_ms==0) snprintf(fly_label,sizeof(fly_label),"Fly-in: OFF");
