@@ -35,6 +35,7 @@ static struct {
     bool initialized, live, has_preview, upgrade_pending;
     bool coverage_enabled;
     StreetProvider pref;
+    bool game_google_override;
     double lat, lon;
     int direction, new_index;
     unsigned count, index, coverage_count;
@@ -495,7 +496,7 @@ static void worker(void *unused) {
     if (state.job==JOB_SEARCH) {
         char token[256]={0};
         bool has_token=mapillary_token(token);
-        StreetProvider selected=state.pref;
+        StreetProvider selected=state.game_google_override ? STREET_PROVIDER_GOOGLE : state.pref;
         StreetProvider order[3];
         unsigned count=0;
         state.search_network_error=false;
@@ -634,6 +635,7 @@ static void cancel_upgrade(void) {
 
 bool pano_runtime_start(double lat,double lon) {
     initialize();
+    state.game_google_override=false;
     if (state.thread) cancel_upgrade();
     if (state.thread) return false;
     if (!is_connected()) {
@@ -645,6 +647,44 @@ bool pano_runtime_start(double lat,double lon) {
     if (launch(JOB_SEARCH))return true;
     snprintf(state.status,sizeof(state.status),"Could not start street image search");
     return false;
+}
+/* Game-only Google search. Does not write the user's provider.cfg or alter
+ * normal Street View preferences. Every new round starts a fresh session. */
+bool pano_runtime_start_game_google(double lat,double lon) {
+    initialize();
+    pano_runtime_stop();
+    if (!is_connected()) {
+        snprintf(state.status,sizeof(state.status),"Connect Wi-Fi to play StreetGuess");
+        return false;
+    }
+    state.game_google_override=true;
+    state.lat=lat;state.lon=lon;
+    snprintf(state.status,sizeof(state.status),"Checking Google Street View coverage...");
+    if (launch(JOB_SEARCH)) return true;
+    snprintf(state.status,sizeof(state.status),"Could not start StreetGuess lookup");
+    state.game_google_override=false;
+    return false;
+}
+/* Return to the exact original panorama when metadata still resolves it. */
+bool pano_runtime_jump_game_google(const char *id,double lat,double lon) {
+    if (!id || strlen(id)!=22 || !isfinite(lat) || !isfinite(lon) ||
+        fabs(lat)>85.05112878 || fabs(lon)>180.0 || !state.live ||
+        state.selected.provider!=STREET_PROVIDER_GOOGLE) return false;
+    if (state.thread) cancel_upgrade();
+    if (state.thread) return false;
+    for (const char *p=id;*p;p++)
+        if (!( (*p>='A'&&*p<='Z') || (*p>='a'&&*p<='z') ||
+               (*p>='0'&&*p<='9') || *p=='_' || *p=='-' )) return false;
+    state.target_valid=true;
+    state.going_back=false;
+    state.direction=1;
+    state.new_index=(int)state.index;
+    memset(&state.target_link,0,sizeof(state.target_link));
+    snprintf(state.target_link.id,sizeof(state.target_link.id),"%s",id);
+    state.target_link.lat=lat;state.target_link.lon=lon;
+    state.target_link.has_location=true;
+    snprintf(state.status,sizeof(state.status),"Returning to starting panorama...");
+    return launch(JOB_NEXT);
 }
 bool pano_runtime_follow(unsigned index) {
     if (state.thread)cancel_upgrade();
@@ -773,6 +813,7 @@ void pano_runtime_stop(void) {
     state.history_count=0;state.target_valid=false;state.going_back=false;
     state.upgrade_pending=false;
     state.status[0]=0;
+    state.game_google_override=false;
     street_recent_clear(&recent);
     /* Keep coverage markers until the next successful search. */
 }
