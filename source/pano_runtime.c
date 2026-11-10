@@ -78,8 +78,9 @@ static bool restore_recent(StreetProvider provider, const char *id, bool backwar
             state.index=i;break;
         }
     state.upgrade_pending=false;
-    snprintf(state.status,sizeof(state.status),"%s 360 (recent)",
-             street_provider_name(provider));
+    snprintf(state.status,sizeof(state.status),"%s %s (recent)",
+             street_provider_name(provider),
+             entry->info.is_pano ? "360" : "photo");
     return true;
 }
 
@@ -696,8 +697,11 @@ void pano_runtime_poll(void) {
     Job job=state.job;
     threadJoin(state.thread,U64_MAX);
     threadFree(state.thread);state.thread=NULL;
-    if (state.outcome==OK && state.pending &&
-        explore_load_street_pixels(state.pending,state.next_selected.is_pano)) {
+    bool gpu_ok=state.outcome==OK && state.pending &&
+        explore_load_street_pixels(state.pending,state.next_selected.is_pano);
+    if (state.outcome==OK && state.pending && !gpu_ok)
+        state.outcome=OUT_OF_MEMORY;
+    if (gpu_ok) {
         if (job==JOB_NEXT && state.live) {
             if (state.going_back) {
                 if (state.history_count) --state.history_count;
@@ -749,7 +753,7 @@ void pano_runtime_poll(void) {
     else if (state.outcome==OUT_OF_MEMORY)
         snprintf(state.status,sizeof(state.status),"Not enough RAM for street photo");
     else
-        snprintf(state.status,sizeof(state.status),"Network error; offline photos available");
+        snprintf(state.status,sizeof(state.status),"Network error; press Down to retry");
     free(state.pending);state.pending=NULL;
     state.job=JOB_NONE;
     if (state.live && state.upgrade_pending && job!=JOB_UPGRADE) {
