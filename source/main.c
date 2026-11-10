@@ -1199,6 +1199,8 @@ static void update_explore(void) {
             if (pano_runtime_has_live()) {
                 if (!pano_runtime_step_at(dir,g_explore_yaw))
                     set_status_message(pano_runtime_status());
+                else if (!pano_runtime_busy())
+                    g_street_swap_end_ms=osGetTime();
             } else if (!pano_runtime_busy()) {
                 set_status_message("No live panorama: press Down to retry");
             }
@@ -1237,11 +1239,15 @@ static void update_explore(void) {
                 if (link>=0) {
                     if (!pano_runtime_follow((unsigned)link))
                         set_status_message("Panorama loading; try again");
+                    else if (!pano_runtime_busy())
+                        g_street_swap_end_ms=osGetTime();
                 } else if (live && live->provider==STREET_PROVIDER_PANORAMAX &&
                            ((cell==1 && live->next_id[0]) ||
                             (cell==7 && live->prev_id[0]))) {
                     if (!pano_runtime_step_at(cell==1 ? 1:-1,g_explore_yaw))
                         set_status_message(pano_runtime_status());
+                    else if (!pano_runtime_busy())
+                        g_street_swap_end_ms=osGetTime();
                 }
             }
         }
