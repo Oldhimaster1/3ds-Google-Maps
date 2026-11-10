@@ -270,7 +270,21 @@ static bool decode_candidate(void *handle, const PanoLiveImage *p, bool preview)
     if (!url_safe(url)) return false;
     u8 *jpeg=NULL;
     u32 bytes=0;
-    if (!get(handle,url,PANO_JPEG_MAX,&jpeg,&bytes)) return false;
+    bool google_tile = p->provider == STREET_PROVIDER_GOOGLE &&
+        strncmp(url, "https://streetviewpixels-pa.googleapis.com/v1/tile?",
+                sizeof("https://streetviewpixels-pa.googleapis.com/v1/tile?") - 1) == 0;
+    CURL *curl = handle;
+    if (google_tile) {
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT,
+            "Mozilla/5.0 (Windows NT 11.0; Win64; x64; rv:151.0) Gecko/20100101 Firefox/151.0");
+    }
+    bool downloaded = get(handle,url,PANO_JPEG_MAX,&jpeg,&bytes);
+    if (google_tile) {
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "3DS-Google-Maps/1.0 (Nintendo 3DS)");
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    }
+    if (!downloaded) return false;
     int width=0,height=0,comp=0;
     bool valid=stbi_info_from_memory(jpeg,(int)bytes,&width,&height,&comp) &&
                width>=240 && height>=120 &&
