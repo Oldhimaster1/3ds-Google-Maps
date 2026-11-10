@@ -27,6 +27,7 @@ typedef struct {
     char license[40];
     double lat, lon;
     float azimuth;
+    bool is_pano; /* Never wrap an ordinary street photo on a 360 sphere. */
 } PanoLiveImage;
 
 /* Search is limited to a square around the displayed map's coordinates. */
