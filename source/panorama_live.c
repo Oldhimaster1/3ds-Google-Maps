@@ -39,7 +39,7 @@ bool pano_search_url(double lat, double lon, double radius, char *out, size_t ca
         lon - radius < -180 || lon + radius > 180)
         return false;
     int n = snprintf(out, capacity, PANO_API_BASE
-        "/search?bbox=%.6f,%.6f,%.6f,%.6f&limit=80",
+        "/search?bbox=%.6f,%.6f,%.6f,%.6f&limit=24",
         lon - radius, lat - radius, lon + radius, lat + radius);
     return n > 0 && (size_t)n < capacity;
 }
