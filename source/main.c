@@ -1121,7 +1121,21 @@ static float explore_axis(int value) {
 }
 
 static void update_explore(void) {
-    pano_runtime_poll();
+    /* Fade a decoded NEXT image in only after briefly dimming the previous
+     * view. This avoids an extra 1 MiB GPU texture for crossfading. */
+    u64 poll_now=osGetTime();
+    if (g_explore_mode==EXPLORE_STREET &&
+        pano_runtime_next_ready() && pano_runtime_has_live()) {
+        if (!g_street_swap_start_ms) g_street_swap_start_ms=poll_now;
+        else if (poll_now-g_street_swap_start_ms>=90) {
+            pano_runtime_poll();
+            g_street_swap_end_ms=poll_now;
+            g_street_swap_start_ms=0;
+        }
+    } else {
+        g_street_swap_start_ms=0;
+        pano_runtime_poll();
+    }
     hidScanInput();
     u32 keys = hidKeysDown(), held = hidKeysHeld();
     if ((keys & KEY_B) && !(keys & KEY_START) && g_provider_picker) {
@@ -1137,6 +1151,14 @@ static void update_explore(void) {
         return;
     }
     u64 now = osGetTime();
+    if (g_explore_mode==EXPLORE_STREET && g_street_entering &&
+        g_street_fly_ms>0) {
+        float fly=street_fly_progress(now,g_street_enter_ms,g_street_fly_ms);
+        if (fly>=.75f && pano_runtime_has_live() && !g_street_reveal_ms)
+            g_street_reveal_ms=now;
+        if (g_street_reveal_ms && now-g_street_reveal_ms>=200)
+            g_street_entering=false;
+    }
     float dt = fminf(.05f, (now - g_explore_last_ms) * .001f);
     g_explore_last_ms = now;
     if (g_explore_dive_ms) {
@@ -1161,6 +1183,8 @@ static void update_explore(void) {
     float turn = g_explore_mode == EXPLORE_GLOBE && g_explore_goal < 2 ? .72f : 1.7f;
     g_explore_yaw += x * turn * dt;
     g_explore_pitch += y * turn * dt;
+    if (g_explore_yaw > 6.2831853f || g_explore_yaw < -6.2831853f)
+        g_explore_yaw=remainderf(g_explore_yaw,6.2831853f);
     if (g_explore_mode == EXPLORE_STREET) {
         const PanoLiveImage *active_photo = pano_runtime_current();
         if (active_photo && !active_photo->is_pano) {
