@@ -53,6 +53,13 @@ static struct {
 } state;
 /* Bounded in-session RAM history for Panoramax; no Google image caching. */
 static StreetRecent recent;
+/* Keep normal Maps' last street-coverage markers intact across a game. */
+static struct {
+    bool valid;
+    unsigned count;
+    double lat,lon;
+    PanoLiveImage items[PANO_NEARBY_MAX];
+} game_coverage_backup;
 typedef enum { TRANSFER_IDLE, TRANSFER_SEARCH, TRANSFER_FETCH,
                TRANSFER_DECODE, TRANSFER_ENHANCE, TRANSFER_MOVE } TransferPhase;
 static atomic_int transfer_phase;
@@ -652,6 +659,14 @@ bool pano_runtime_start(double lat,double lon) {
  * normal Street View preferences. Every new round starts a fresh session. */
 bool pano_runtime_start_game_google(double lat,double lon) {
     initialize();
+    if (!game_coverage_backup.valid) {
+        game_coverage_backup.count=state.coverage_count;
+        game_coverage_backup.lat=state.search_lat;
+        game_coverage_backup.lon=state.search_lon;
+        memcpy(game_coverage_backup.items,state.coverage,
+               state.coverage_count*sizeof(PanoLiveImage));
+        game_coverage_backup.valid=true;
+    }
     pano_runtime_stop();
     if (!is_connected()) {
         snprintf(state.status,sizeof(state.status),"Connect Wi-Fi to play StreetGuess");
@@ -666,6 +681,17 @@ bool pano_runtime_start_game_google(double lat,double lon) {
     return false;
 }
 /* Return to the exact original panorama when metadata still resolves it. */
+void pano_runtime_end_game_google(void) {
+    pano_runtime_stop();
+    if (game_coverage_backup.valid) {
+        state.coverage_count=game_coverage_backup.count;
+        state.search_lat=game_coverage_backup.lat;
+        state.search_lon=game_coverage_backup.lon;
+        memcpy(state.coverage,game_coverage_backup.items,
+               state.coverage_count*sizeof(PanoLiveImage));
+        game_coverage_backup.valid=false;
+    }
+}
 bool pano_runtime_jump_game_google(const char *id,double lat,double lon) {
     if (!id || strlen(id)!=22 || !isfinite(lat) || !isfinite(lon) ||
         fabs(lat)>85.05112878 || fabs(lon)>180.0 || !state.live ||
