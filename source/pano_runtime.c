@@ -2,6 +2,7 @@
 #include "street_sources.h"
 #include "street_nav.h"
 #include "street_image.h"
+#include "street_recent.h"
 #include "explore.h"
 #include "network.h"
 #include "logging.h"
@@ -49,6 +50,38 @@ static struct {
     u16 *pending;
     char status[124];
 } state;
+/* Bounded in-session RAM history for Panoramax; no Google image caching. */
+static StreetRecent recent;
+typedef enum { TRANSFER_IDLE, TRANSFER_SEARCH, TRANSFER_FETCH,
+               TRANSFER_DECODE, TRANSFER_ENHANCE, TRANSFER_MOVE } TransferPhase;
+static atomic_int transfer_phase;
+
+static bool restore_recent(StreetProvider provider, const char *id, bool backwards) {
+    const StreetRecentEntry *entry=street_recent_find(&recent,provider,id);
+    if (!entry || !entry->pixels || !state.live) return false;
+    if (!explore_load_street_pixels(entry->pixels,entry->info.is_pano)) return false;
+    if (backwards) {
+        if (state.history_count) --state.history_count;
+    } else if (strcmp(state.selected.id,entry->info.id) ||
+               state.selected.provider!=entry->info.provider) {
+        if (state.history_count==8) {
+            memmove(state.history,state.history+1,7*sizeof(state.history[0]));
+            state.history_count=7;
+        }
+        state.history[state.history_count++]=state.selected;
+    }
+    state.selected=entry->info;
+    state.index=0;
+    for (unsigned i=0;i<state.coverage_count;i++)
+        if (state.coverage[i].provider==provider &&
+            !strcmp(state.coverage[i].id,id)) {
+            state.index=i;break;
+        }
+    state.upgrade_pending=false;
+    snprintf(state.status,sizeof(state.status),"%s 360 (recent)",
+             street_provider_name(provider));
+    return true;
+}
 
 static void initialize(void) {
     if (state.initialized) return;
@@ -655,6 +688,8 @@ void pano_runtime_poll(void) {
         state.selected=state.next_selected;
         state.index=(unsigned)state.new_index;
         state.live=true;
+        if (street_recent_take(&recent,&state.selected,state.pending))
+            state.pending=NULL;
         if (job==JOB_SEARCH) {
             state.search_lat=state.lat;
             state.search_lon=state.lon;
@@ -709,6 +744,7 @@ void pano_runtime_stop(void) {
     state.history_count=0;state.target_valid=false;state.going_back=false;
     state.upgrade_pending=false;
     state.status[0]=0;
+    street_recent_clear(&recent);
     /* Keep coverage markers until the next successful search. */
 }
 /* Switch without resetting the visible scene. A completed request is cancelled
