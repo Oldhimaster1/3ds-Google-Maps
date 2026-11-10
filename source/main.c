@@ -1112,7 +1112,10 @@ static void explore_show_map(void) {
 
 static void choose_street_provider(StreetProvider p) {
     g_provider_picker=false;
-    if (!pano_runtime_switch_provider(p,map_state.lat,map_state.lon))
+    const PanoLiveImage *live=pano_runtime_current();
+    double lat=live ? live->lat : g_street_origin_lat;
+    double lon=live ? live->lon : g_street_origin_lon;
+    if (!pano_runtime_switch_provider(p,lat,lon))
         set_status_message("Could not start selected source");
 }
 
@@ -1156,7 +1159,9 @@ static void update_explore(void) {
         float fly=street_fly_progress(now,g_street_enter_ms,g_street_fly_ms);
         if (fly>=.75f && pano_runtime_has_live() && !g_street_reveal_ms)
             g_street_reveal_ms=now;
-        if (g_street_reveal_ms && now-g_street_reveal_ms>=200)
+        int reveal_ms=g_street_fly_ms/4;
+        if (reveal_ms<100) reveal_ms=100;
+        if (g_street_reveal_ms && now-g_street_reveal_ms>=(u64)reveal_ms)
             g_street_entering=false;
     }
     float dt = fminf(.05f, (now - g_explore_last_ms) * .001f);
@@ -1183,8 +1188,6 @@ static void update_explore(void) {
     float turn = g_explore_mode == EXPLORE_GLOBE && g_explore_goal < 2 ? .72f : 1.7f;
     g_explore_yaw += x * turn * dt;
     g_explore_pitch += y * turn * dt;
-    if (g_explore_yaw > 6.2831853f || g_explore_yaw < -6.2831853f)
-        g_explore_yaw=remainderf(g_explore_yaw,6.2831853f);
     if (g_explore_mode == EXPLORE_STREET) {
         const PanoLiveImage *active_photo = pano_runtime_current();
         if (active_photo && !active_photo->is_pano) {
@@ -1206,7 +1209,9 @@ static void update_explore(void) {
         }
         if (keys & KEY_DUP) pano_gyro_reset(&g_explore_gyro_filter);
         if (keys & KEY_DDOWN) {
-            if (!pano_runtime_start(g_street_origin_lat,g_street_origin_lon))
+            double lat=active_photo ? active_photo->lat : g_street_origin_lat;
+            double lon=active_photo ? active_photo->lon : g_street_origin_lon;
+            if (!pano_runtime_start(lat,lon))
                 set_status_message(pano_runtime_status());
         }
         if (keys & KEY_Y) {
@@ -1331,7 +1336,9 @@ static void render_explore(void) {
     } else if (g_explore_mode==EXPLORE_STREET && !flying) {
         float darkness=0.0f;
         if (g_street_entering && g_street_reveal_ms) {
-            float t=(frame_now-g_street_reveal_ms)/200.0f;
+            int reveal_ms=g_street_fly_ms/4;
+            if (reveal_ms<100) reveal_ms=100;
+            float t=(frame_now-g_street_reveal_ms)/(float)reveal_ms;
             darkness=fmaxf(0.0f,.95f*(1.0f-t));
         }
         if (g_street_swap_start_ms) {
