@@ -532,6 +532,32 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
     
 }
 
+/* Draw ONLY already-cached overhead tiles during Street View entry.
+ * No downloads, allocations or tile-cache invalidation on the render thread. */
+void map_tiles_draw_fly(double lat, double lon, int zoom, int offset_x,
+                        int offset_y, float scale) {
+    if (!initialized || zoom < 0 || zoom > 18) return;
+    if (scale < 1.0f) scale = 1.0f;
+    if (scale > 4.0f) scale = 4.0f;
+    int center_x=0, center_y=0;
+    lat_lon_to_pixel(lat, lon, zoom, &center_x, &center_y);
+    const int world = (1 << zoom) * TILE_SIZE;
+    for (int i=0; i<MAX_CACHED_TILES; i++) {
+        CachedTile *tile=&tile_cache[i];
+        if (!tile->valid || !tile->image.tex || tile->zoom != zoom) continue;
+        int dx=tile->tile_x*TILE_SIZE-center_x;
+        if (dx > world/2) dx -= world;
+        if (dx < -world/2) dx += world;
+        float x=200.0f+(dx+offset_x)*scale;
+        float y=120.0f+(tile->tile_y*TILE_SIZE-center_y+offset_y)*scale;
+        if (x >= 400.0f || y >= 240.0f ||
+            x+TILE_SIZE*scale <= 0.0f || y+TILE_SIZE*scale <= 0.0f)
+            continue;
+        tile->last_used=cache_counter++;
+        C2D_DrawImageAt(tile->image,x,y,0.1f,NULL,scale,scale);
+    }
+}
+
 void map_tiles_clear_cache(void) {
     if (!initialized) return;
     
