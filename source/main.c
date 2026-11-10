@@ -21,6 +21,7 @@
 #include "pano_gyro.h"
 #include "street_look_input.h"
 #include "street_sources.h"
+#include "street_fly_logic.h"
 #include "street_nav.h"
 #include <jansson.h>
 #include <zlib.h>
@@ -156,7 +157,6 @@ static bool g_qr_valid = false;
 
 static ExploreMode g_explore_mode;
 static C3D_RenderTarget *g_explore_right;
-static unsigned g_street_stop;
 static bool g_explore_gyro;
 static bool g_explore_gyro_inverted = true;
 static PanoGyroFilter g_explore_gyro_filter;
@@ -164,6 +164,12 @@ static float g_explore_gyro_counts_per_dps;
 static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
 static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
 static bool g_globe_from_zoom0, g_provider_picker;
+static int g_street_fly_ms=STREET_FLY_DEFAULT_MS;
+static bool g_street_fly_dragging, g_street_entering;
+static u64 g_street_enter_ms, g_street_reveal_ms;
+static u64 g_street_swap_start_ms, g_street_swap_end_ms;
+static double g_street_origin_lat, g_street_origin_lon;
+static int g_street_origin_zoom, g_street_origin_x, g_street_origin_y;
 
 // Smooth camera state.
 static double g_target_lat = 0.0;
@@ -244,6 +250,22 @@ static void open_offline_regions(void);
 
 static void ensure_app_data_dir(void) {
     mkdir("sdmc:/3ds_google_maps", 0777);
+}
+#define STREET_FLY_CFG "sdmc:/3ds_google_maps/street_fly.cfg"
+static void street_fly_load(void) {
+    FILE *file=fopen(STREET_FLY_CFG,"r");
+    if (!file) return;
+    int stored=STREET_FLY_DEFAULT_MS;
+    if (fscanf(file,"%d",&stored)==1)
+        g_street_fly_ms=street_fly_clamp_ms(stored);
+    fclose(file);
+}
+static void street_fly_save(void) {
+    ensure_app_data_dir();
+    FILE *file=fopen(STREET_FLY_CFG,"w");
+    if (!file) return;
+    fprintf(file,"%d\n",g_street_fly_ms);
+    fclose(file);
 }
 
 static void set_status_message(const char* message) {
@@ -631,6 +653,7 @@ int main(int argc, char* argv[]) {
     }
 
     ensure_app_data_dir();
+    street_fly_load();
     favorites_load();
     load_session();
     set_status_message("Ready");
