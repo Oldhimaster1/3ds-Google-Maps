@@ -16,6 +16,8 @@ void map_tiles_view_changed(void);
 void map_tiles_draw_minimap(double lat,double lon,int zoom,
                             float x,float y,float width,float height,
                             bool allow_requests);
+void map_tiles_draw_fly(double lat, double lon, int zoom, int offset_x,
+                        int offset_y, float scale);
 void map_tiles_clear_cache(void);
 
 // Call once per frame from the main thread to finish GPU texture uploads
