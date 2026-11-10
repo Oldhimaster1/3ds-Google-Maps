@@ -84,6 +84,10 @@ unsigned pano_runtime_coverage(PanoLiveImage *items, unsigned max_items) {
     memcpy(items, prefs.items, n * sizeof(*items));
     return n;
 }
+const PanoLiveImage *pano_runtime_coverage_view(unsigned *count) {
+    if (count) *count = prefs.count;
+    return prefs.items;
+}
 static void read_token(void) {
     s.token[0] = 0;
     FILE *f = fopen(MAPILLARY_TOKEN_FILE, "rb");
