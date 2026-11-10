@@ -1,0 +1,157 @@
+/* Simulated 3DS control and provider harness. This deliberately does not
+ * substitute for a real devkitPro build or hardware network test. */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include "guess_ui.h"
+#include "guess_core.h"
+#include <citro2d.h>
+#include <3ds.h>
+#include "panorama_live.h"
+#include "pano_gyro.h"
+static u64 milliseconds=100000;
+static u32 down,held;
+static touchPosition touch;
+static PanoLiveImage current;
+static bool live,rendered,mock_denied,mock_no_coverage;
+static int search_count,moves_count,finish_count,scene_count;
+static double query_lat,query_lon,last_map_lat,last_map_lon;
+struct C3D_RenderTarget { int n; };
+struct C2D_TextBuf_s { int n; };
+
+u64 svcGetSystemTick(void){return 0xacefeed3435ULL;}
+u64 osGetTime(void){return milliseconds;}
+void gfxSet3D(bool b){(void)b;}
+void hidScanInput(void){}
+u32 hidKeysDown(void){return down;}
+u32 hidKeysHeld(void){return held;}
+void hidTouchRead(touchPosition *p){*p=touch;}
+void hidCircleRead(circlePosition *p){p->dx=145;p->dy=0;}
+void hidGyroRead(angularRate *p){p->y=0;p->z=0;}
+int HIDUSER_DisableGyroscope(void){return 0;}
+int HIDUSER_EnableGyroscope(void){return 0;}
+int HIDUSER_GetGyroscopeRawToDpsCoefficient(float *x){*x=10;return 0;}
+void pano_gyro_reset(PanoGyroFilter *f){f->ready=0;}
+bool pano_gyro_step(PanoGyroFilter *f,float a,float b,float c,float d,bool e,float *p,float *y){(void)f;(void)a;(void)b;(void)c;(void)d;(void)e;(void)p;(void)y;return true;}
+void street_look_axes(int x,int y,float *a,float *b){*a=x/145.0f;*b=y/145.0f;}
+C2D_TextBuf C2D_TextBufNew(size_t sz){(void)sz;return malloc(sizeof(struct C2D_TextBuf_s));}
+void C2D_TextBufDelete(C2D_TextBuf p){free(p);}
+void C2D_TextBufClear(C2D_TextBuf p){(void)p;}
+void C2D_TextParse(C2D_Text *x,C2D_TextBuf t,const char*s){(void)x;(void)t;(void)s;}
+void C2D_TextOptimize(C2D_Text *x){(void)x;}
+bool C2D_DrawText(const C2D_Text *t,u32 f,float a,float b,float c,float d,float e,u32 color){(void)t;(void)f;(void)a;(void)b;(void)c;(void)d;(void)e;(void)color;return true;}
+void C2D_Prepare(void){}
+void C2D_TargetClear(C3D_RenderTarget *t,u32 color){(void)t;(void)color;}
+void C2D_SceneBegin(C3D_RenderTarget *t){(void)t;}
+u32 C2D_Color32(int r,int g,int b,int a){(void)r;(void)g;(void)b;(void)a;return 0;}
+void C2D_DrawRectSolid(float a,float b,float c,float d,float e,u32 f){(void)a;(void)b;(void)c;(void)d;(void)e;(void)f;}
+void C2D_DrawCircleSolid(float a,float b,float c,float d,u32 e){(void)a;(void)b;(void)c;(void)d;(void)e;}
+void C2D_DrawLine(float a,float b,u32 c,float d,float e,u32 f,float g,float h){(void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;}
+bool C3D_FrameBegin(int n){(void)n;return true;}
+void C3D_FrameEnd(int n){(void)n;}
+float C3D_AngleFromDegrees(float n){return n*.01745329252f;}
+void map_tiles_set_coverage(bool enabled){(void)enabled;}
+void map_tiles_render(double lat,double lon,int z,int ox,int oy,int w,int h,bool top){
+    (void)z;(void)ox;(void)oy;(void)w;(void)h;(void)top;
+    last_map_lat=lat;last_map_lon=lon;
+}
+bool explore_load(int mode,unsigned n){(void)mode;(void)n;scene_count++;return true;}
+void explore_unload(void){scene_count--;}
+void explore_draw(C3D_RenderTarget *p,float yaw,float pitch,float d,float f,float e){
+    (void)p;(void)yaw;(void)pitch;(void)d;(void)f;(void)e;rendered=true;
+}
+bool pano_runtime_start_game_google(double lat,double lon){
+    query_lat=lat;query_lon=lon;live=false;
+    search_count++;return true;
+}
+void pano_runtime_end_game_google(void){finish_count++;live=false;}
+void pano_runtime_stop(void){live=false;}
+void pano_runtime_poll(void){
+    if(mock_denied||mock_no_coverage)return;
+    if(!live){memset(&current,0,sizeof(current));current.provider=STREET_PROVIDER_GOOGLE;
+        current.lat=query_lat;current.lon=query_lon;current.is_pano=true;
+        strcpy(current.id,"1234567890123456789012");current.azimuth=0;live=true;}
+}
+bool pano_runtime_has_live(void){return live;}
+bool pano_runtime_network_active(void){return false;}
+const char *pano_runtime_status(void){return mock_denied?"Imagery provider denied access (HTTP 403)":"No matching photos";}
+const PanoLiveImage *pano_runtime_current(void){return live?&current:NULL;}
+bool pano_runtime_step_at(int direction,float yaw){(void)direction;(void)yaw;moves_count++;return true;}
+bool pano_runtime_jump_game_google(const char *id,double lat,double lon){(void)id;(void)lat;(void)lon;return true;}
+#include "../../source/guess_ui.c"
+#define TEST(x) do{if(!(x)){fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
+static void press(u32 k){down=k;held=k;milliseconds+=16;guess_ui_update();down=held=0;}
+static void frame(void){milliseconds+=16;guess_ui_update();}
+static void pick_pin(void){
+    down=held=KEY_TOUCH;touch=(touchPosition){.px=170,.py=95};frame();
+    down=held=0;frame();
+    TEST(ui.game.has_pin);
+}
+static void play_all(void){
+    TEST(ui.game.phase==GUESS_FINDING);
+    int tries=0;
+    while(ui.game.phase==GUESS_FINDING&&tries++<10)frame();
+    TEST(ui.game.phase==GUESS_PLAYING);
+    TEST(ui.game.start.lat==current.lat&&ui.game.start.lon==current.lon);
+    TEST(ui.map_center.lat!=ui.game.start.lat||ui.map_center.lon!=ui.game.start.lon);
+    struct C3D_RenderTarget top={0},bot={0};
+    guess_ui_draw(&top,&bot);
+    TEST(rendered);
+    TEST(last_map_lat==ui.map_center.lat&&last_map_lon==ui.map_center.lon);
+    pick_pin();press(KEY_A);TEST(ui.game.phase==GUESS_RESULT);
+    guess_ui_draw(&top,&bot);press(KEY_A);
+}
+int main(void){
+    TEST(guess_ui_enter());TEST(guess_ui_active());
+    /* NMPZ: the panorama must never rotate or move even if keys are held. */
+    ui.game.rules=GUESS_NMPZ;
+    press(KEY_A);TEST(ui.game.phase==GUESS_FINDING);
+    frame();TEST(ui.game.phase==GUESS_PLAYING);
+    float initial=ui.yaw;
+    press(KEY_L|KEY_R|KEY_DLEFT|KEY_SELECT);
+    TEST(ui.yaw==initial&&moves_count==0&&!ui.gyro);
+    pick_pin();press(KEY_A);press(KEY_A);
+    for(int r=1;r<GUESS_ROUNDS;r++)play_all();
+    TEST(ui.game.phase==GUESS_COMPLETE&&ui.game.round==5);
+    TEST(ui.games==1&&ui.game.total<=25000);
+    press(KEY_B);TEST(ui.game.phase==GUESS_MENU);
+    guess_ui_leave();
+    TEST(!guess_ui_active()&&scene_count==0&&finish_count==1);
+    /* No Move: controls may rotate the camera, but cannot navigate. */
+    TEST(guess_ui_enter());
+    ui.game.rules=GUESS_NO_MOVE;
+    press(KEY_A);frame();TEST(ui.game.phase==GUESS_PLAYING);
+    initial=ui.yaw;
+    press(KEY_L|KEY_R);
+    TEST(moves_count==0&&ui.yaw!=initial);
+    press(KEY_B);TEST(ui.game.phase==GUESS_PAUSED);
+    press(KEY_A);TEST(ui.game.phase==GUESS_PLAYING);
+    press(KEY_B);press(KEY_B);TEST(ui.game.phase==GUESS_MENU);
+    guess_ui_leave();
+    /* Normal Moving mode should actually call the shared navigation runtime. */
+    TEST(guess_ui_enter());
+    ui.game.rules=GUESS_MOVING;
+    press(KEY_A);frame();TEST(ui.game.phase==GUESS_PLAYING);
+    press(KEY_R);TEST(moves_count>0);
+    guess_ui_leave();
+    /* Failed official imagery access must not silently fall back to another provider. */
+    TEST(guess_ui_enter());
+    mock_denied=true;
+    press(KEY_A);frame();
+    TEST(ui.game.phase==GUESS_ERROR);
+    TEST(!pano_runtime_has_live());
+    press(KEY_B);guess_ui_leave();
+    mock_denied=false;
+    /* Bounded no-coverage retries must terminate instead of hanging forever. */
+    TEST(guess_ui_enter());
+    mock_no_coverage=true;
+    press(KEY_A);
+    for(int k=0;k<1000&&ui.game.phase==GUESS_FINDING;k++)frame();
+    TEST(ui.game.phase==GUESS_ERROR);
+    TEST(ui.game.attempt==GUESS_MAX_CANDIDATE_TRIES);
+    guess_ui_leave();
+    mock_no_coverage=false;
+    puts("StreetGuess UI simulated five-round / restrictions / error tests passed");
+    return 0;
+}
