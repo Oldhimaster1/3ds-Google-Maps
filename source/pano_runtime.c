@@ -243,8 +243,9 @@ static bool search_provider(void *curl, StreetProvider src,
             state.used=src;
             for (unsigned k=0;k<count&&k<3&&!atomic_load(&state.cancelled);k++) {
                 state.new_index=(int)k;
-                if (decode_candidate(curl,&state.candidates[k],
-                                      src==STREET_PROVIDER_PANORAMAX))
+                bool preview=src==STREET_PROVIDER_PANORAMAX;
+                if (decode_candidate(curl,&state.candidates[k],preview) ||
+                    (preview && decode_candidate(curl,&state.candidates[k],false)))
                     return true;
                 if (state.pending) { free(state.pending);state.pending=NULL; }
             }
@@ -285,8 +286,18 @@ static void worker(void *unused) {
         if (state.selected.provider==STREET_PROVIDER_PANORAMAX) {
             const char *id=state.direction>0?state.selected.next_id:
                                                 state.selected.prev_id;
-            if (*id && !atomic_load(&state.cancelled))
-                found=lookup_next(curl,id,&p);
+            if (*id && !atomic_load(&state.cancelled)) {
+                /* Reuse search metadata when the neighboring sequence photo
+                 * is already among nearby results: skips an HTTPS request. */
+                for (unsigned i=0;i<state.count;i++)
+                    if (!strcmp(id,state.candidates[i].id)) {
+                        p=state.candidates[i];
+                        state.new_index=(int)i;
+                        found=true;
+                        break;
+                    }
+                if (!found)found=lookup_next(curl,id,&p);
+            }
         }
         if (!found && state.count>1) {
             int next=(int)state.index+(state.direction>0?1:-1);
@@ -295,8 +306,11 @@ static void worker(void *unused) {
             }
         }
         state.outcome=NO_COVERAGE;
-        if (found && !atomic_load(&state.cancelled))
-            decode_candidate(curl,&p,p.provider==STREET_PROVIDER_PANORAMAX);
+        if (found && !atomic_load(&state.cancelled)) {
+            bool preview=p.provider==STREET_PROVIDER_PANORAMAX;
+            if (!decode_candidate(curl,&p,preview) && preview)
+                decode_candidate(curl,&p,false);
+        }
     } else if (state.job==JOB_UPGRADE) {
         state.outcome=NETWORK_ERROR;
         decode_candidate(curl,&state.selected,false);
@@ -367,6 +381,11 @@ void pano_runtime_poll(void) {
             street_provider_name(state.selected.provider),
             state.selected.is_pano?"360":"photo",
             state.selected.lat,state.selected.lon);
+    } else if (job==JOB_UPGRADE && state.live) {
+        /* HD upgrade failure is nonfatal: the preview remains usable. */
+        snprintf(state.status,sizeof(state.status),"%s %s (preview)",
+                 street_provider_name(state.selected.provider),
+                 state.selected.is_pano ? "360" : "photo");
     } else if (state.outcome==TOKEN_MISSING)
         snprintf(state.status,sizeof(state.status),"Mapillary: configure mapillary.token");
     else if (state.outcome==NO_COVERAGE)
