@@ -22,11 +22,20 @@ bool pano_gyro_step(PanoGyroFilter *filter, float raw_pitch, float raw_yaw,
      * 18,000 dps when the 3DS returned its usual ~14.375 coefficient. */
     const float p = raw_pitch / counts_per_dps;
     const float y = raw_yaw / counts_per_dps;
-    if (!isfinite(p) || !isfinite(y) || fabsf(p) > 1500 || fabsf(y) > 1500)
+    /* Physically implausible raw spikes should not swing the camera, even
+     * if a single HID sample is corrupt or dropped. */
+    if (!isfinite(p) || !isfinite(y) || fabsf(p) > 500 || fabsf(y) > 500)
         return filter->ready;
     /* 20 frames is about one third-second at 60fps. Hold still to remove
      * hardware zero drift; do not let calibration itself rotate the camera. */
     if (!filter->ready) {
+        if (filter->samples >= 4 &&
+            (fabsf(p - filter->pitch_sum / filter->samples) > 18.0f ||
+             fabsf(y - filter->yaw_sum / filter->samples) > 18.0f)) {
+            /* Do not interpret an accidental movement while enabling gyro
+             * as its zero bias. Re-start the stationary calibration. */
+            pano_gyro_reset(filter);
+        }
         filter->pitch_sum += p;
         filter->yaw_sum += y;
         if (++filter->samples >= 20) {
