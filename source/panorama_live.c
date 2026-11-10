@@ -159,6 +159,16 @@ unsigned pano_parse_nearby(const char *json, size_t length,
         json_array_foreach(features, i, feature) {
             PanoLiveImage sample;
             if (!parse_picture(feature, &sample)) continue;
+            /* Federated catalog pages can repeat an image ID; duplicates
+             * waste candidate slots and can confuse previous/next navigation. */
+            bool duplicate=false;
+            for (unsigned j=0; j<count; j++) {
+                if (!strcmp(items[j].id,sample.id)) {
+                    duplicate=true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
             unsigned pos = 0;
             double d = dist2(lat, lon, &sample);
             while (pos < count && dist2(lat, lon, &items[pos]) <= d) pos++;
