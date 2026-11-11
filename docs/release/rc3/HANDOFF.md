@@ -21,3 +21,13 @@ Do not ship local test CAs or that diagnostic binary.
 
 No merge, stable tag, GitHub Release, stable replacement or announcement.
 The owner must review README/media before approving the production launch.
+
+## Promotional edit refresh
+
+README redesign checkpoint: `29494e8`. A subsequent media edit replaces the
+hero, teaser and showcase, adds closer Manhattan and challenge-menu gallery
+captures, and updates the hash manifest. See media.md and promo-edit.json.
+Raw source captures for this edit: `/tmp/promo-rc3/raw/`.
+The editing script accepts that directory and an output directory.
+Do not restart source development or change working preview downloads for this
+media task. Missing panorama/score/terrain captures remain explicit.

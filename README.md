@@ -11,9 +11,9 @@ a look around, or see how well you really know the world.
 [**Get the RC3 preview**](#download) · [See it in action](#see-it-in-action) ·
 [What’s inside](#what-can-you-do) · [Getting started](#getting-started) · [FAQ](#faq)
 
-![A globe spinning in Maps for Nintendo 3DS — actual RC3 capture in Azahar](docs/media/rc3/hero.gif)
+![RC3 globe movement, Manhattan map exploration and StreetGuess local-play menu](docs/media/rc3/hero.gif)
 
-*Eight seconds around the world. Captured from RC3 running in Azahar.*
+*Spin the globe. Explore Manhattan. Pick a game. Actual RC3 captures in Azahar.*
 
 </div>
 
@@ -67,17 +67,22 @@ New to the game? Start on **Explorer** difficulty for hints and no timer.
 
 ## See it in action
 
-| Explore the map | Spin the globe | Choose a challenge |
-| :---: | :---: | :---: |
-| ![Cached satellite map in RC3](docs/media/rc3/map-cached.png) | ![World globe in RC3](docs/media/rc3/globe.png) | ![StreetGuess challenge menu in RC3](docs/media/rc3/challenges.png) |
+| Take a closer look at Manhattan | Turn the world around |
+| :---: | :---: |
+| ![Lower Manhattan satellite map in RC3, rendered from cached imagery](docs/media/rc3/map-close.png) | ![Africa and Europe on the RC3 Blue Marble globe](docs/media/rc3/globe.png) |
+| **Choose a daily challenge** | **Set up pass and play** |
+| ![StreetGuess daily challenge menu in RC3](docs/media/rc3/daily-menu.png) | ![StreetGuess local two-player setup menu in RC3](docs/media/rc3/local-play-menu.png) |
 
-**[Watch the 28-second teaser](docs/media/rc3/teaser.mp4?raw=true)** ·
-[Watch the 62-second walkthrough](docs/media/rc3/review-walkthrough.mp4?raw=true)
+**[Watch the 20-second teaser](docs/media/rc3/teaser.mp4?raw=true)** ·
+[Watch the 32-second showcase](docs/media/rc3/review-walkthrough.mp4?raw=true)
 
-These are actual RC3 captures in Azahar: cached map imagery, globe movement and
-game menus. They don’t yet show live Street View, terrain, buildings or completed
-StreetGuess rounds. Those features still need footage and testing on a real
-console. [Recording notes](docs/release/rc3/media.md)
+Short cuts, a closer city view and a trip around the globe — all captured from
+RC3 in Azahar. The videos enlarge the main display and keep its matching
+touchscreen alongside it. StreetGuess shots show the challenge menus.
+
+Live panoramas, sharper panorama detail, terrain/buildings and completed
+StreetGuess rounds still need successful captures. They aren’t shown in this
+preview. [Recording notes and remaining shots](docs/release/rc3/media.md)
 
 ## Download
 
