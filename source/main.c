@@ -1611,12 +1611,16 @@ static void render_explore(void) {
         draw_ui_text(14, 127, .40f, .40f, accent, 0,
                      g_explore_mode == EXPLORE_GLOBE ? "Zoom in fully to enter the map" :
                      stereo ? "3D slider  Stereo active" : "Raise 3D slider on supported systems");
-        draw_ui_text(14, 162, .36f, .36f, dim, 0,
-                     g_explore_mode == EXPLORE_GLOBE ? "NASA / GSFC Blue Marble" :
-                      g_terrain_live && g_earth_options.buildings ?
-                         building_runtime_status() :
-                      g_terrain_live ? "Terrain Tiles / Mapzen  |  Live elevation" :
-                      terrain_runtime_status());
+        if(g_explore_mode == EXPLORE_GLOBE)
+            draw_ui_text(14,162,.36f,.36f,dim,0,"NASA / GSFC Blue Marble");
+        else {
+            draw_ui_text(14,148,.38f,.38f,white,0,
+                !g_terrain_live ? terrain_runtime_status() :
+                g_earth_options.buildings ? building_runtime_status() :
+                "Live geographic elevation loaded");
+            draw_ui_text(14,169,.31f,.31f,dim,0,
+                "Elevation: Mapzen | Buildings: OpenStreetMap contributors");
+        }
     }
     C2D_DrawRectSolid(0, 184, .1f, 320, 56, C2D_Color32(23, 32, 45, 255));
     if (g_explore_mode==EXPLORE_STREET) {
