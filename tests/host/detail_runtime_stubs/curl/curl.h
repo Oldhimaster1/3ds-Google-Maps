@@ -5,5 +5,5 @@ typedef struct MockCurl {int dummy;} CURL;
 #define CURLOPT_CONNECTTIMEOUT 2
 #define CURLOPT_FOLLOWLOCATION 3
 #define CURLOPT_USERAGENT 4
-#define curl_easy_setopt(h,opt,arg) ((void)(h),(void)(opt),(void)(arg),0)
+#define curl_easy_setopt(h,opt,arg) do{(void)(h);(void)(opt);(void)(arg);}while(0)
 #endif
