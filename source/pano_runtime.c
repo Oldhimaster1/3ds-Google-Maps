@@ -479,7 +479,30 @@ static bool search_provider(void *curl, StreetProvider src,
         if (count) {
             state.count=count;
             if (state.outcome == NO_COVERAGE) state.outcome = NETWORK_ERROR;
-            for (unsigned k=0;k<count&&k<3&&!atomic_load(&state.cancelled);k++) {
+            /* In StreetGuess, select the geographically closest candidate
+             * BEFORE downloading JPEGs. Validate at most two in order to
+             * avoid wasting time decoding distant panoramas. */
+            unsigned preferred=0;
+            if(src==STREET_PROVIDER_GOOGLE && state.game_google_override){
+                double best=1e300;
+                for(unsigned n=0;n<count;n++){
+                    double dy=state.candidates[n].lat-state.lat;
+                    double dx=state.candidates[n].lon-state.lon;
+                    if(dx>180)dx-=360;
+                    if(dx<-180)dx+=360;
+                    dx*=cos(state.lat*.017453292519943295);
+                    double distance=dy*dy+dx*dx;
+                    if(distance<best){best=distance;preferred=n;}
+                }
+            }
+            unsigned tries=(src==STREET_PROVIDER_GOOGLE &&
+                            state.game_google_override)?2:3;
+            for(unsigned t=0;t<tries && t<count && !atomic_load(&state.cancelled);t++){
+                unsigned k=t;
+                if(src==STREET_PROVIDER_GOOGLE && state.game_google_override){
+                    if(t==0) k=preferred;
+                    else {k=0; if(k==preferred)k=1;}
+                }
                 state.new_index=(int)k;
                 bool preview=src==STREET_PROVIDER_PANORAMAX || src==STREET_PROVIDER_GOOGLE;
                 if (decode_candidate(curl,&state.candidates[k],preview) ||
