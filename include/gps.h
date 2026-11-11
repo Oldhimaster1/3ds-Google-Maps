@@ -39,6 +39,7 @@ typedef struct {
     unsigned age_ms;
     double speed_mps, heading_deg;
     bool has_speed, has_heading;
+    unsigned fix_sequence; /* changes only when fresh GPS data arrives */
 } GpsFix;
 bool gps_get_fix(GpsFix *fix);
 void gps_inject_fix_with_accuracy(double lat, double lon, double accuracy);
