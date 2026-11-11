@@ -2,6 +2,7 @@
 #include "terrain_math.h"
 #include "building_mesh.h"
 #include "detail_plan.h"
+#include "detail_mesh.h"
 #include "explore_shbin.h"
 #include "earth_rgb_bin.h"
 /* The Canyon demo assets are no longer silently substituted for live terrain. */
@@ -314,28 +315,15 @@ bool explore_detail_upload(DetailKey key,const uint16_t *morton_pixels){
   if(idx)linearFree(idx);
   return false;
  }
- const double pi=3.14159265358979323846;
- const double ntiles=(double)(1u<<key.z);
  for(unsigned iy=0;iy<=subdivisions;iy++){
   float ty=(float)iy/(float)subdivisions;
   for(unsigned ix=0;ix<=subdivisions;ix++){
    float tx=(float)ix/(float)subdivisions;
-   double lon=((key.x+tx)/ntiles*2.-1.)*pi;
-   double lat;
-   if(key.kind==DETAIL_PANORAMA){
-    /* Google panorama has 2^(z-1) rows, not 2^z rows. */
-    lat=(.5-(key.y+ty)/(ntiles*.5))*pi;
-   }else{
-    double merc_y=(key.y+ty)/ntiles;
-    lat=atan(sinh(pi*(1.-2.*merc_y)));
+   float x,y,z;
+   if(!detail_mesh_point(key,tx,ty,&x,&y,&z)){
+    linearFree(v);linearFree(idx);return false;
    }
-   float r=key.kind==DETAIL_PANORAMA?.985f:1.014f;
-   float flat=r*(float)cos(lat);
-   v[iy*(subdivisions+1)+ix]=(Vertex){
-    flat*(float)sin(lon),r*(float)sin(lat),
-    (key.kind==DETAIL_PANORAMA?-flat:flat)*(float)cos(lon),
-    tx,ty
-   };
+   v[iy*(subdivisions+1)+ix]=(Vertex){x,y,z,tx,ty};
   }
  }
  unsigned k=0;
