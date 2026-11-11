@@ -1097,6 +1097,8 @@ static void open_explore(ExploreMode mode) {
         g_street_reveal_ms=0;
         g_street_swap_start_ms=g_street_swap_end_ms=0;
         g_street_entering=g_street_fly_ms>0;
+        /* Retain cached overhead tiles but discard queued speculation. */
+        map_tiles_view_changed();
         pano_runtime_start(g_street_origin_lat,g_street_origin_lon);
     }
     if (!explore_load(mode, 0)) {
@@ -2255,10 +2257,10 @@ static void render_settings_panel(void) {
                           C2D_Color32(75,190,215,255));
         C2D_DrawCircleSolid(150+144*g_street_fly_ms/(float)STREET_FLY_MAX_MS,212.5f,.8f,6,
                             C2D_Color32(200,247,255,255));
-        draw_ui_text(20, 227, .29f, .29f, C2D_Color32(164, 190, 211, 255), 0,
+        draw_ui_text(20, 225, .38f, .38f, C2D_Color32(164, 190, 211, 255), 0,
             pano_runtime_coverage_enabled() ?
-                "Street imagery markers: ON (tap to toggle)" :
-                "Street imagery markers: OFF (tap to toggle)");
+                "Street imagery dots: ON (tap)" :
+                "Street imagery dots: OFF (tap)");
     } else if (g_settings_tab == SETTINGS_TAB_TEXT) {
         const UiAccessConfig *a=ui_access_get();
         const char *sizes[]={"Normal","Large","Extra Large"};
