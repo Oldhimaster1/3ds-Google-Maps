@@ -57,6 +57,7 @@ static StreetRecent recent;
  * candidate attempts to reuse the HTTPS connection and avoid a new TLS
  * handshake every time a road position has no Google coverage. */
 static void *game_http_handle;
+static void *street_http_handle;
 /* Keep normal Maps' last street-coverage markers intact across a game. */
 static struct {
     bool valid;
@@ -498,13 +499,13 @@ static bool search_provider(void *curl, StreetProvider src,
 static void worker(void *unused) {
     (void)unused;
     state.outcome=NETWORK_ERROR;
-    void *curl=state.game_google_override?
-                 game_http_handle:network_alloc_tile_curl();
-    if(state.game_google_override && !curl){
-        curl=network_alloc_tile_curl();
-        game_http_handle=curl;
-    }
-    if (!curl) goto end;
+    /* Both jobs run in exactly one worker at a time, so the per-mode curl
+     * handle can safely preserve HTTPS connections across sequential jobs. */
+    void **slot=state.game_google_override?
+                &game_http_handle:&street_http_handle;
+    void *curl=*slot;
+    if(!curl){curl=network_alloc_tile_curl();*slot=curl;}
+    if(!curl)goto end;
     curl_easy_setopt((CURL*)curl, CURLOPT_TIMEOUT, 6L);
     curl_easy_setopt((CURL*)curl, CURLOPT_CONNECTTIMEOUT, 3L);
     curl_easy_setopt((CURL*)curl, CURLOPT_PROTOCOLS, (long)CURLPROTO_HTTPS);
@@ -623,8 +624,7 @@ static void worker(void *unused) {
         else decode_candidate(curl,&state.selected,false);
         state.upgrade_pending=false;
     }
-    if(!state.game_google_override)
-        network_free_tile_curl(curl);
+    /* Owner closes this connection only after a worker join. */
 end:
     atomic_store(&state.done,true);
 }
@@ -855,6 +855,10 @@ void pano_runtime_stop(void) {
     state.upgrade_pending=false;
     state.status[0]=0;
     state.game_google_override=false;
+    if(street_http_handle){
+        network_free_tile_curl(street_http_handle);
+        street_http_handle=NULL;
+    }
     street_recent_clear(&recent);
     /* Keep coverage markers until the next successful search. */
 }
