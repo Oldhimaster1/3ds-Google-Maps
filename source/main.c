@@ -25,6 +25,7 @@
 #include "region.h"
 #include "explore.h"
 #include "terrain_runtime.h"
+#include "building_runtime.h"
 #include "pano_runtime.h"
 #include "pano_gyro.h"
 #include "street_look_input.h"
@@ -192,6 +193,7 @@ static ExploreMode g_explore_mode;
 static double g_terrain_origin_lat,g_terrain_origin_lon;
 static int g_terrain_origin_zoom;
 static bool g_terrain_live;
+static bool g_buildings_live;
 static C3D_RenderTarget *g_explore_right;
 static bool g_explore_gyro;
 static bool g_explore_gyro_inverted = true;
@@ -1104,6 +1106,7 @@ static void close_explore(void) {
     g_street_reveal_ms=0;
     g_street_swap_start_ms=g_street_swap_end_ms=0;
     g_globe_from_zoom0=false;
+    building_runtime_stop();
     terrain_runtime_stop();
     pano_runtime_stop();
     if (g_explore_gyro) HIDUSER_DisableGyroscope();
@@ -1126,6 +1129,7 @@ static void open_explore(ExploreMode mode) {
         g_terrain_origin_lon=map_state.lon;
         g_terrain_origin_zoom=map_state.zoom;
         g_terrain_live=false;
+        g_buildings_live=false;
     }
     /* Start the real imagery request BEFORE creating the scene or flying in. */
     if (mode == EXPLORE_STREET) {
@@ -1219,6 +1223,18 @@ static void update_explore(void) {
                         earth_options_terrain_scale(&g_earth_options));
             set_status_message(g_terrain_live?"Live elevation loaded":
                                                "Could not apply elevation data");
+            if(g_terrain_live && g_earth_options.buildings) {
+                int z=g_terrain_origin_zoom;
+                if(z<8)z=8;
+                if(z>12)z=12;
+                building_runtime_start(g_terrain_origin_lat,g_terrain_origin_lon,
+                                       &grid,span_m,z);
+            }
+        }
+        const BuildingMesh *buildings=building_runtime_poll();
+        if(buildings && g_earth_options.buildings){
+            g_buildings_live=explore_apply_buildings(buildings);
+            if(g_buildings_live)set_status_message("Live 3D buildings loaded");
         }
     }
     /* Fade a decoded NEXT image in only after briefly dimming the previous
@@ -1574,6 +1590,8 @@ static void render_explore(void) {
                      stereo ? "3D slider  Stereo active" : "Raise 3D slider on supported systems");
         draw_ui_text(14, 162, .36f, .36f, dim, 0,
                      g_explore_mode == EXPLORE_GLOBE ? "NASA / GSFC Blue Marble" :
+                      g_terrain_live && g_earth_options.buildings ?
+                         building_runtime_status() :
                       g_terrain_live ? "Terrain Tiles / Mapzen  |  Live elevation" :
                       terrain_runtime_status());
     }
