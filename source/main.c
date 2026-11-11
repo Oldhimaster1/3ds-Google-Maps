@@ -2427,10 +2427,19 @@ static void render_settings_panel(void) {
                 gps_get_server_url(svr_url, sizeof(svr_url));
                 draw_ui_text(24.0f, 180.0f, 0.34f, 0.34f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, svr_url);
                 GpsFix fix;
-                if(gps_get_fix(&fix) && gps_get_server_fix_count()>0)
-                    snprintf(line,sizeof(line),"Fixes %u  Age %.1fs  Accuracy %.0fm",
-                             gps_get_server_fix_count(),fix.age_ms/1000.0,
-                             fix.accuracy_m>=0?fix.accuracy_m:0);
+                if(gps_get_fix(&fix) && gps_get_server_fix_count()>0) {
+                    if(fix.has_speed && fix.has_heading)
+                        snprintf(line,sizeof(line),"GPS %.1f mph, %.0f deg  +/-%.0fm",
+                                 fix.speed_mps*2.23693629,fix.heading_deg,
+                                 fmax(0.0,fix.accuracy_m));
+                    else if(fix.has_speed)
+                        snprintf(line,sizeof(line),"GPS %.1f mph  Age %.1fs",
+                                 fix.speed_mps*2.23693629,fix.age_ms/1000.0);
+                    else
+                        snprintf(line,sizeof(line),"Fixes %u  Age %.1fs  Accuracy %.0fm",
+                                 gps_get_server_fix_count(),fix.age_ms/1000.0,
+                                 fix.accuracy_m>=0?fix.accuracy_m:0);
+                }
                 else
                     snprintf(line,sizeof(line),"Waiting for phone GPS  (0 fixes)");
                 draw_ui_text(24.0f, 200.0f, 0.36f, 0.36f, C2D_Color32f(0.80f, 0.88f, 0.92f, 1.0f), 0, line);
@@ -2506,6 +2515,12 @@ static void render_bottom_panel(void) {
     } else if (gps_is_connected() || map_state.gps_tracking) {
         GpsFix fix;
         if (!gps_get_fix(&fix)) snprintf(line, sizeof(line), "Waiting for GPS fix");
+        else if(fix.has_speed){
+            if(fix.has_heading) snprintf(line,sizeof(line),"GPS %.1f mph   Course %03.0f deg",
+                 fix.speed_mps*2.23693629,fix.heading_deg);
+            else snprintf(line,sizeof(line),"GPS %.1f mph   Accuracy %.0fm",
+                 fix.speed_mps*2.23693629,fmax(0.0,fix.accuracy_m));
+        }
         else if (fix.accuracy_m >= 0)
             snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy %.0f m", fix.age_ms / 1000.0, fix.accuracy_m);
         else snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy unavailable", fix.age_ms / 1000.0);
