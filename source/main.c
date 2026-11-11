@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "map_tiles.h"
+#include "gps_follow_gate.h"
 #include "network.h"
 #include "gps.h"
 #include "logging.h"
@@ -717,12 +718,16 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // If GPS tracking is on and we have a fix, update position
-        if (map_state.gps_tracking && gps_has_fix()) {
-            double gps_lat, gps_lon;
-            if (gps_get_position(&gps_lat, &gps_lon)) {
-                set_camera_target(gps_lat, gps_lon, g_target_zoom, false);
-            }
+        /* The phone may send many nearly identical fixes while stationary.
+         * Update the target only when motion exceeds accuracy/zoom jitter.
+         * This avoids churning the visible tile queue during GPS follow. */
+        if (map_state.gps_tracking) {
+            GpsFix fix;
+            if (gps_get_fix(&fix) &&
+                gps_should_move_camera(g_target_lat,g_target_lon,
+                                       fix.lat,fix.lon,fix.accuracy_m,
+                                       fix.age_ms,g_target_zoom))
+                set_camera_target(fix.lat,fix.lon,g_target_zoom,false);
         }
 
         update_input();
@@ -1654,6 +1659,7 @@ void render_map(void) {
         C2D_SceneBegin(top_screen);
 
         map_tiles_set_coverage(g_show_coverage);
+        map_tiles_set_gps_follow(map_state.gps_tracking);
         map_tiles_render(map_state.lat, map_state.lon, map_state.zoom, 
                         map_state.offset_x, map_state.offset_y, 
                         SCREEN_WIDTH_TOP, SCREEN_HEIGHT_TOP, true);
@@ -2355,8 +2361,14 @@ static void render_settings_panel(void) {
                 char svr_url[64];
                 gps_get_server_url(svr_url, sizeof(svr_url));
                 draw_ui_text(24.0f, 180.0f, 0.34f, 0.34f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, svr_url);
-                snprintf(line, sizeof(line), "Fixes from phone: %u", gps_get_server_fix_count());
-                draw_ui_text(24.0f, 200.0f, 0.32f, 0.32f, C2D_Color32f(0.80f, 0.88f, 0.92f, 1.0f), 0, line);
+                GpsFix fix;
+                if(gps_get_fix(&fix) && gps_get_server_fix_count()>0)
+                    snprintf(line,sizeof(line),"Fixes %u  Age %.1fs  Accuracy %.0fm",
+                             gps_get_server_fix_count(),fix.age_ms/1000.0,
+                             fix.accuracy_m>=0?fix.accuracy_m:0);
+                else
+                    snprintf(line,sizeof(line),"Waiting for phone GPS  (0 fixes)");
+                draw_ui_text(24.0f, 200.0f, 0.36f, 0.36f, C2D_Color32f(0.80f, 0.88f, 0.92f, 1.0f), 0, line);
             } else {
                 /* Show the actual IP address even before starting */
                 u32 raw_ip = (u32)gethostid();
