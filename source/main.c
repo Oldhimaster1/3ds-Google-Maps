@@ -23,6 +23,7 @@
 #include "street_sources.h"
 #include "street_fly_logic.h"
 #include "ui_accessibility.h"
+#include "pano_motion.h"
 #include "guess_ui.h"
 #include "street_nav.h"
 #include <jansson.h>
@@ -172,7 +173,10 @@ static C3D_RenderTarget *g_explore_right;
 static bool g_explore_gyro;
 static bool g_explore_gyro_inverted = true;
 static PanoGyroFilter g_explore_gyro_filter;
+static PanoMotionFrame g_explore_motion;
+static bool g_explore_accel;
 static float g_explore_gyro_counts_per_dps;
+static float g_explore_fov=55.0f;
 static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
 static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
 static bool g_globe_from_zoom0, g_provider_picker;
@@ -1068,7 +1072,8 @@ static void close_explore(void) {
     g_globe_from_zoom0=false;
     pano_runtime_stop();
     if (g_explore_gyro) HIDUSER_DisableGyroscope();
-    g_explore_gyro = false;
+    if (g_explore_accel) HIDUSER_DisableAccelerometer();
+    g_explore_gyro = g_explore_accel = false;
     g_explore_mode = EXPLORE_NONE;
     g_explore_dive_ms = 0;
     explore_unload();
@@ -1114,6 +1119,8 @@ static void open_explore(ExploreMode mode) {
     close_menu(NULL);
     if (mode == EXPLORE_STREET) {
         g_explore_gyro_inverted = true;
+        g_explore_fov=55.0f;
+        pano_motion_reset(&g_explore_motion);
     }
 }
 
@@ -1207,9 +1214,9 @@ static void update_explore(void) {
     hidCircleRead(&stick);
     float x=0, y=0;
     if (g_explore_mode == EXPLORE_STREET) {
-        /* Independent stick axes can cause unintended camera tilt while
-         * panning left/right. Apply a dominant-axis lock and safer deadzone. */
+        /* D-left/right rotate the panorama; L/R follow linked roads. */
         street_look_axes(stick.dx, stick.dy, &x, &y);
+        x=fmaxf(-1,fminf(1,x+!!(held&KEY_DRIGHT)-!!(held&KEY_DLEFT)));
     } else {
         x = explore_axis(stick.dx);
         y = explore_axis(stick.dy);
@@ -1225,8 +1232,9 @@ static void update_explore(void) {
             /* Ordinary street photos are flat, not a navigable sphere. */
             g_explore_yaw = g_explore_pitch = 0;
         }
-        if (keys & (KEY_L | KEY_R | KEY_DLEFT | KEY_DRIGHT)) {
-            int dir = (keys & (KEY_L | KEY_DLEFT)) ? -1 : 1;
+        if ((keys & (KEY_L | KEY_R)) &&
+            !((held & KEY_L) && (held & KEY_DDOWN))) {
+            int dir = (keys & KEY_L) ? -1 : 1;
             if (pano_runtime_has_live()) {
                 if (!pano_runtime_step_at(dir,g_explore_yaw))
                     set_status_message(pano_runtime_status());
@@ -1237,15 +1245,19 @@ static void update_explore(void) {
             }
         }
         if (keys & KEY_SELECT) {
-            g_explore_gyro_inverted = !g_explore_gyro_inverted;
             pano_gyro_reset(&g_explore_gyro_filter);
+            pano_motion_reset(&g_explore_motion);
+            set_status_message("Gyro recalibrating: hold console still");
         }
-        if (keys & KEY_DUP) pano_gyro_reset(&g_explore_gyro_filter);
+        if (keys & KEY_DUP)
+            g_explore_fov=fmaxf(28.0f,g_explore_fov-5.0f);
         if (keys & KEY_DDOWN) {
-            double lat=active_photo ? active_photo->lat : g_street_origin_lat;
-            double lon=active_photo ? active_photo->lon : g_street_origin_lon;
-            if (!pano_runtime_start(lat,lon))
-                set_status_message(pano_runtime_status());
+            if (held & KEY_L) {
+                double lat=active_photo ? active_photo->lat : g_street_origin_lat;
+                double lon=active_photo ? active_photo->lon : g_street_origin_lon;
+                if (!pano_runtime_start(lat,lon))
+                    set_status_message(pano_runtime_status());
+            } else g_explore_fov=fminf(85.0f,g_explore_fov+5.0f);
         }
         if (keys & KEY_Y) {
             StreetProvider next=(StreetProvider)((pano_runtime_provider()+1)%STREET_PROVIDER_COUNT);
@@ -1285,30 +1297,36 @@ static void update_explore(void) {
         if (keys & KEY_X) {
             if (g_explore_gyro) {
                 HIDUSER_DisableGyroscope();
-                g_explore_gyro = false;
+                if(g_explore_accel) HIDUSER_DisableAccelerometer();
+                g_explore_gyro=g_explore_accel=false;
             } else {
-                g_explore_gyro = R_SUCCEEDED(HIDUSER_EnableGyroscope());
-                g_explore_gyro_counts_per_dps = 0;
+                g_explore_gyro=R_SUCCEEDED(HIDUSER_EnableGyroscope());
+                g_explore_accel=g_explore_gyro &&
+                    R_SUCCEEDED(HIDUSER_EnableAccelerometer());
+                g_explore_gyro_counts_per_dps=0;
                 pano_gyro_reset(&g_explore_gyro_filter);
-                if (g_explore_gyro &&
-                    (R_FAILED(HIDUSER_GetGyroscopeRawToDpsCoefficient(
-                        &g_explore_gyro_counts_per_dps)) ||
-                     g_explore_gyro_counts_per_dps <= 0)) {
+                pano_motion_reset(&g_explore_motion);
+                if(g_explore_gyro &&
+                   (R_FAILED(HIDUSER_GetGyroscopeRawToDpsCoefficient(
+                         &g_explore_gyro_counts_per_dps)) ||
+                    g_explore_gyro_counts_per_dps<=0)){
                     HIDUSER_DisableGyroscope();
-                    g_explore_gyro = false;
+                    if(g_explore_accel) HIDUSER_DisableAccelerometer();
+                    g_explore_gyro=g_explore_accel=false;
                 }
             }
         }
         if (g_explore_gyro && (!pano_runtime_current() ||
                               pano_runtime_current()->is_pano)) {
-            angularRate gyro;
-            hidGyroRead(&gyro);
-            /* Verified raw counts = angular rate in dps times coefficient.
-             * Smooth and subtract stationary bias before integrating. */
-            pano_gyro_step(&g_explore_gyro_filter,
-                (float)gyro.y, (float)gyro.z,
-                g_explore_gyro_counts_per_dps, dt,
-                g_explore_gyro_inverted, &g_explore_pitch, &g_explore_yaw);
+            angularRate gyro;hidGyroRead(&gyro);
+            accelVector accel={0};
+            if(g_explore_accel) hidAccelRead(&accel);
+            float pitch_raw=0,yaw_raw=0;
+            if(pano_motion_project(&g_explore_motion,gyro.x,gyro.y,gyro.z,
+                    accel.x,accel.y,accel.z,&pitch_raw,&yaw_raw))
+                pano_gyro_step(&g_explore_gyro_filter,pitch_raw,yaw_raw,
+                    g_explore_gyro_counts_per_dps,dt,
+                    g_explore_gyro_inverted,&g_explore_pitch,&g_explore_yaw);
         }
     } else {
         float minimum = g_explore_mode == EXPLORE_TERRAIN ? 1.65f : 1.45f;
@@ -1338,7 +1356,7 @@ static void render_explore(void) {
     bool stereo = slider > .005f;
     if (gfxIs3D() != stereo) gfxSet3D(stereo);
     if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW)) return;
-    float fov = C3D_AngleFromDegrees(g_explore_mode == EXPLORE_STREET ? 55 : 40);
+    float fov = C3D_AngleFromDegrees(g_explore_mode == EXPLORE_STREET ? g_explore_fov : 40);
     float eye = stereo ? slider * .065f : 0;
     u64 frame_now=osGetTime();
     bool flying=g_explore_mode==EXPLORE_STREET && g_street_entering &&
