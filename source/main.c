@@ -94,6 +94,7 @@ typedef enum {
     SETTINGS_TAB_GPS,
     SETTINGS_TAB_EXPLORE,
     SETTINGS_TAB_TEXT,
+    SETTINGS_TAB_MORE,
     SETTINGS_TAB_COUNT
 } SettingsTab;
 
@@ -133,7 +134,13 @@ typedef enum {
     SETTINGS_HIT_TEXT_REGULAR,
     SETTINGS_HIT_TEXT_MEDIUM,
     SETTINGS_HIT_TEXT_BOLD,
-    SETTINGS_HIT_TEXT_CONTRAST
+    SETTINGS_HIT_TEXT_CONTRAST,
+    SETTINGS_HIT_TAB_MORE,
+    SETTINGS_HIT_MORE_ROW1,
+    SETTINGS_HIT_MORE_ROW2,
+    SETTINGS_HIT_MORE_ROW3,
+    SETTINGS_HIT_MORE_ROW4,
+    SETTINGS_HIT_MORE_PAGE
 } SettingsHitTarget;
 
 #define MAX_RECENTS 10
@@ -165,6 +172,8 @@ static void (*g_bottom_modal)(void);
 static u32 g_fps = 0;
 static u64 g_fps_last_ms = 0;
 static u32 g_fps_frames = 0;
+static EarthOptions g_earth_options;
+static unsigned g_more_page;
 static int g_prefetch_ring = 1;            // 0 disables prefetch
 static int g_prefetch_every_n_frames = 1;  // 1 = every frame, 2 = every other frame, etc.
 
@@ -310,8 +319,8 @@ static void set_status_message(const char* message) {
 }
 
 static int circle_pad_axis_to_pan(int axis) {
-    const int deadzone = 20;
-    const int max_speed = 10;
+    const int deadzone = (int)g_earth_options.dead_zone;
+    const int max_speed = 16;
 
     if (axis > -deadzone && axis < deadzone) {
         return 0;
@@ -323,7 +332,7 @@ static int circle_pad_axis_to_pan(int axis) {
         axis += deadzone;
     }
 
-    axis /= 10;
+    axis = (int)lrintf(axis/10.0f*earth_options_stick_scale(&g_earth_options));
     if (axis > max_speed) return max_speed;
     if (axis < -max_speed) return -max_speed;
     return axis;
@@ -663,6 +672,8 @@ int main(int argc, char* argv[]) {
 
     ensure_app_data_dir();
     street_fly_load();
+    earth_options_default(&g_earth_options);
+    earth_options_load(&g_earth_options,EARTH_OPTIONS_FILE);
     ui_access_load(UI_ACCESS_CFG);
     favorites_load();
     load_session();
@@ -906,7 +917,7 @@ void update_input(void) {
     
     // Pan controls with D-Pad (disable if GPS tracking)
     if (!map_state.gps_tracking) {
-        int pan_speed = 5;
+        int pan_speed = (int)(5*earth_options_stick_scale(&g_earth_options));
         u64 now_ms = osGetTime();
         bool allow_dpad_pan = (kDown & (KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT)) ||
                       (now_ms - g_last_dpad_pan_ms >= 60);
@@ -1117,7 +1128,7 @@ static void open_explore(ExploreMode mode) {
         g_explore_right = C2D_CreateScreenTarget(GFX_TOP, GFX_RIGHT);
     close_menu(NULL);
     if (mode == EXPLORE_STREET) {
-        g_explore_gyro_inverted = true;
+        g_explore_gyro_inverted = g_earth_options.gyro_invert!=0;
         g_explore_fov=55.0f;
         pano_motion_reset(&g_explore_motion);
     }
@@ -1223,8 +1234,8 @@ static void update_explore(void) {
         y = fmaxf(-1, fminf(1, y + !!(held & KEY_DUP) - !!(held & KEY_DDOWN)));
     }
     float turn = g_explore_mode == EXPLORE_GLOBE && g_explore_goal < 2 ? .72f : 1.7f;
-    g_explore_yaw += x * turn * dt;
-    g_explore_pitch += y * turn * dt;
+    g_explore_yaw += x * turn * dt * earth_options_stick_scale(&g_earth_options);
+    g_explore_pitch += y * turn * dt * earth_options_stick_scale(&g_earth_options);
     if (g_explore_mode == EXPLORE_STREET) {
         const PanoLiveImage *active_photo = pano_runtime_current();
         if (active_photo && !active_photo->is_pano) {
