@@ -53,6 +53,10 @@ static struct {
 } state;
 /* Bounded in-session RAM history for Panoramax; no Google image caching. */
 static StreetRecent recent;
+/* StreetGuess runs all requests serially. Retain one curl handle between
+ * candidate attempts to reuse the HTTPS connection and avoid a new TLS
+ * handshake every time a road position has no Google coverage. */
+static void *game_http_handle;
 /* Keep normal Maps' last street-coverage markers intact across a game. */
 static struct {
     bool valid;
@@ -494,7 +498,12 @@ static bool search_provider(void *curl, StreetProvider src,
 static void worker(void *unused) {
     (void)unused;
     state.outcome=NETWORK_ERROR;
-    void *curl=network_alloc_tile_curl();
+    void *curl=state.game_google_override?
+                 game_http_handle:network_alloc_tile_curl();
+    if(state.game_google_override && !curl){
+        curl=network_alloc_tile_curl();
+        game_http_handle=curl;
+    }
     if (!curl) goto end;
     curl_easy_setopt((CURL*)curl, CURLOPT_TIMEOUT, 6L);
     curl_easy_setopt((CURL*)curl, CURLOPT_CONNECTTIMEOUT, 3L);
@@ -502,8 +511,9 @@ static void worker(void *unused) {
     curl_easy_setopt((CURL*)curl, CURLOPT_REDIR_PROTOCOLS, (long)CURLPROTO_HTTPS);
     if (state.job==JOB_SEARCH) {
         char token[256]={0};
-        bool has_token=mapillary_token(token);
         StreetProvider selected=state.game_google_override ? STREET_PROVIDER_GOOGLE : state.pref;
+        bool has_token=(selected==STREET_PROVIDER_AUTO ||
+                         selected==STREET_PROVIDER_MAPILLARY)&&mapillary_token(token);
         StreetProvider order[3];
         unsigned count=0;
         state.search_network_error=false;
@@ -613,7 +623,8 @@ static void worker(void *unused) {
         else decode_candidate(curl,&state.selected,false);
         state.upgrade_pending=false;
     }
-    network_free_tile_curl(curl);
+    if(!state.game_google_override)
+        network_free_tile_curl(curl);
 end:
     atomic_store(&state.done,true);
 }
@@ -683,6 +694,10 @@ bool pano_runtime_start_game_google(double lat,double lon) {
 /* Return to the exact original panorama when metadata still resolves it. */
 void pano_runtime_end_game_google(void) {
     pano_runtime_stop();
+    if(game_http_handle){
+        network_free_tile_curl(game_http_handle);
+        game_http_handle=NULL;
+    }
     if (game_coverage_backup.valid) {
         state.coverage_count=game_coverage_backup.count;
         state.search_lat=game_coverage_backup.lat;
