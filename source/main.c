@@ -3873,7 +3873,17 @@ static void open_address_search(void) {
             }
         }
         if(count<=0){
-            set_status_message(near?"No results. Try a broader city or ZIP":"No results for this search");
+            if(near && !network_get_proxy_enabled()){
+                /* One automatic worldwide fallback after a genuine empty
+                 * local result. The global geocoder gate prevents hammering
+                 * the public service and the query is never repeated as
+                 * the user types. */
+                near=false;
+                selected=-2;
+                set_status_message("No nearby match; searching worldwide");
+                continue;
+            }
+            set_status_message("No matches; try a city, ZIP or shorter address");
             return;
         }
         place_allow_worldwide=near&&!network_get_proxy_enabled();
