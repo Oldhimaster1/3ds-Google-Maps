@@ -1518,11 +1518,11 @@ static void render_explore(void) {
             live && !live->is_pano ? "Flat photo  (gyro only for 360)" :
             g_explore_gyro && !g_explore_gyro_filter.ready ? "Gyro: HOLD STILL to calibrate" :
             g_explore_gyro ? "X Gyro ON  Select Recenter" : "X Gyro OFF  Select Recenter");
-        draw_ui_text(12,205,.31f,.31f,dim,0,
-            g_explore_gyro_inverted ? "Select Reverse gyro: ON" :
-                                      "Select Reverse gyro: OFF");
+        char zoomlabel[80];
+        snprintf(zoomlabel,sizeof(zoomlabel),"D-Up/Down Zoom  (%d deg)",(int)g_explore_fov);
+        draw_ui_text(12,205,.39f,.39f,white,0,zoomlabel);
         draw_ui_text(12,224,.33f,.33f,dim,0,
-            "L/R Move   Down Retry   A Map   B Back");
+            "L/R Move   L+Down Retry   A Map   B Back");
     } else draw_ui_text(14, 196, .44f, .44f, dim, 0, "A  Open map     B  Back");
     if (g_debug_overlay) {
         char fps[24];
