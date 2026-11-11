@@ -1,0 +1,63 @@
+ca_bundle.bin
+canyon_dem.bin
+canyon_rgb.bin
+earth_rgb.bin
+explore.v.pica
+Assembler messages:
+{standard input}: Warning: end of file in comment; newline inserted
+building_mesh.c
+building_runtime.c
+detail_mesh.c
+detail_plan.c
+detail_runtime.c
+earth_options.c
+explore.c
+geo_formats.c
+globe_detail.c
+gps.c
+gps_motion.c
+gps_pairing.c
+gps_server.c
+guess_challenge.c
+guess_core.c
+guess_locations.c
+guess_replay.c
+guess_roads.c
+guess_ui.c
+input_remap.c
+logging.c
+main.c
+map_tiles.c
+network.c
+pano_detail.c
+pano_gyro.c
+pano_motion.c
+pano_runtime.c
+panorama_live.c
+qrcode.c
+region.c
+route_follow.c
+simple_png.c
+stb_image.c
+street_fly_logic.c
+street_heading.c
+street_image.c
+street_look_input.c
+street_nav.c
+street_recent.c
+street_sources.c
+terrain_math.c
+terrain_runtime.c
+tilepack.c
+ui_accessibility.c
+linking 3ds_google_maps.elf
+/workspace/scratch/30680328fb29/toolchain/opt/devkitpro/devkitARM/arm-none-eabi/bin/ld: warning: /workspace/scratch/30680328fb29/toolchain/opt/devkitpro/devkitARM/bin/../lib/gcc/arm-none-eabi/16.1.0/armv6k/fpu/crtn.o: missing .note.GNU-stack section implies executable stack
+/workspace/scratch/30680328fb29/toolchain/opt/devkitpro/devkitARM/arm-none-eabi/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+built ... 3ds_google_maps.3dsx
+"/tmp/maps-tools/bannertool-1.2.3-linux/bannertool" makesmdh -s "3DS Maps 2.2 RC3" -l "Maps and StreetGuess - 2.2.0 RC3" -p "Oldhimaster1" -i icon.png -r regionfree -f visible -o "build/cia-icon.bin"
+[INFO] Created SMDH "build/cia-icon.bin".
+"/tmp/maps-tools/bannertool-1.2.3-linux/bannertool" makebanner -i banner.png -a banner.wav -o "build/cia-banner.bin"
+[INFO] Created banner "build/cia-banner.bin".
+"/tmp/maps-tools/makerom" -f ncch -target t -rsf tools/cia.rsf -elf "3ds_google_maps.elf" -icon "build/cia-icon.bin" -banner "build/cia-banner.bin" -o "build/3ds_google_maps.cxi"
+"/tmp/maps-tools/makerom" -f cia -target t -content "build/3ds_google_maps.cxi:0:0" -major 2 -minor 2 -micro 0 -o "build/3ds_google_maps.cia"
+mv "build/3ds_google_maps.cia" "3ds_google_maps.cia"

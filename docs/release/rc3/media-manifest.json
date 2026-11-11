@@ -1,0 +1,74 @@
+[
+  {
+    "path": "docs/media/rc3/hero.gif",
+    "bytes": 973648,
+    "sha256": "638e27132772c310d5c9543eb09148b503747bee447f1a82a9f18686ce343f52",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 320,
+          "height": 384,
+          "r_frame_rate": "10/1"
+        }
+      ],
+      "format": {
+        "duration": "8.000000"
+      }
+    }
+  },
+  {
+    "path": "docs/media/rc3/map-cached.png",
+    "bytes": 249955,
+    "sha256": "8e63637fb4a7e7ee948bb0ddafbb97165170bdbcf803c9d2eb0167eed962209c"
+  },
+  {
+    "path": "docs/media/rc3/globe.png",
+    "bytes": 43719,
+    "sha256": "cffbe2b48ac23e9d9aa667459cbdd7fbd5b9286412a68e0602d6f2123d928c0b"
+  },
+  {
+    "path": "docs/media/rc3/challenges.png",
+    "bytes": 28094,
+    "sha256": "0ab0e2a41810856d10745c1cd8a6a77a68dd2b6cc57f091d2e2e53d6b03cad62"
+  },
+  {
+    "path": "docs/media/rc3/teaser.mp4",
+    "bytes": 975268,
+    "sha256": "90c1c6c0fbf4dc23a90ccda798f2c6c28f84bcf064f33cf66b042eb29da1a134",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 1280,
+          "height": 720,
+          "r_frame_rate": "30/1"
+        }
+      ],
+      "format": {
+        "duration": "27.966667"
+      }
+    }
+  },
+  {
+    "path": "docs/media/rc3/review-walkthrough.mp4",
+    "bytes": 1606662,
+    "sha256": "0311688c7bc0a77feaad10c17e7a8dc2bde461d075f391f2a98b927dd9306360",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 1280,
+          "height": 720,
+          "r_frame_rate": "30/1"
+        }
+      ],
+      "format": {
+        "duration": "62.000000"
+      }
+    }
+  }
+]

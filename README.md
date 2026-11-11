@@ -1,16 +1,18 @@
 # Maps for Nintendo 3DS
 
-![Maps moving on a Nintendo 3DS emulator](docs/media/rc1-archive-hero.gif)
+![RC3 globe rotating in Azahar](docs/media/rc3/hero.gif)
 
 **Explore the world. Find the place. Pass the console.**
 
-**2.2.0 RC3 — ready to try, still awaiting testing on a real 3DS.**
-The GIF above and the [25-second teaser](docs/media/rc1-archive-teaser.mp4?raw=true)
-use **archived Azahar footage of the older map build**. They do not demonstrate
-this candidate's new Street View, globe or game features. Fresh RC3 captures are being prepared.
+**2.2.0 RC3 — development preview, awaiting testing on a real 3DS.**
+The globe above is fresh RC3 footage. Take a look at the
+[28-second teaser](docs/media/rc3/teaser.mp4?raw=true) or the
+[62-second review walkthrough](docs/media/rc3/review-walkthrough.mp4?raw=true).
+Both show Azahar captures: cached maps, the globe and game menus. Online Street
+View and playable challenge footage are still missing.
 
 [Download candidate CIA][rc-cia] · [Download candidate 3DSX][rc-3dsx] ·
-[Checksums][rc-sums] · [20-requirement verification report](docs/release/rc1/acceptance.md) ·
+[Checksums][rc-sums] · [RC3 test results](docs/release/rc3/verification.md) ·
 [Stable v2.0 fallback][stable]
 
 ## What is in this candidate?
@@ -106,24 +108,24 @@ restarting the server or reloading a tab that has lost its pairing token. Do not
 include the pairing QR, private coordinates or addresses in shared screenshots.
 [Security and provider review](docs/release/rc1/provider-review.md)
 
-## Screenshot gallery and video
+## A look around
 
-These are **archived Azahar captures of the older map preview**, using USGS maps
-and USDA/USGS imagery through a controlled endpoint. They are not RC1 acceptance
-screenshots and do not establish original-3DS performance.
+These are fresh captures of the uploaded RC3 build running in Azahar.
+The map uses tiles already cached on the virtual SD; the globe uses its bundled
+Blue Marble texture. Emulator footage does not establish real-console performance.
 
-| Maps | Routing | Offline regions |
+| Cached maps | World globe | StreetGuess menu |
 | --- | --- | --- |
-| ![Archived Manhattan map](docs/media/lower-manhattan.png) | ![Archived route](docs/media/manhattan-route.png) | ![Archived completed pack](docs/media/offline-complete.png) |
+| ![RC3 cached satellite map](docs/media/rc3/map-cached.png) | ![RC3 world globe](docs/media/rc3/globe.png) | ![RC3 challenge menu](docs/media/rc3/challenges.png) |
 
-[Archived 45-second introduction](docs/media/maps-for-nintendo-3ds-intro.mp4?raw=true) ·
-[New 25-second archive teaser](docs/media/rc1-archive-teaser.mp4?raw=true) ·
-[Offline GIF](docs/media/rc1-offline-archive.gif) · [Route GIF](docs/media/rc1-route-archive.gif)
+[Watch the teaser](docs/media/rc3/teaser.mp4?raw=true) ·
+[Watch the review walkthrough](docs/media/rc3/review-walkthrough.mp4?raw=true) ·
+[Recording notes and remaining shots](docs/release/rc3/media.md)
 
-A complete 2–4-minute RC3 demonstration, physical-console shots and screenshots of
-Street View/detail, globe, terrain/buildings, daily games and custom settings are
-**not available yet**. The [media evidence and shot list](docs/release/rc1/media.md)
-lists the remaining shots. See the [RC3 recording notes](docs/release/rc3/media.md) for current captures.
+The full gameplay demonstration still needs Street View, panorama detail,
+terrain/buildings and completed StreetGuess rounds. Those scenes could not be
+recorded successfully here. The [older 45-second map introduction](docs/media/maps-for-nintendo-3ds-intro.mp4?raw=true)
+is also available, clearly separate from the RC3 captures.
 
 ## Compatibility and troubleshooting
 
@@ -150,7 +152,7 @@ has not been used as evidence for this candidate.
 Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
 NASA GIBS / Blue Marble; Mapzen elevation and source datasets; Panoramax image
 creators and license links are listed in the immutable
-[challenge manifest](docs/datasets/streetguess-v1.json). Optional providers retain
+[challenge manifest](docs/datasets/streetguess-v2.json). Optional providers retain
 their own access terms. Google and Microsoft integrations have unresolved
 production-permission gates. This project is not affiliated with Nintendo,
 Google, NASA or the imagery providers.

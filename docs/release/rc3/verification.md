@@ -19,8 +19,8 @@ the same rounds. Missing images offer retry without consuming a round.
 
 | Check | Result |
 | --- | --- |
-| Full host gate | Recovered `/tmp/rc3-host.log`: every suite passed, including UI motion and Country Streak. |
-| Clean build | Recovered `/tmp/rc3-build.log`: all application sources compiled and CIA/3DSX packaged. Existing assembler EOF and GNU-stack warnings remain. |
+| Full host gate | [Recovered full gate](host-tests.txt): every suite passed, including UI motion and Country Streak. |
+| Clean build | [Recovered clean build](build.txt): all application sources compiled and CIA/3DSX packaged. Existing assembler EOF and GNU-stack warnings remain. |
 | Source/package match | Local built 3DSX equals the uploaded RC3 3DSX; SOURCE_COMMIT records the exact source revision. |
 | Public downloads | Both commit-pinned raw downloads fetched without credentials and matched SHA256SUMS after recovery. |
 | RC2 preservation | No RC2 paths changed between the previous source and RC3 package commit. |
@@ -36,3 +36,8 @@ Checksums:
 ```
 
 No stable release, stable tag, main merge or announcement is authorized.
+
+The focused UI/game regression was rerun after recovery and passed with
+`ASAN_OPTIONS=detect_leaks=0` because this container cannot run LeakSanitizer
+under ptrace. AddressSanitizer and UBSan remained enabled. See
+[country-streak-recheck.txt](country-streak-recheck.txt).
