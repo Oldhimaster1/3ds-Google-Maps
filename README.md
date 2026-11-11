@@ -4,10 +4,10 @@
 
 **Explore the world. Find the place. Pass the console.**
 
-**2.2.0 RC1 — experimental release candidate. Physical-console validation is pending.**
+**2.2.0 RC3 — ready to try, still awaiting testing on a real 3DS.**
 The GIF above and the [25-second teaser](docs/media/rc1-archive-teaser.mp4?raw=true)
 use **archived Azahar footage of the older map build**. They do not demonstrate
-this candidate's new Street View, globe or game features.
+this candidate's new Street View, globe or game features. Fresh RC3 captures are being prepared.
 
 [Download candidate CIA][rc-cia] · [Download candidate 3DSX][rc-3dsx] ·
 [Checksums][rc-sums] · [20-requirement verification report](docs/release/rc1/acceptance.md) ·
@@ -15,26 +15,29 @@ this candidate's new Street View, globe or game features.
 
 ## What is in this candidate?
 
-The starting implementation is preserved: live maps, offline regions, search,
-phone GPS, route progress, globe, terrain, buildings and Street View. This branch
-adds tested challenge logic, integration fixes and security hardening. A passing
-host test does not establish console graphics, service access or performance.
+Browse maps, save places for offline use, connect your phone for GPS, or take a
+detour into Street View and StreetGuess. RC3 brings **32 curated locations across
+21 countries**, Mystery Expeditions, daily and friend challenges, pass and play,
+and Country Streak records that stay saved when you restart.
+
+This is a development preview for review. The automated checks and clean build
+have passed; Wi-Fi, gyro feel and performance still need testing on real hardware.
 
 | Experience | Included behavior | Important limit |
 | --- | --- | --- |
 | Maps and offline regions | Pan, search, favorites, named packs, pause/resume and integrity checks | Download only from sources permitting offline use. |
-| Street View | Existing multi-provider explorer, gyro controls, navigation and fly-in | Physical gyro/navigation unverified; Google/Bing remain experimental. |
-| Panorama detail | Existing view-selected Google zoom 2–4 curved detail overlay | **One central tile**, with low-resolution fallback; provider authorization unresolved. |
+| Street View | Multi-provider explorer, gyro controls, navigation and fly-in | Physical gyro/navigation unverified; Google/Bing remain experimental. |
+| Panorama detail | View-selected Google zoom 2–4 curved detail overlay | **One central tile**, with low-resolution fallback; provider authorization unresolved. |
 | Globe | Rotatable Blue Marble globe with on-demand NASA GIBS detail and optional stereo | Historical composite, **not real-time satellite photography**; one detail patch. |
 | Terrain and buildings | Selected-location Terrarium elevation; optional real OSM building footprints | Single terrain tile; simple buildings only; no fabricated fallback structures. |
 | Classic StreetGuess | World / US / Europe; Moving / No Move / NMPZ; timers and records | Google-only random mode depends on experimental access and coverage. |
-| Daily and friend challenges | Exact versioned locations, five rounds, three difficulties, UTC records/history | Starter set: **eight panoramas, seven French cities plus New York**. Correct console UTC clock required. |
+| Daily and friend challenges | Exact versioned locations, five rounds, three difficulties, UTC records/history | **32 locations in 21 countries**, still Europe-heavy. Correct console UTC clock required. |
 | Pass and play | Two to four players, identical rounds, handoff screens and final scores | Local trust-based play; no accounts or online leaderboard. |
-| Discovery modes | Surprise Me, a repeatable city expedition and starter Country Streak | France/US starter content; a full mystery-landmark collection remains unfinished. |
-| Custom controls | Four profiles, eleven digital buttons, conflict-free swaps and saved settings | START is fixed; some legacy control captions still need conversion. |
+| Discovery modes | Surprise Me, five-stop Mystery Expeditions and Country Streak with saved personal bests | Curated locations, not an unlimited worldwide library. Streaks continue beyond five answers. |
+| Custom controls | Four profiles, eleven digital buttons, conflict-free swaps and saved settings | START is fixed. StreetGuess captions follow your selected bindings; some older screens retain default captions. |
 | Routing | Route overlay, remaining distance, estimated ETA and off-route reroute logic | No verified full turn-by-turn guidance. |
 
-[Full candidate changes and limitations](docs/release/rc1/release-notes.md)
+[RC3 changes and test results](docs/release/rc3/verification.md)
 
 ## Install the candidate
 
@@ -46,11 +49,11 @@ The previous public releases and existing preview files have not been replaced.
 Install → Scan QR Code, or copy the [candidate CIA][rc-cia] to the SD card and
 install it with FBI. The QR below targets the exact commit-pinned candidate file.
 
-![FBI QR for the release candidate](preview-builds/rc1/fbi-rc1.png)
+![FBI QR for the release candidate](preview-builds/rc3/fbi-rc3.png)
 
 **Homebrew Launcher:** copy the [candidate 3DSX][rc-3dsx] to
 `sdmc:/3ds/3ds_google_maps/3ds_google_maps.3dsx` and launch it from Homebrew Launcher.
-These instructions are not evidence of a successful physical FBI installation.
+The QR has been decoded and the download checked. Scanning and installing with FBI on a real console still need testing.
 
 ## Play together
 
@@ -117,17 +120,18 @@ screenshots and do not establish original-3DS performance.
 [New 25-second archive teaser](docs/media/rc1-archive-teaser.mp4?raw=true) ·
 [Offline GIF](docs/media/rc1-offline-archive.gif) · [Route GIF](docs/media/rc1-route-archive.gif)
 
-A complete 2–4-minute RC1 demonstration, physical-console shots and screenshots of
+A complete 2–4-minute RC3 demonstration, physical-console shots and screenshots of
 Street View/detail, globe, terrain/buildings, daily games and custom settings are
 **not available yet**. The [media evidence and shot list](docs/release/rc1/media.md)
-records what can be shown truthfully and what still needs recording.
+lists the remaining shots. See the [RC3 recording notes](docs/release/rc3/media.md) for current captures.
 
 ## Compatibility and troubleshooting
 
 Original 3DS is the intended baseline; New 3DS/XL is also targeted. Both use the
-same candidate source. Neither console has completed RC1 hardware acceptance.
-Azahar RC1 execution is also unverified; archived emulator results belong to the
-older preview only.
+same candidate source. Testing on both physical console models is still pending. RC3 launches in
+Azahar and renders cached map imagery and the globe. Direct hostname lookup
+fails in this recording environment, so online imagery and gameplay are not yet
+fully verified there. Archived clips above belong to the older preview.
 
 - **No online imagery:** check Wi-Fi and console date, try another permitted provider, and read its status. HTTPS now fails on invalid certificates instead of bypassing verification.
 - **Challenge unavailable:** retry later. Keep the same dataset and code; do not replace a missing round manually.
@@ -140,8 +144,8 @@ older preview only.
 
 Start with `sh tests/run-feature-integration-host.sh`; run the full checkout gate
 with `sh tests/run-all-host.sh`. See [build instructions](docs/usage.md#build-from-source)
-and [candidate validation](docs/release/rc1/acceptance.md). CI now tests and builds
-both packages, and uploads candidate artifacts without automatically publishing.
+and [candidate validation](docs/release/rc1/acceptance.md). The local devkitARM build produced matching CIA and 3DSX packages. GitHub Actions
+has not been used as evidence for this candidate.
 
 Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
 NASA GIBS / Blue Marble; Mapzen elevation and source datasets; Panoramax image
@@ -152,9 +156,9 @@ production-permission gates. This project is not affiliated with Nintendo,
 Google, NASA or the imagery providers.
 
 [Third-party licenses](THIRD_PARTY_LICENSES.md) · [MIT source license](LICENSE) ·
-[Provider review](docs/release/rc1/provider-review.md) · [Release notes](docs/release/rc1/release-notes.md)
+[Provider review](docs/release/rc1/provider-review.md) · [RC3 verification](docs/release/rc3/verification.md)
 
 [stable]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.0/3ds_google_maps.3dsx
-[rc-cia]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/release-candidate-production-20261111/preview-builds/rc1/3ds_google_maps.cia
-[rc-3dsx]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/release-candidate-production-20261111/preview-builds/rc1/3ds_google_maps.3dsx
-[rc-sums]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/release-candidate-production-20261111/preview-builds/rc1/SHA256SUMS
+[rc-cia]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/3ds_google_maps.cia
+[rc-3dsx]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/3ds_google_maps.3dsx
+[rc-sums]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/SHA256SUMS
