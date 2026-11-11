@@ -1,13 +1,15 @@
 #include "explore.h"
+#include "terrain_math.h"
 #include "explore_shbin.h"
 #include "earth_rgb_bin.h"
-#include "canyon_rgb_bin.h"
-#include "canyon_dem_bin.h"
+/* The Canyon demo assets are no longer silently substituted for live terrain. */
 #include <math.h>
 #include <string.h>
 #include <zlib.h>
 
-const ExplorePlace explore_terrain_place = {"Grand Canyon, Arizona", 36.09, -112.13};
+/* Legacy symbol retained for callers; the live terrain origin is now the map
+ * position, not an unconditional Arizona fallback. */ 
+const ExplorePlace explore_terrain_place = {"Selected map location", 0, 0};
 
 typedef struct { float x, y, z, u, v; } Vertex;
 typedef struct { const u8 *data; u32 size; unsigned width, height; } Asset;
@@ -24,8 +26,12 @@ static bool load_texture(C3D_Tex *tex, Asset asset, bool wrap) {
     if (!C3D_TexInit(tex, asset.width, asset.height, GPU_RGB565)) return false;
     unsigned long length = asset.width * asset.height * 2;
     if (!asset.data) {
-        /* Real Street View starts as a tiny blank texture, never demo imagery. */
-        memset(tex->data, 0, length);
+        /* Street View is blank until its actual photo; live terrain uses a
+         * neutral shaded placeholder while waiting for elevation data. */
+        if(!wrap) {
+            u16 *pix=(u16*)tex->data;
+            for(unsigned i=0;i<length/2;i++)pix[i]=0x5B68;
+        } else memset(tex->data, 0, length);
     } else if (uncompress(tex->data, &length, asset.data, asset.size) != Z_OK ||
                length != asset.width * asset.height * 2) {
         C3D_TexDelete(tex);
@@ -40,11 +46,8 @@ static bool load_texture(C3D_Tex *tex, Asset asset, bool wrap) {
 static Vertex make_vertex(ExploreMode mode, unsigned x, unsigned y, unsigned rows) {
     float u = x / 64.0f, v = y / (float)rows;
     if (mode == EXPLORE_TERRAIN) {
-        unsigned sample = (y * 65 + x) * 2;
-        unsigned metres = canyon_dem_bin[sample] | (canyon_dem_bin[sample + 1] << 8);
-        /* Approximately 32 km across. Elevation is exaggerated 2.2x. */
-        return (Vertex){(u - .5f) * 2.0f, (metres - 1700.0f) * .0001375f,
-                        (v - .5f) * 1.81f, u, v};
+        /* Flat loading surface until the selected location's elevation arrives. */
+        return (Vertex){(u-.5f)*2.0f, 0, (v-.5f)*2.0f, u, v};
     }
     float lon = (u * 2 - 1) * (float)M_PI;
     float lat = (.5f - v) * (float)M_PI;
@@ -92,7 +95,7 @@ bool explore_load(ExploreMode mode, unsigned street_stop) {
     Asset asset;
     switch (mode) {
     case EXPLORE_GLOBE: asset = (Asset){earth_rgb_bin, earth_rgb_bin_size, 1024, 512}; break;
-    case EXPLORE_TERRAIN: asset = (Asset){canyon_rgb_bin, canyon_rgb_bin_size, 256, 256}; break;
+    case EXPLORE_TERRAIN: asset = (Asset){NULL, 0, 256, 256}; break;
     case EXPLORE_STREET:
         (void)street_stop;
         asset = (Asset){NULL, 0, 8, 8};
@@ -167,6 +170,64 @@ bool explore_load_street_pixels(const void *pixels, bool is_pano) {
     C3D_TexDelete(&texture);
     texture = next;
     if (street_flat == is_pano) rebuild_street_mesh(!is_pano);
+    return true;
+}
+
+/* Heightmap application is render-thread only. The download/decode worker
+ * never touches GPU allocations or the live scene. This function updates
+ * the existing 65x65 mesh and a bounded 256x256 color texture in place. */
+static unsigned terrain_swizzle(unsigned x,unsigned y) {
+    unsigned m=(x&1)|((y&1)<<1)|((x&2)<<1)|((y&2)<<2)|
+               ((x&4)<<2)|((y&4)<<3);
+    return ((y>>3)*32+(x>>3))*64+m;
+}
+static float terrain_height_at(const TerrainGrid *g,float x,float y){
+    x=fmaxf(0.f,fminf(32.f,x));y=fmaxf(0.f,fminf(32.f,y));
+    int ix=(int)x,iy=(int)y;
+    int nx=ix<32?ix+1:ix,ny=iy<32?iy+1:iy;
+    float fx=x-ix,fy=y-iy;
+    float h00=g->height[iy*33+ix],h10=g->height[iy*33+nx];
+    float h01=g->height[ny*33+ix],h11=g->height[ny*33+nx];
+    return (h00+(h10-h00)*fx)*(1.f-fy)+
+           (h01+(h11-h01)*fx)*fy;
+}
+bool explore_apply_terrain(const TerrainGrid *grid,float span_m,float exaggeration) {
+    if(loaded!=EXPLORE_TERRAIN||!vertices||!grid||!texture.data ||
+       !isfinite(span_m)||span_m<100||!isfinite(exaggeration)||
+       exaggeration<0||exaggeration>8)return false;
+    C3D_FrameSync();
+    float middle=(grid->min_height+grid->max_height)*.5f;
+    for(int y=0;y<=64;y++)for(int x=0;x<=64;x++){
+        unsigned idx=(unsigned)y*65+(unsigned)x;
+        float h=terrain_height_at(grid,x*.5f,y*.5f);
+        vertices[idx].y=(h-middle)*(2.f*exaggeration/span_m);
+    }
+    /* Compact elevation-derived texture: no unrelated Canyon imagery.
+     * The colors are illustrative height shading, not satellite imagery. */
+    u16 *pixels=(u16*)texture.data;
+    for(unsigned y=0;y<256;y++)for(unsigned x=0;x<256;x++){
+        float h=terrain_height_at(grid,x*(32.f/255),y*(32.f/255));
+        float dx=terrain_height_at(grid,fminf(32.f,x*(32.f/255)+.25f),
+                                 y*(32.f/255))-
+                 terrain_height_at(grid,fmaxf(0.f,x*(32.f/255)-.25f),
+                                 y*(32.f/255));
+        float dy=terrain_height_at(grid,x*(32.f/255),
+                                 fminf(32.f,y*(32.f/255)+.25f))-
+                 terrain_height_at(grid,x*(32.f/255),
+                                 fmaxf(0.f,y*(32.f/255)-.25f));
+        float shade=fmaxf(.57f,fminf(1.12f,.92f-(dx+dy)*.009f));
+        int r=66,g=124,b=64;
+        if(h<0){r=45;g=88;b=135;}
+        else if(h>3200){r=222;g=226;b=225;}
+        else if(h>1800){r=138;g=135;b=121;}
+        else if(h>700){r=153;g=135;b=96;}
+        r=(int)fminf(255,r*shade);
+        g=(int)fminf(255,g*shade);
+        b=(int)fminf(255,b*shade);
+        pixels[terrain_swizzle(x,y)]=(u16)(((r>>3)<<11)|((g>>2)<<5)|(b>>3));
+    }
+    GSPGPU_FlushDataCache(vertices,65*65*sizeof(*vertices));
+    C3D_TexFlush(&texture);
     return true;
 }
 
