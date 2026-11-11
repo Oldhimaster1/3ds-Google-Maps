@@ -11,6 +11,10 @@ int main(void){
     assert(tile_view_score(&v,123,900,10,0)==-1);
     assert(tile_view_score(&v,126,900,11,1)==-1);
     assert(tile_view_score(&v,123,902,11,0)==-1);
+    assert(tile_request_outranks(&v,124,900,11,0,125,901,11,0));
+    assert(!tile_request_outranks(&v,125,901,11,0,124,900,11,0));
+    assert(tile_request_outranks(&v,124,900,11,0,126,900,11,1));
+    assert(!tile_request_outranks(&v,126,900,11,1,124,900,11,0));
     v.gps_follow=0;
     assert(tile_view_score(&v,126,900,11,1)>=100);
     assert(tile_view_score(&v,126,900,11,0)==-1);
