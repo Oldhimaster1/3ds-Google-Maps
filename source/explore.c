@@ -28,6 +28,7 @@ static u16 *building_indices;
 static unsigned building_index_count;
 static C3D_Tex building_texture;
 static bool building_texture_ready;
+static float terrain_focus_x,terrain_focus_z;
 static ExploreMode loaded;
 
 static bool load_texture(C3D_Tex *tex, Asset asset, bool wrap) {
@@ -157,6 +158,7 @@ bool explore_load(ExploreMode mode, unsigned street_stop) {
     indices = order;
     index_count = count;
     loaded = mode;
+    terrain_focus_x=terrain_focus_z=0;
     street_flat = false;
     return true;
 }
@@ -199,15 +201,21 @@ static float terrain_height_at(const TerrainGrid *g,float x,float y){
     return (h00+(h10-h00)*fx)*(1.f-fy)+
            (h01+(h11-h01)*fx)*fy;
 }
-bool explore_apply_terrain(const TerrainGrid *grid,float span_m,float exaggeration) {
+bool explore_apply_terrain(const TerrainGrid *grid,float span_m,float exaggeration,
+                           float focus_x,float focus_z) {
     if(loaded!=EXPLORE_TERRAIN||!vertices||!grid||!texture.data ||
        !isfinite(span_m)||span_m<100||!isfinite(exaggeration)||
-       exaggeration<0||exaggeration>8)return false;
+       exaggeration<0||exaggeration>8||!isfinite(focus_x)||!isfinite(focus_z)||
+       fabsf(focus_x)>1.01f||fabsf(focus_z)>1.01f)return false;
     C3D_FrameSync();
+    terrain_focus_x=focus_x;
+    terrain_focus_z=focus_z;
     float middle=(grid->min_height+grid->max_height)*.5f;
     for(int y=0;y<=64;y++)for(int x=0;x<=64;x++){
         unsigned idx=(unsigned)y*65+(unsigned)x;
         float h=terrain_height_at(grid,x*.5f,y*.5f);
+        vertices[idx].x=((float)x/64.f-.5f)*2.f-terrain_focus_x;
+        vertices[idx].z=((float)y/64.f-.5f)*2.f-terrain_focus_z;
         vertices[idx].y=(h-middle)*(2.f*exaggeration/span_m);
     }
     /* Compact elevation-derived texture: no unrelated Canyon imagery.
@@ -253,6 +261,12 @@ bool explore_apply_buildings(const BuildingMesh *mesh){
         return false;
     }
     memcpy(next_vertices,mesh->verts,mesh->vertex_count*sizeof(BuildingMeshVertex));
+    /* Buildings and elevation share the same selected-point origin.
+     * Without this offset buildings drift from the ground as the tile moves. */
+    for(unsigned i=0;i<mesh->vertex_count;i++){
+        next_vertices[i].x-=terrain_focus_x;
+        next_vertices[i].z-=terrain_focus_z;
+    }
     memcpy(next_indices,mesh->indices,mesh->index_count*sizeof(u16));
     GSPGPU_FlushDataCache(next_vertices,mesh->vertex_count*sizeof(BuildingMeshVertex));
     GSPGPU_FlushDataCache(next_indices,mesh->index_count*sizeof(u16));
