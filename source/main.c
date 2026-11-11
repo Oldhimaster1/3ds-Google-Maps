@@ -1217,16 +1217,17 @@ static float explore_axis(int value) {
 static void update_explore(void) {
     if(g_explore_mode==EXPLORE_TERRAIN){
         TerrainGrid grid;
-        float span_m=0;
-        if(terrain_runtime_poll(&grid,&span_m)) {
+        float span_m=0,focus_x=0,focus_z=0;
+        if(terrain_runtime_poll(&grid,&span_m,&focus_x,&focus_z)) {
             g_terrain_live=explore_apply_terrain(&grid,span_m,
-                        earth_options_terrain_scale(&g_earth_options));
+                        earth_options_terrain_scale(&g_earth_options),
+                        focus_x,focus_z);
             set_status_message(g_terrain_live?"Live elevation loaded":
                                                "Could not apply elevation data");
             if(g_terrain_live && g_earth_options.buildings) {
                 int z=g_terrain_origin_zoom;
                 if(z<8)z=8;
-                if(z>12)z=12;
+                if(z>15)z=15;
                 building_runtime_start(g_terrain_origin_lat,g_terrain_origin_lon,
                                        &grid,span_m,z);
             }
