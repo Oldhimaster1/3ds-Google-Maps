@@ -2590,6 +2590,16 @@ static void render_bottom_panel(void) {
         else snprintf(line, sizeof(line), "Waiting for a tile timing sample");
     } else if (g_status_message[0] && (now_ms - g_status_message_ms) < 2200) {
         snprintf(line, sizeof(line), "Status: %.32s", g_status_message);
+    } else if (g_route_active && g_route_follow.matched) {
+        if(g_route_follow.off_route)
+            snprintf(line,sizeof(line),"Off route: checking GPS position");
+        else if(g_route_follow.duration_s>0)
+            snprintf(line,sizeof(line),"Route %.1f mi left, ETA %.0f min",
+                     g_route_follow.remaining_m/1609.344,
+                     g_route_follow.eta_s/60);
+        else
+            snprintf(line,sizeof(line),"Route %.1f mi left",
+                     g_route_follow.remaining_m/1609.344);
     } else if (gps_is_connected() || map_state.gps_tracking) {
         GpsFix fix;
         if (!gps_get_fix(&fix)) snprintf(line, sizeof(line), "Waiting for GPS fix");
@@ -2602,16 +2612,6 @@ static void render_bottom_panel(void) {
         else if (fix.accuracy_m >= 0)
             snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy %.0f m", fix.age_ms / 1000.0, fix.accuracy_m);
         else snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy unavailable", fix.age_ms / 1000.0);
-    } else if (g_route_active && g_route_follow.matched) {
-        if(g_route_follow.off_route)
-            snprintf(line,sizeof(line),"Off route: checking GPS position");
-        else if(g_route_follow.duration_s>0)
-            snprintf(line,sizeof(line),"Route %.1f mi left, ETA %.0f min",
-                     g_route_follow.remaining_m/1609.344,
-                     g_route_follow.eta_s/60);
-        else
-            snprintf(line,sizeof(line),"Route %.1f mi left",
-                     g_route_follow.remaining_m/1609.344);
     } else if (g_route_active) {
         snprintf(line, sizeof(line), "Route: %.34s", g_route_next_text[0] ? g_route_next_text : "Active");
     } else if (g_last_place_name[0]) {
