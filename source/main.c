@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include "map_tiles.h"
 #include "gps_follow_gate.h"
+#include "search_input.h"
 #include "network.h"
 #include "gps.h"
 #include "logging.h"
@@ -2672,7 +2673,18 @@ static void render_place_panel(void) {
             int y=57+(i-first)*43;
             C2D_DrawRectSolid(9,y,.20f,302,39,i==place_selection?
                 C2D_Color32(31,74,91,255):C2D_Color32(30,42,58,255));
-            draw_ui_fit_line(17,y+9,.45f,white,place_rows[i].name,282);
+            /* Keep the place and its city/region readable on separate
+             * lines. Unlike the old renderer, neither line is squeezed. */
+            const char *address=place_rows[i].name;
+            const char *comma=strchr(address,',');
+            if(comma && (size_t)(comma-address)<78 && comma[1]){
+                char first[96];
+                size_t cut=(size_t)(comma-address);
+                memcpy(first,address,cut);first[cut]=0;
+                while(*++comma==' ') {}
+                draw_ui_fit_line(17,y+3,.40f,white,first,282);
+                draw_ui_fit_line(17,y+21,.31f,dim,comma,282);
+            }else draw_ui_fit_line(17,y+10,.44f,white,address,282);
         }
     }
     C2D_DrawRectSolid(0, 194, .2f, 320, 46, C2D_Color32(23, 32, 45, 255));
@@ -3760,15 +3772,8 @@ static void open_address_search(void) {
 
     if (g_should_exit) return;
 
-    /* Keep the last query so changing one typo does not require retyping it. */
-    char *trimmed=query;
-    while (*trimmed==' '||*trimmed=='\t')trimmed++;
-    if (trimmed!=query)memmove(query,trimmed,strlen(trimmed)+1);
-    size_t trimmed_len=strlen(query);
-    while (trimmed_len && (query[trimmed_len-1]==' '||
-           query[trimmed_len-1]=='\t'||query[trimmed_len-1]=='\n'))
-        query[--trimmed_len]=0;
-    if (!query[0]) {
+    /* UTF-8-safe trimming keeps names intact; input stays editable. */
+    if (!search_trim_query(query)) {
         set_status_message("Type a place, address or coordinates");
         return;
     }
