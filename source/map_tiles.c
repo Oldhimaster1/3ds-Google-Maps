@@ -3,6 +3,7 @@
 #include "simple_png.h"
 #include "stb_image.h"
 #include "logging.h"
+#include "tile_priority.h"
 #include <citro2d.h>
 #include <3ds.h>
 #include <stdio.h>
@@ -129,6 +130,49 @@ static bool dl_thread_running;
 static u32 dl_generation;
 static TileTiming last_timing;
 static bool has_timing;
+static TileViewport live_view;
+static bool gps_follow_mode;
+/* Set by the map's main thread; no cross-thread mutable view state is read
+ * without the request queue lock. */
+void map_tiles_set_gps_follow(bool enabled) {
+    if(gps_follow_mode!=enabled){
+        gps_follow_mode=enabled;
+        live_view.valid=0;
+    }
+}
+static void reprioritize_live_requests(const TileViewport *view) {
+    if(!view||!view->valid)return;
+    LightLock_Lock(&dl_req_lock);
+    /* Workers have already dequeued their in-flight requests; do not touch
+     * those slots. Only cancel requests still sitting in the queue. */
+    DLRequest ordered[DL_QUEUE_SIZE];
+    int scores[DL_QUEUE_SIZE];
+    int count=0;
+    for(int i=dl_req_head;i<dl_req_tail;i++){
+        DLRequest r=dl_req_q[i&DL_QUEUE_MASK];
+        int score=tile_view_score(view,r.tile_x,r.tile_y,r.zoom,r.prefetch);
+        if(score<0 || r.generation!=dl_generation){
+            if(r.slot && r.slot->pending && r.generation==dl_generation &&
+               r.slot->tile_x==r.tile_x &&
+               r.slot->tile_y==r.tile_y && r.slot->zoom==r.zoom)
+                r.slot->pending=false;
+            continue;
+        }
+        int j=count;
+        while(j>0 && scores[j-1]>score){
+            ordered[j]=ordered[j-1];
+            scores[j]=scores[j-1];
+            j--;
+        }
+        ordered[j]=r;scores[j]=score;count++;
+    }
+    for(int i=0;i<count;i++)dl_req_q[i]=ordered[i];
+    dl_req_head=0;dl_req_tail=count;
+    live_view=*view;
+    if(count)LightEvent_Signal(&dl_work_event);
+    LightLock_Unlock(&dl_req_lock);
+}
+
 
 bool map_tiles_get_timing(TileTiming *timing) {
     if (has_timing && timing) *timing = last_timing;
@@ -284,6 +328,8 @@ bool map_tiles_init(void) {
     dl_req_head = dl_req_tail = 0;
     dl_res_head = dl_res_tail = 0;
     dl_thread_running = true;
+    memset(&live_view,0,sizeof(live_view));
+    gps_follow_mode=false;
     /* Two worker threads — if one is stuck on a slow HTTPS handshake the
      * other can still service queued requests. 128 KB stack each. */
     for (int i = 0; i < DL_NUM_THREADS; i++) {
@@ -435,6 +481,23 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
     int center_tile_x = center_x / TILE_SIZE;
     int center_tile_y = center_y / TILE_SIZE;
 
+    /* On every tile-boundary movement, discard obsolete QUEUED work and
+     * prioritize currently visible centre tiles. Existing HTTP transfers
+     * continue safely, preserving warm caches and connection reuse. */
+    TileViewport view={
+        .zoom=zoom,.world=1<<zoom,
+        .start_x=start_tile_x,.start_y=start_tile_y,
+        .tiles_x=tiles_x,.tiles_y=tiles_y,
+        .center_x=center_tile_x,.center_y=center_tile_y,
+        .gps_follow=gps_follow_mode,.valid=1
+    };
+    if(!live_view.valid || live_view.zoom!=view.zoom ||
+       live_view.start_x!=view.start_x || live_view.start_y!=view.start_y ||
+       live_view.tiles_x!=view.tiles_x || live_view.tiles_y!=view.tiles_y ||
+       live_view.center_x!=view.center_x || live_view.center_y!=view.center_y ||
+       live_view.gps_follow!=view.gps_follow)
+        reprioritize_live_requests(&view);
+
     /* Phase 1 — collect uncached visible tiles, sort by distance from the map
      * centre, then enqueue downloads centre-first so the tile under the
      * crosshair always enters the worker queue before edge/corner tiles. */
@@ -577,6 +640,7 @@ void map_tiles_view_changed(void) {
     LightLock_Lock(&dl_req_lock);
     dl_req_head = dl_req_tail;
     dl_generation++;
+    live_view.valid=0;
     LightLock_Unlock(&dl_req_lock);
     for (int i = 0; i < MAX_CACHED_TILES; i++) {
         tile_cache[i].pending = false;
