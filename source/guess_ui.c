@@ -381,9 +381,17 @@ void guess_ui_update(void){
 static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
     C2D_TargetClear(bottom,C2D_Color32(15,25,39,255));
     C2D_SceneBegin(bottom);
+    bool previous_coverage=map_tiles_get_coverage();
     map_tiles_set_coverage(false);
     map_tiles_render(ui.map_center.lat,ui.map_center.lon,ui.map_zoom,0,0,
                      320,GUESS_MAP_HEIGHT,false);
+    map_tiles_set_coverage(previous_coverage);
+    /* Always provide visible guidance even while online map tiles load. */
+    if(!result){
+        C2D_DrawRectSolid(0,0,.82f,320,27,C2D_Color32(10,23,39,224));
+        print(10,5,.40f,C2D_Color32(248,253,255,255),
+              ui.game.has_pin?"PIN SET - PRESS A OR GUESS":"TAP MAP TO PLACE YOUR PIN");
+    }
     if(ui.game.has_pin){
         float x,y;guess_map_project(ui.map_center,ui.game.pin,ui.map_zoom,320,GUESS_MAP_HEIGHT,&x,&y);
         if(x>=-20&&x<340&&y>=-20&&y<214){
@@ -401,7 +409,8 @@ static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
         C2D_DrawCircleSolid(x,y,1,4,C2D_Color32(238,67,79,255));
     }
     C2D_DrawRectSolid(0,194,1,320,46,C2D_Color32(15,30,46,255));
-    print(12,199,.31f,C2D_Color32(184,211,229,255),"X/Y map zoom  Touch pan/pin");
+    print(12,199,.38f,C2D_Color32(226,242,252,255),
+          ui.map_focused?"B close map   X/Y zoom":"A focus map   X/Y zoom");
     if(!result&&ui.game.rules==GUESS_MOVING&&ui.start_id[0])
         print(12,220,.35f,C2D_Color32(120,228,245,255),"RETURN TO START");
     if(result){
@@ -411,7 +420,8 @@ static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
         print(244,219,.39f,C2D_Color32(95,226,174,255),"NEXT A");
     }else{
         C2D_DrawRectSolid(194,218,1.1f,115,20,C2D_Color32(ui.game.has_pin?31:57,ui.game.has_pin?135:71,ui.game.has_pin?86:82,255));
-        print(207,220,.4f,C2D_Color32(255,255,255,255),ui.game.has_pin?"GUESS A":"PLACE PIN");
+        print(207,220,.40f,C2D_Color32(255,255,255,255),
+              ui.game.has_pin?"GUESS / A":"TAP TO PIN");
     }
 }
 void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
@@ -444,6 +454,12 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
             snprintf(time,sizeof(time),"%02u:%02u",left/60,left%60);
             print(341,224,.39f,left<11?C2D_Color32(255,104,99,255):fg,time);
         }
+        if(ui.game.phase==GUESS_PLAYING && ui.map_focused){
+            C2D_DrawRectSolid(18,67,.94f,364,67,C2D_Color32(5,15,25,216));
+            print(38,78,.52f,fg,"PLACE YOUR GUESS BELOW");
+            print(38,109,.42f,fg,ui.game.has_pin?
+                  "Pin ready: A to submit, B to look":"Tap map: place pin, B to look");
+        }
         if(ui.game.phase==GUESS_RESULT){
             C2D_DrawRectSolid(20,70,.94f,360,90,C2D_Color32(5,15,25,220));
             char line[85];snprintf(line,sizeof(line),"+%u points",ui.game.score[ui.game.round]);
@@ -470,14 +486,21 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
         }else if(ui.game.phase==GUESS_COMPLETE){
             char line[80];snprintf(line,sizeof(line),"FINAL SCORE: %u / 25000",ui.game.total);
             print(79,155,.59f,C2D_Color32(120,245,183,255),line);
-        }else print(79,159,.44f,sub,"Explore the world. Find where you are.");
+        }else if(ui.game.phase==GUESS_MENU && ui.tutorial_open){
+            print(57,143,.48f,fg,"1. Look at mystery Street View");
+            print(57,171,.48f,fg,"2. Tap the map to place a pin");
+            print(57,199,.48f,fg,"3. Press A to GUESS");
+        }else print(62,159,.44f,sub,"A play   Y help   B exit to Maps");
     }
     if(ui.game.phase==GUESS_PLAYING||ui.game.phase==GUESS_RESULT||
        (ui.game.phase==GUESS_PAUSED&&ui.game.resume==GUESS_PLAYING)){
         draw_guess_map(bottom,ui.game.phase==GUESS_RESULT);
         if(ui.game.phase==GUESS_PAUSED){
             C2D_SceneBegin(bottom);
-            C2D_DrawRectSolid(0,0,1.1f,320,240,C2D_Color32(4,10,19,190));
+            C2D_DrawRectSolid(0,0,.95f,320,240,C2D_Color32(4,10,19,210));
+            print(92,68,.72f,C2D_Color32(255,255,255,255),"GAME PAUSED");
+            print(43,111,.47f,C2D_Color32(245,250,254,255),"A  Resume round");
+            print(43,144,.47f,C2D_Color32(245,250,254,255),"B  Back to game menu");
         }
     }else{
         C2D_TargetClear(bottom,C2D_Color32(13,24,37,255));
@@ -485,7 +508,7 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
         char name[92];
         switch(ui.game.phase){
           case GUESS_MENU:
-            card(40,"PLAY STREETGUESS","A / tap to start five rounds");
+            card(40,"PLAY STREETGUESS","A to start  |  Y how to play");
             snprintf(name,sizeof(name),"Map: %s",region_names[ui.game.region]);
             card(83,name,"Tap to change region");
             snprintf(name,sizeof(name),"Rules: %s",rule_names[ui.game.rules]);
