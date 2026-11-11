@@ -425,7 +425,7 @@ static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
         C2D_DrawCircleSolid(x,y,1,7,C2D_Color32(255,255,255,255));
         C2D_DrawCircleSolid(x,y,1,4,C2D_Color32(238,67,79,255));
     }
-    C2D_DrawRectSolid(0,194,1,320,46,C2D_Color32(15,30,46,255));
+    C2D_DrawRectSolid(0,194,.70f,320,46,C2D_Color32(15,30,46,255));
     print(12,199,.38f,C2D_Color32(226,242,252,255),
           ui.map_focused?"B close map   X/Y zoom":"A focus map   X/Y zoom");
     if(!result&&ui.game.rules==GUESS_MOVING&&ui.start_id[0])
@@ -436,7 +436,7 @@ static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
         print(12,219,.43f,C2D_Color32(236,247,251,255),line);
         print(244,219,.39f,C2D_Color32(95,226,174,255),"NEXT A");
     }else{
-        C2D_DrawRectSolid(194,218,1.1f,115,20,C2D_Color32(ui.game.has_pin?31:57,ui.game.has_pin?135:71,ui.game.has_pin?86:82,255));
+        C2D_DrawRectSolid(194,218,.82f,115,20,C2D_Color32(ui.game.has_pin?31:57,ui.game.has_pin?135:71,ui.game.has_pin?86:82,255));
         print(207,220,.40f,C2D_Color32(255,255,255,255),
               ui.game.has_pin?"GUESS / A":"TAP TO PIN");
     }
