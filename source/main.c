@@ -2395,9 +2395,13 @@ static void render_settings_panel(void) {
         }
     }
 
-    draw_ui_text(160.0f, 222.0f, 0.32f, 0.32f, C2D_Color32f(0.66f, 0.76f, 0.86f, 1.0f), C2D_AlignCenter,
-                 g_settings_tab == SETTINGS_TAB_VIEW ? "SELECT: tile timings   B: close" :
-                 "Touch cards to change settings   B to close");
+    if(g_settings_tab==SETTINGS_TAB_GPS && gps_get_source_mode()==GPS_SOURCE_HTTPS_SERVER && gps_is_connected())
+        draw_ui_fit_line(12,222,.35f,C2D_Color32(193,215,230,255),
+                         "Scan TOP QR | Same WiFi | Allow phone location",296);
+    else
+        draw_ui_text(160.0f, 222.0f, 0.32f, 0.32f, C2D_Color32f(0.66f, 0.76f, 0.86f, 1.0f), C2D_AlignCenter,
+                     g_settings_tab == SETTINGS_TAB_VIEW ? "SELECT: tile timings   B: close" :
+                     "Touch cards to change settings   B to close");
 }
 
 static void render_bottom_panel(void) {
