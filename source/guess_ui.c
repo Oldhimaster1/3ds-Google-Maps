@@ -274,20 +274,27 @@ static void handle_map_touch(u32 keys,u32 held,touchPosition touch){
     }
 }
 static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
-    if(keys&(KEY_B|KEY_START)){
+    if(keys&KEY_START || ((keys&KEY_B)&&!ui.map_focused)){
         guess_toggle_pause(&ui.game,now);
         return;
     }
+    if(keys&KEY_B && ui.map_focused){ui.map_focused=false;return;}
     if(keys&KEY_A){
-        if(ui.game.has_pin){guess_submit(&ui.game);result_center();}
+        if(!ui.map_focused){
+            ui.map_focused=true;
+            snprintf(ui.note,sizeof(ui.note),"Tap map to place your pin");
+        }else if(ui.game.has_pin){guess_submit(&ui.game);result_center();}
+        else snprintf(ui.note,sizeof(ui.note),"Tap a location, then press A to guess");
         return;
     }
     if(keys&KEY_X&&ui.map_zoom<17)ui.map_zoom++;
     if(keys&KEY_Y&&ui.map_zoom>0)ui.map_zoom--;
     handle_map_touch(keys,held,touch);
     if(keys&KEY_TOUCH&&touch.py>=199){
-        if(touch.px>=175&&ui.game.has_pin){guess_submit(&ui.game);result_center();}
-        else if(touch.px<175){
+        if(touch.px>=175){
+            ui.map_focused=true;
+            if(ui.game.has_pin){guess_submit(&ui.game);result_center();}
+        } else if(touch.px<175){
             if(ui.game.rules==GUESS_MOVING&&ui.start_id[0])
                 pano_runtime_jump_game_google(ui.start_id,ui.game.start.lat,ui.game.start.lon);
             else ui.map_zoom=ui.map_zoom<17?ui.map_zoom+1:0;
@@ -331,7 +338,7 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
     }
     pano_runtime_poll();
     guess_tick(&ui.game,now);
-    if(ui.game.phase==GUESS_RESULT)result_center();
+    if(ui.game.phase==GUESS_RESULT){ui.map_focused=false;result_center();}
     ui.last_ms=now;
 }
 void guess_ui_update(void){
