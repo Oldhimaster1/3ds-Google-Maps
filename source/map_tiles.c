@@ -292,8 +292,14 @@ static void enqueue_tile_download(int tile_x, int tile_y, int zoom, CachedTile *
     LightLock_Lock(&dl_req_lock);
     if ((dl_req_tail - dl_req_head) < DL_QUEUE_SIZE - (prefetch ? 8 : 0)) {
         int pos = dl_req_tail;
-        while (!prefetch && pos > dl_req_head && dl_req_q[(pos - 1) & DL_QUEUE_MASK].prefetch) {
-            dl_req_q[pos & DL_QUEUE_MASK] = dl_req_q[(pos - 1) & DL_QUEUE_MASK];
+        while (!prefetch && pos > dl_req_head) {
+            DLRequest *previous=&dl_req_q[(pos-1)&DL_QUEUE_MASK];
+            if(!tile_request_outranks(&live_view,
+                    tile_x,tile_y,zoom,false,
+                    previous->tile_x,previous->tile_y,
+                    previous->zoom,previous->prefetch))
+                break;
+            dl_req_q[pos & DL_QUEUE_MASK] = *previous;
             pos--;
         }
         dl_req_q[pos & DL_QUEUE_MASK] = (DLRequest){
