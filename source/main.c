@@ -1217,7 +1217,7 @@ static void open_explore(ExploreMode mode) {
         mode == EXPLORE_TERRAIN ? .74f : 0;
     g_explore_distance = g_explore_goal = mode == EXPLORE_TERRAIN ? 3.6f : 3.9f;
     g_explore_last_ms = osGetTime();
-    if (mode == EXPLORE_TERRAIN)
+    if (mode == EXPLORE_TERRAIN || mode == EXPLORE_GLOBE)
         g_explore_right = C2D_CreateScreenTarget(GFX_TOP, GFX_RIGHT);
     close_menu(NULL);
     if (mode == EXPLORE_STREET) {
@@ -1644,7 +1644,8 @@ static void render_explore(void) {
         draw_ui_text(14, 76, .44f, .44f, white, 0, "Circle Pad / D-Pad  Rotate");
         draw_ui_text(14, 101, .44f, .44f, white, 0, "X / Y  Zoom in / out");
         draw_ui_text(14, 127, .40f, .40f, accent, 0,
-                     g_explore_mode == EXPLORE_GLOBE ? "Zoom in fully to enter the map" :
+                     g_explore_mode == EXPLORE_GLOBE ?
+                     (stereo ? "Globe stereo enabled" : "Zoom in fully to enter map") :
                      stereo ? "3D slider  Stereo active" : "Raise 3D slider on supported systems");
         if(g_explore_mode == EXPLORE_GLOBE){
             draw_ui_text(14,157,.34f,.34f,dim,0,"NASA GIBS / Blue Marble");
