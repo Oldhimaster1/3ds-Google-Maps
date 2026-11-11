@@ -22,6 +22,7 @@
 #include "street_look_input.h"
 #include "street_sources.h"
 #include "street_fly_logic.h"
+#include "ui_accessibility.h"
 #include "guess_ui.h"
 #include "street_nav.h"
 #include <jansson.h>
@@ -84,6 +85,7 @@ typedef enum {
     SETTINGS_TAB_DATA,
     SETTINGS_TAB_GPS,
     SETTINGS_TAB_EXPLORE,
+    SETTINGS_TAB_TEXT,
     SETTINGS_TAB_COUNT
 } SettingsTab;
 
@@ -115,7 +117,15 @@ typedef enum {
     SETTINGS_HIT_TERRAIN,
     SETTINGS_HIT_STREET_EXPLORER,
     SETTINGS_HIT_STREETGUESS,
-    SETTINGS_HIT_STREET_COVERAGE
+    SETTINGS_HIT_STREET_COVERAGE,
+    SETTINGS_HIT_TAB_TEXT,
+    SETTINGS_HIT_TEXT_NORMAL,
+    SETTINGS_HIT_TEXT_LARGE,
+    SETTINGS_HIT_TEXT_XL,
+    SETTINGS_HIT_TEXT_REGULAR,
+    SETTINGS_HIT_TEXT_MEDIUM,
+    SETTINGS_HIT_TEXT_BOLD,
+    SETTINGS_HIT_TEXT_CONTRAST
 } SettingsHitTarget;
 
 #define MAX_RECENTS 10
@@ -656,6 +666,7 @@ int main(int argc, char* argv[]) {
 
     ensure_app_data_dir();
     street_fly_load();
+    ui_access_load(UI_ACCESS_CFG);
     favorites_load();
     load_session();
     set_status_message("Ready");
@@ -1695,10 +1706,10 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
 
     static const SettingsHitTarget tabs[] = {
         SETTINGS_HIT_TAB_VIEW, SETTINGS_HIT_TAB_TILES, SETTINGS_HIT_TAB_DATA,
-        SETTINGS_HIT_TAB_GPS, SETTINGS_HIT_TAB_EXPLORE
+        SETTINGS_HIT_TAB_GPS, SETTINGS_HIT_TAB_EXPLORE, SETTINGS_HIT_TAB_TEXT
     };
     for (int i = 0; i < SETTINGS_TAB_COUNT; i++)
-        if (point_in_rect(touch->px, touch->py, 8 + i * 61, 50, 59, 24)) return tabs[i];
+        if (point_in_rect(touch->px, touch->py, 5 + i * 52, 50, 50, 24)) return tabs[i];
 
     switch (g_settings_tab) {
         case SETTINGS_TAB_VIEW:
@@ -1725,6 +1736,16 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
             if (point_in_rect(touch->px, touch->py, 12, 134, 296, 24)) return SETTINGS_HIT_STREET_EXPLORER;
             if (point_in_rect(touch->px, touch->py, 12, 161, 296, 24)) return SETTINGS_HIT_STREETGUESS;
             if (point_in_rect(touch->px, touch->py, 12, 225, 296, 15)) return SETTINGS_HIT_STREET_COVERAGE;
+            break;
+        case SETTINGS_TAB_TEXT:
+            if (point_in_rect(touch->px,touch->py,12,103,296,34))
+                return touch->px<110?SETTINGS_HIT_TEXT_NORMAL:
+                       touch->px<209?SETTINGS_HIT_TEXT_LARGE:SETTINGS_HIT_TEXT_XL;
+            if (point_in_rect(touch->px,touch->py,12,161,296,32))
+                return touch->px<110?SETTINGS_HIT_TEXT_REGULAR:
+                       touch->px<209?SETTINGS_HIT_TEXT_MEDIUM:SETTINGS_HIT_TEXT_BOLD;
+            if (point_in_rect(touch->px,touch->py,12,203,296,30))
+                return SETTINGS_HIT_TEXT_CONTRAST;
             break;
         case SETTINGS_TAB_GPS:
             /* [Client] / [Server] source mode buttons (same position as tile source) */
@@ -1764,6 +1785,28 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             break;
         case SETTINGS_HIT_TAB_EXPLORE:
             g_settings_tab = SETTINGS_TAB_EXPLORE;
+            break;
+        case SETTINGS_HIT_TAB_TEXT:
+            g_settings_tab = SETTINGS_TAB_TEXT;
+            break;
+        case SETTINGS_HIT_TEXT_NORMAL:
+        case SETTINGS_HIT_TEXT_LARGE:
+        case SETTINGS_HIT_TEXT_XL:
+            ui_access_set(hit-SETTINGS_HIT_TEXT_NORMAL,ui_access_get()->weight,
+                          ui_access_get()->high_contrast);
+            ui_access_save(UI_ACCESS_CFG);
+            break;
+        case SETTINGS_HIT_TEXT_REGULAR:
+        case SETTINGS_HIT_TEXT_MEDIUM:
+        case SETTINGS_HIT_TEXT_BOLD:
+            ui_access_set(ui_access_get()->size,hit-SETTINGS_HIT_TEXT_REGULAR,
+                          ui_access_get()->high_contrast);
+            ui_access_save(UI_ACCESS_CFG);
+            break;
+        case SETTINGS_HIT_TEXT_CONTRAST:
+            ui_access_set(ui_access_get()->size,ui_access_get()->weight,
+                          !ui_access_get()->high_contrast);
+            ui_access_save(UI_ACCESS_CFG);
             break;
         case SETTINGS_HIT_GLOBE:
             open_explore(EXPLORE_GLOBE);
