@@ -14,6 +14,7 @@ typedef struct {
     GuessPhase phase, resume;
     GuessRegion region;
     GuessRules rules;
+    unsigned sampler; /* 0 balanced, 1 urban, 2 rural, 3 broad */
     uint64_t rng, last_tick;
     uint32_t remaining_ms, time_limit_ms;
     unsigned round, attempt, history_size, history_pos;
