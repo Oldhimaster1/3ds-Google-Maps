@@ -72,17 +72,21 @@ static const char GPS_PAGE[] =
     "<div class='box'>Keep this page open in the foreground.<br>"
     "Screen can lock but the browser tab must stay active.</div>"
     "<script>\n"
-    "var n=0;\n"
+    "var n=0, busy=false, lastSend=0;\n"
     "function send(p){\n"
-    "  var la=p.coords.latitude,lo=p.coords.longitude,ac=p.coords.accuracy;\n"
-    "  n++;\n"
+    "  var now=Date.now(),la=p.coords.latitude,lo=p.coords.longitude,ac=p.coords.accuracy;\n"
+    "  if(busy || now-lastSend<1500)return;\n"
+    "  busy=true;lastSend=now;\n"
+    "  var status=document.getElementById('s');\n"
+    "  status.textContent='Sending GPS position to 3DS...';\n"
     "  fetch('/location',{method:'POST',\n"
     "    headers:{'Content-Type':'application/json'},\n"
-    "    body:JSON.stringify({lat:la,lon:lo,acc:ac})}).catch(function(){});\n"
-    "  document.getElementById('s').innerHTML=\n"
-    "    '<span class=\\'ok\\'>Fix #'+n+'</span><br>'\n"
-    "    +la.toFixed(6)+', '+lo.toFixed(6)\n"
-    "    +'<br><small>\\xb1'+Math.round(ac)+'m accuracy</small>';\n"
+    "    body:JSON.stringify({lat:la,lon:lo,acc:ac})})\n"
+    "   .then(function(r){if(!r.ok)throw Error('3DS returned HTTP '+r.status);\n"
+    "     n++;status.textContent='Fix #'+n+' delivered: '+la.toFixed(6)+', '+lo.toFixed(6)\n"
+    "       +' (accuracy '+Math.round(ac)+'m)';status.className='box ok';})\n"
+    "   .catch(function(e){status.textContent='GPS send failed: '+e.message;status.className='box err';})\n"
+    "   .then(function(){busy=false;});\n"
     "}\n"
     "function onerr(e){\n"
     "  document.getElementById('s').innerHTML=\n"
@@ -282,6 +286,7 @@ static void handle_client(mbedtls_ssl_context *ssl)
             body_len = atoi(cl_hdr);
         }
 
+        bool accepted=false;
         if (body_len > 0 && body_len < 256) {
             char body[257];
             if (read_exact(ssl, body, body_len)) {
@@ -290,34 +295,49 @@ static void handle_client(mbedtls_ssl_context *ssl)
                 if (parse_location_json(body, &lat, &lon, &accuracy)) {
                     gps_inject_fix_with_accuracy(lat, lon, accuracy);
                     s_fix_count++;
+                    accepted=true;
                 }
             }
         }
 
-        ssl_send_all(ssl,
+        static const char ok_response[] =
             "HTTP/1.1 204 No Content\r\n"
+            "Content-Length: 0\r\n"
             "Connection: close\r\n"
-            "\r\n", 38);
+            "\r\n";
+        static const char invalid_response[] =
+            "HTTP/1.1 400 Bad Request\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n"
+            "\r\n";
+        if (accepted)
+            ssl_send_all(ssl,ok_response,(int)sizeof(ok_response)-1);
+        else
+            ssl_send_all(ssl,invalid_response,(int)sizeof(invalid_response)-1);
         return;
     }
 
     /* --- CORS pre-flight (OPTIONS) --------------------------------------- */
     if (is_opt) {
-        ssl_send_all(ssl,
+        static const char options_response[] =
             "HTTP/1.1 204 No Content\r\n"
             "Access-Control-Allow-Origin: *\r\n"
             "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
             "Access-Control-Allow-Headers: Content-Type\r\n"
+            "Content-Length: 0\r\n"
             "Connection: close\r\n"
-            "\r\n", 130);
+            "\r\n";
+        ssl_send_all(ssl,options_response,(int)sizeof(options_response)-1);
         return;
     }
 
     /* --- Anything else → 404 -------------------------------------------- */
-    ssl_send_all(ssl,
+    static const char missing_response[] =
         "HTTP/1.1 404 Not Found\r\n"
+        "Content-Length: 0\r\n"
         "Connection: close\r\n"
-        "\r\n", 40);
+        "\r\n";
+    ssl_send_all(ssl,missing_response,(int)sizeof(missing_response)-1);
 }
 
 /* =========================================================================
