@@ -46,6 +46,7 @@ typedef struct {
     char last_view_id[48];
     uint64_t road_rng;
     unsigned best[GUESS_MAP_COUNT][GUESS_RULE_COUNT], games;
+    unsigned country_best[3];
     C2D_TextBuf text;
     bool record_screen, challenge_menu, handoff, history_screen;
     unsigned mode, difficulty, players, player;
@@ -137,22 +138,27 @@ static void card(float y,const char *heading,const char *detail){
 static void load_records(void){
     FILE *f=fopen(GUESS_SAVES,"r");
     if(!f)return;
-    unsigned version=0,games=0,values[GUESS_MAP_COUNT][GUESS_RULE_COUNT]={0};
-    bool ok=fscanf(f,"%u %u",&version,&games)==2&&version==1;
+    unsigned version=0,games=0,values[GUESS_MAP_COUNT][GUESS_RULE_COUNT]={0},country[3]={0};
+    bool ok=fscanf(f,"%u %u",&version,&games)==2&&(version==1||version==2);
     for(int i=0;i<GUESS_MAP_COUNT;i++)for(int j=0;j<GUESS_RULE_COUNT;j++){
         if(ok && fscanf(f,"%u",&values[i][j])!=1)ok=false;
         if(values[i][j]>25000)ok=false;
     }
+    if(ok&&version==2)for(unsigned i=0;i<3;i++)
+        if(fscanf(f,"%u",&country[i])!=1)ok=false;
     fclose(f);
-    if(ok){ui.games=games;memcpy(ui.best,values,sizeof(values));}
+    if(ok){ui.games=games;memcpy(ui.best,values,sizeof(values));
+        memcpy(ui.country_best,country,sizeof(country));}
 }
 static void save_records(void){
     mkdir("sdmc:/3ds_google_maps",0777);
     FILE *f=fopen(GUESS_SAVES ".tmp","w");
     if(!f)return;
-    int ok=fprintf(f,"1 %u\n",ui.games)>0;
+    int ok=fprintf(f,"2 %u\n",ui.games)>0;
     for(int i=0;i<GUESS_MAP_COUNT;i++)for(int j=0;j<GUESS_RULE_COUNT;j++)
         if(fprintf(f,"%u%c",ui.best[i][j],j==GUESS_RULE_COUNT-1?'\n':' ')<=0)ok=0;
+    for(unsigned i=0;i<3;i++)
+        if(fprintf(f,"%u%c",ui.country_best[i],i==2?'\n':' ')<=0)ok=0;
     if(fclose(f)!=0)ok=0;
     if(ok)rename(GUESS_SAVES ".tmp",GUESS_SAVES);
     else remove(GUESS_SAVES ".tmp");
@@ -463,6 +469,10 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
             unsigned previous=ui.game.total;
             guess_set_pin(&ui.game,ui.game.start);guess_submit(&ui.game);
             ui.game.score[ui.game.round]=correct?1:0;ui.game.total=previous+(correct?1:0);
+            /* Save the best immediately, including a streak quit before a miss. */
+            if(ui.game.total>ui.country_best[ui.difficulty]){
+                ui.country_best[ui.difficulty]=ui.game.total;save_records();
+            }
             result_center();
         }
         return;
@@ -710,7 +720,9 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
         }else if(ui.game.phase==GUESS_ERROR){
             print(38,151,.38f,C2D_Color32(248,117,113,255),ui.note);
         }else if(ui.game.phase==GUESS_COMPLETE){
-            char line[80];snprintf(line,sizeof(line),"FINAL SCORE: %u / %u",ui.game.total,ui.mode==6?5u:25000u);
+            char line[80];
+            if(ui.mode==6)snprintf(line,sizeof(line),"STREAK: %u correct",ui.game.total);
+            else snprintf(line,sizeof(line),"FINAL SCORE: %u / 25000",ui.game.total);
             print(79,155,.59f,C2D_Color32(120,245,183,255),line);
         }else if(ui.game.phase==GUESS_MENU && ui.tutorial_open){
             print(57,143,.48f,fg,"1. Look at mystery Street View");
@@ -766,7 +778,8 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
             }else card(203,"RECORDS","Tap records | SELECT challenges");
             break;
           case GUESS_FINDING:
-            snprintf(name,sizeof(name),"Round %u of %u",ui.game.round+1,GUESS_ROUNDS);
+            if(ui.mode==6)snprintf(name,sizeof(name),"Country %u | Best %u",ui.game.total+1,ui.country_best[ui.difficulty]);
+            else snprintf(name,sizeof(name),"Round %u of %u",ui.game.round+1,GUESS_ROUNDS);
             card(45,name,ui.mode?"Loading exact licensed challenge image":"Finding a playable Google panorama");
             card(100,ui.mode?"No substitutions":"Searching live imagery",ui.mode?"Missing image: retry, no score penalty":"No fixed list of panoramas");
             card(155,"Please remain connected","B cancels and returns to menu");
@@ -776,7 +789,13 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
             card(102,"A: Try again","B: Back to the game menu");
             break;
           case GUESS_COMPLETE:
-            for(unsigned i=0;i<GUESS_ROUNDS;i++){
+            if(ui.mode==6){
+                snprintf(name,sizeof(name),"%u countries in a row",ui.game.total);
+                card(45,"STREAK FINISHED",name);
+                snprintf(name,sizeof(name),"Your best: %u",ui.country_best[ui.difficulty]);
+                card(105,"COUNTRY RECORD",name);
+            }
+            for(unsigned i=0;ui.mode!=6&&i<GUESS_ROUNDS;i++){
                 snprintf(name,sizeof(name),"Round %u: %u points",i+1,ui.game.score[i]);
                 print(18,29+i*32,.5f,fg,name);
             }
@@ -789,7 +808,7 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
                     }
                 }
             }
-            card(201,ui.mode==3&&ui.player+1<ui.players?"A: Next player":"A: Play again","B: Game menu | Photograph score + code");
+            card(201,ui.mode==3&&ui.player+1<ui.players?"A: Next player":"A: Play again",ui.mode==6?"B: Game menu | Beat your best streak":"B: Game menu | Photograph score + code");
             break;
           default: break;
         }

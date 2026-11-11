@@ -186,7 +186,7 @@ int main(void){
     unsigned ver=0,saved_games=0;
     TEST(fscanf(records,"%u %u",&ver,&saved_games)==2);
     fclose(records);
-    TEST(ver==1&&saved_games==1);
+    TEST(ver==2&&saved_games==1);
     press(KEY_B);TEST(ui.game.phase==GUESS_MENU);
     guess_ui_leave();
     TEST(!guess_ui_active()&&scene_count==0&&finish_count==1);
@@ -274,14 +274,26 @@ int main(void){
     TEST(guess_ui_enter());ui.mode=5;new_game();
     for(unsigned r=0;r<5;r++)TEST(guess_locations[ui.challenge.location[r]].landmark);
     guess_ui_leave();
-    /* Five correct countries continue into another batch with the score intact. */
-    TEST(guess_ui_enter());ui.mode=6;new_game();
-    for(unsigned r=0;r<5;r++){
+    /* Play across TWO batch boundaries, then fail, restart and reload records. */
+    TEST(guess_ui_enter());ui.mode=6;ui.difficulty=1;new_game();
+    for(unsigned r=0;r<12;r++){
         frame();frame();TEST(ui.game.phase==GUESS_PLAYING);
-        strcpy(keyboard_answer,guess_locations[ui.challenge.location[r]].country);
-        press(KEY_A);TEST(ui.game.phase==GUESS_RESULT);press(KEY_A);
+        strcpy(keyboard_answer,guess_locations[ui.challenge.location[ui.game.round]].country);
+        press(KEY_A);TEST(ui.game.phase==GUESS_RESULT&&ui.game.total==r+1);
+        press(KEY_A);TEST(ui.game.phase==GUESS_FINDING&&ui.game.total==r+1);
     }
-    TEST(ui.game.phase==GUESS_FINDING&&ui.game.round==0&&ui.game.total==5);
+    TEST(ui.country_best[1]==12&&ui.country_best[0]==1);
+    frame();frame();
+    strcpy(keyboard_answer,!strcmp(guess_locations[ui.challenge.location[ui.game.round]].country,"FR")?"US":"FR");
+    press(KEY_A);TEST(ui.game.total==12);press(KEY_A);TEST(ui.game.phase==GUESS_COMPLETE);
+    press(KEY_A);TEST(ui.game.total==0&&ui.game.phase==GUESS_FINDING);
+    guess_ui_leave();TEST(guess_ui_enter());TEST(ui.country_best[1]==12);
+    /* Legacy classic records still load with empty country records. */
+    FILE *legacy=fopen(GUESS_SAVES,"w");TEST(legacy);
+    fprintf(legacy,"1 7\n");
+    for(unsigned i=0;i<GUESS_MAP_COUNT*GUESS_RULE_COUNT;i++)fprintf(legacy,"100 ");
+    fclose(legacy);guess_ui_leave();TEST(guess_ui_enter());
+    TEST(ui.games==7&&ui.best[0][0]==100&&ui.country_best[1]==0);
     keyboard_answer[0]=0;guess_ui_leave();
     remove(DAILY_FILE);
     remove("sdmc:/3ds_google_maps/streetguess_records.txt");
