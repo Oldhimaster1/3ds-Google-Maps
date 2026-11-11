@@ -267,9 +267,11 @@ static void handle_map_touch(u32 keys,u32 held,touchPosition touch){
         if(ui.touch_dragged)guess_map_center_delta(&ui.map_center,ui.map_zoom,-dx,-dy);
         ui.last_touch_x=touch.px;ui.last_touch_y=touch.py;
     }else if(!(held&KEY_TOUCH)&&ui.touch_active){
-        if(!ui.touch_dragged&&ui.game.phase==GUESS_PLAYING)
+        if(!ui.touch_dragged&&ui.game.phase==GUESS_PLAYING){
+            ui.map_focused=true;
             guess_set_pin(&ui.game,guess_map_at_pixel(ui.map_center,ui.map_zoom,
                           ui.start_touch_x,ui.start_touch_y,320,GUESS_MAP_HEIGHT));
+        }
         ui.touch_active=false;
     }
 }
