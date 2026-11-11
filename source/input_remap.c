@@ -114,11 +114,13 @@ void input_remap_hint(unsigned profile,const char *text,char *out,size_t capacit
  if(!text){out[0]=0;return;}
  while(*text&&used+1<capacity){
   const char *replacement=NULL;size_t consumed=1;
-  bool left=text[0] && (used==0 || text[-1]==' ' || text[-1]=='/' || text[-1]=='+' || text[-1]=='[');
+  bool left=text[0] && (used==0 || text[-1]==' ' || text[-1]=='/' || text[-1]=='+' || text[-1]=='[' || text[-1]=='(' || text[-1]=='\n');
   if(left && active_map && profile<INPUT_REMAP_PROFILES && input_remap_valid(active_map)){
-   for(unsigned i=0;i<INPUT_REMAP_BUTTONS;i++){
-    size_t n=strlen(names[i]);
-    if(!strncmp(text,names[i],n) && (!text[n] || text[n]==' ' || text[n]=='/' || text[n]=='+' || text[n]==':' || text[n]==']')){
+   static const char *tokens[]={"D-Up","D-Down","D-Left","D-Right","SELECT","Select","Up","Down","Left","Right","A","B","X","Y","L","R"};
+   static const unsigned logical[]={6,7,8,9,10,10,6,7,8,9,0,1,2,3,4,5};
+   for(unsigned t=0;t<sizeof(logical)/sizeof(logical[0]);t++){
+    unsigned i=logical[t];size_t n=strlen(tokens[t]);
+    if(!strncmp(text,tokens[t],n) && (!text[n] || text[n]==' ' || text[n]=='/' || text[n]=='+' || text[n]==':' || text[n]==']' || text[n]==')' || text[n]=='=' || text[n]=='\n')){
      replacement=names[active_map->physical[profile][i]];consumed=n;break;
     }
    }

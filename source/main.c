@@ -2,6 +2,7 @@
 #include <citro2d.h>
 #include <citro3d.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -1586,7 +1587,7 @@ static void render_explore(void) {
         snprintf(source_label,sizeof(source_label),"Y / Source: %s  [Select]",
                  street_provider_name(pano_runtime_provider()));
         C2D_DrawRectSolid(12,58,.15f,296,27,C2D_Color32(30,48,65,255));
-        draw_ui_text(16,67,.38f,.38f,accent,0,source_label);
+        draw_control_text(16,67,.38f,.38f,accent,0,source_label);
         draw_ui_text(14,91,.32f,.32f,dim,0,pano_runtime_status());
         /* Cached/offline map tiles only; any missing tile enters a throttled
          * low-priority queue, never synchronous HTTP on the render thread. */
@@ -1642,8 +1643,8 @@ static void render_explore(void) {
             }
         }
     } else {
-        draw_ui_text(14, 76, .44f, .44f, white, 0, "Circle Pad / D-Pad  Rotate");
-        draw_ui_text(14, 101, .44f, .44f, white, 0, "X / Y  Zoom in / out");
+        draw_control_text(14, 76, .44f, .44f, white, 0, "Circle Pad / D-Pad  Rotate");
+        draw_control_text(14, 101, .44f, .44f, white, 0, "X / Y  Zoom in / out");
         draw_ui_text(14, 127, .40f, .40f, accent, 0,
                      g_explore_mode == EXPLORE_GLOBE ?
                      (stereo ? "Globe stereo enabled" : "Zoom in fully to enter map") :
@@ -1668,8 +1669,8 @@ static void render_explore(void) {
             g_explore_gyro && !g_explore_gyro_filter.ready ? "Gyro: HOLD STILL to calibrate" :
             g_explore_gyro ? "X Gyro ON  Select Recenter" : "X Gyro OFF  Select Recenter");
         char zoomlabel[80];
-        snprintf(zoomlabel,sizeof(zoomlabel),"D-Up/Down Zoom  (%d deg)",(int)g_explore_fov);
-        draw_ui_text(12,205,.39f,.39f,white,0,zoomlabel);
+        snprintf(zoomlabel,sizeof(zoomlabel),"Up/Down Zoom  (%d deg)",(int)g_explore_fov);
+        draw_control_text(12,205,.39f,.39f,white,0,zoomlabel);
         draw_control_text(12,224,.33f,.33f,dim,0,
             "L/R Move   L+Down Retry   A Map   B Back");
     } else draw_control_text(14, 196, .44f, .44f, dim, 0, "A  Open map     B  Back");
@@ -1859,6 +1860,11 @@ static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 col
         C2D_DrawText(&ui_text,flags|C2D_WithColor,x+spread,y,.985f,
                      scale_x,scale_y,color);
     }
+}
+static void control_printf(const char *format,...){
+ char text[512],hint[768];va_list args;va_start(args,format);
+ vsnprintf(text,sizeof(text),format,args);va_end(args);
+ input_remap_hint(REMAP_MAP,text,hint,sizeof(hint));printf("%s",hint);
 }
 static void draw_control_text(float x,float y,float sx,float sy,u32 color,u32 flags,const char *text){
  char hint[256];
@@ -2760,7 +2766,7 @@ static void render_bottom_panel(void) {
             C2D_DrawRectSolid(x, y, 0.3f, w, 6.0f, accent);
 
             draw_ui_text(x + (w * 0.5f), y + 18.0f, 0.48f, 0.48f, text_color, C2D_AlignCenter, primary_labels[index]);
-            draw_ui_text(x + (w * 0.5f), y + 42.0f, 0.34f, 0.34f,
+            draw_control_text(x + (w * 0.5f), y + 42.0f, 0.34f, 0.34f,
                          pressed ? C2D_Color32f(0.25f, 0.14f, 0.06f, 1.0f) : C2D_Color32f(0.73f, 0.82f, 0.92f, 1.0f),
                          C2D_AlignCenter,
                          secondary_labels[index]);
@@ -2782,13 +2788,13 @@ static void open_favorites(void) {
     while (aptMainLoop() && !g_should_exit) {
         consoleClear();
         printf("=== Favorites ===\n");
-        printf("A = go  Y = add center\n");
-        printf("X = delete  B or R = back\n");
+        control_printf("A = go  Y = add center\n");
+        control_printf("X = delete  B or R = back\n");
         printf("START = exit\n\n");
 
         if (g_favorite_count <= 0) {
             printf("No favorites saved yet.\n");
-            printf("Press Y to add the current center.\n");
+            control_printf("Press Y to add the current center.\n");
         } else {
             for (int i = 0; i < g_favorite_count; i++) {
                 printf("%c %d) %s\n", (i == selected) ? '>' : ' ', i + 1, g_favorites[i].name);
@@ -3265,8 +3271,8 @@ static void open_cache_stats(void) {
         }
         printf("FPS: %lu\n", (unsigned long)g_fps);
 
-        printf("\nX: Clear SD tile cache\n");
-        printf("B or R: Back\n");
+        control_printf("\nX: Clear SD tile cache\n");
+        control_printf("B or R: Back\n");
         printf("START: Exit\n");
 
         hidScanInput();
@@ -3341,8 +3347,8 @@ static void draw_region_panel(void) {
         }
     } else if (region_items) {
         draw_ui_text(15, 74, .48f, .48f, white, 0, "No saved regions yet");
-        draw_ui_text(15, 101, .42f, .42f, dim, 0, "Press Y to make a pack for this area.");
-        draw_ui_text(15, 123, .42f, .42f, dim, 0, "Press L to change the offline source.");
+        draw_control_text(15, 101, .42f, .42f, dim, 0, "Press Y to make a pack for this area.");
+        draw_control_text(15, 123, .42f, .42f, dim, 0, "Press L to change the offline source.");
     } else {
         C2D_DrawRectSolid(10, 66, .2f, 300, 72, C2D_Color32(30, 42, 58, 255));
         draw_ui_text(20, 74, .51f, .51f, white, 0, region_summary);
@@ -3356,7 +3362,7 @@ static void draw_region_panel(void) {
     draw_ui_text(12, 151, .40f, .40f, region_confirm ? accent : white, 0, region_status);
     C2D_DrawRectSolid(0, 178, 0.1f, 320, 62, C2D_Color32(23, 32, 45, 255));
     for (int i = 0; i < 3; i++)
-        if (region_actions[i]) draw_ui_text(12, 183 + 17*i, .42f, .42f, dim, 0, region_actions[i]);
+        if (region_actions[i]) draw_control_text(12, 183 + 17*i, .42f, .42f, dim, 0, region_actions[i]);
 }
 
 static u32 region_frame(void) {
@@ -3895,8 +3901,8 @@ static void open_recents(void) {
         begin_bottom_console_ui();
         consoleClear();
         printf("No recents yet.\n\n");
-        printf("Run a SELECT address search first.\n\n");
-        printf("Press B or R to return\n");
+        control_printf("Run a SELECT address search first.\n\n");
+        control_printf("Press B or R to return\n");
         while (aptMainLoop() && !g_should_exit) {
             hidScanInput();
             u32 kd = input_remap_apply(REMAP_MAP,hidKeysDown());
@@ -3920,8 +3926,8 @@ static void open_recents(void) {
     while (aptMainLoop() && !g_should_exit) {
         consoleClear();
         printf("=== Recents ===\n");
-        printf("Up/Down = select  A = go\n");
-        printf("B or R = back  START = exit\n\n");
+        control_printf("Up/Down = select  A = go\n");
+        control_printf("B or R = back  START = exit\n\n");
 
         for (int i = 0; i < g_recent_count; i++) {
             printf("%c %d) %s\n", (i == selected) ? '>' : ' ', i + 1, g_recents[i].name);

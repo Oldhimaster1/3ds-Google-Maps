@@ -39,8 +39,8 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 NO_SMDH		:=	1
 
-APP_TITLE	:= 3DS Maps 2.2 RC1
-APP_DESCRIPTION := Maps and StreetGuess - 2.2.0 RC1
+APP_TITLE	:= 3DS Maps 2.2 RC2
+APP_DESCRIPTION := Maps and StreetGuess - 2.2.0 RC2
 APP_AUTHOR	:= Oldhimaster1
 BANNERTOOL	?= bannertool
 MAKEROM		?= makerom

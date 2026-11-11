@@ -39,6 +39,12 @@ int main(void){
  assert(!strcmp(hint,"B Map A Back L/R Move"));
  input_remap_hint(REMAP_MAP,"A Map B Back",hint,sizeof(hint));assert(!strcmp(hint,"A Map B Back"));
  input_remap_hint(REMAP_STREET,"A Map",hint,2);assert(hint[1]==0);
+ input_remap_bind(&m,REMAP_STREET,10,4);
+ input_remap_bind(&m,REMAP_STREET,6,2);
+ input_remap_hint(REMAP_STREET,"SELECT: search (A) Up/Down",hint,sizeof(hint));
+ assert(!strcmp(hint,"L: search (B) X/D-Down"));
+ input_remap_hint(REMAP_STREET,"NASA GIBS / Blue Marble",hint,sizeof(hint));
+ assert(!strcmp(hint,"NASA GIBS / Blue Marble"));
  input_remap_set_active(NULL);
  puts("input remap: PASS");
  return 0;

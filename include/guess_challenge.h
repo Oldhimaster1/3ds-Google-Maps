@@ -4,14 +4,17 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "guess_core.h"
-typedef struct { const char *id,*country,*name,*hint,*license,*credit,*metadata_url; double lat,lon; } GuessLocation;
+typedef struct { const char *id,*country,*name,*hint,*license,*credit,*metadata_url; double lat,lon; bool landmark; } GuessLocation;
 extern const GuessLocation guess_locations[];
 extern const unsigned guess_location_count;
 extern const uint32_t guess_dataset_id;
+/* Reserved seed namespace makes expedition friend codes reproduce the landmark pool. */
+#define GUESS_EXPEDITION_SEED 0xE1000000u
 typedef struct {uint32_t seed;unsigned difficulty;unsigned location[GUESS_ROUNDS];} GuessChallenge;
 bool guess_challenge_make(GuessChallenge *c,uint32_t seed,unsigned difficulty);
 bool guess_challenge_code(const GuessChallenge *c,char *out,size_t cap);
 bool guess_challenge_parse(GuessChallenge *c,const char *text);
+bool guess_country_parse(const char *answer,char out[3]);
 /* Days since Unix epoch, UTC. Caller must ensure the console clock is correct. */
 uint32_t guess_challenge_day(int64_t unix_seconds);
 #endif

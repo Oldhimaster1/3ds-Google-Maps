@@ -271,6 +271,18 @@ int main(void){
     strcpy(keyboard_answer,!strcmp(guess_locations[ui.challenge.location[1]].country,"FR")?"US":"FR");
     press(KEY_A);TEST(ui.game.phase==GUESS_RESULT&&ui.game.total==1);press(KEY_A);
     TEST(ui.game.phase==GUESS_COMPLETE);keyboard_answer[0]=0;guess_ui_leave();
+    TEST(guess_ui_enter());ui.mode=5;new_game();
+    for(unsigned r=0;r<5;r++)TEST(guess_locations[ui.challenge.location[r]].landmark);
+    guess_ui_leave();
+    /* Five correct countries continue into another batch with the score intact. */
+    TEST(guess_ui_enter());ui.mode=6;new_game();
+    for(unsigned r=0;r<5;r++){
+        frame();frame();TEST(ui.game.phase==GUESS_PLAYING);
+        strcpy(keyboard_answer,guess_locations[ui.challenge.location[r]].country);
+        press(KEY_A);TEST(ui.game.phase==GUESS_RESULT);press(KEY_A);
+    }
+    TEST(ui.game.phase==GUESS_FINDING&&ui.game.round==0&&ui.game.total==5);
+    keyboard_answer[0]=0;guess_ui_leave();
     remove(DAILY_FILE);
     remove("sdmc:/3ds_google_maps/streetguess_records.txt");
     remove("sdmc:/3ds_google_maps/streetguess_records.txt.tmp");
