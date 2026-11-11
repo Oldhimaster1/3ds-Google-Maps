@@ -2124,14 +2124,15 @@ static void apply_settings_hit(SettingsHitTarget hit) {
 }
 
 static void render_settings_panel(void) {
-    static const char* tab_names[SETTINGS_TAB_COUNT] = { "View", "Tiles", "Data", "GPS", "Explore", "Text" };
+    static const char* tab_names[SETTINGS_TAB_COUNT] = { "View", "Tiles", "Data", "GPS", "Explore", "Text", "More" };
     static const char* tab_hints[SETTINGS_TAB_COUNT] = {
         "Style and live overlays",
         "Tile loading behavior",
         "Network and storage",
         "GPS source and server",
         "Globe, terrain and street-level photos",
-        "Readability, text size and weight"
+        "Readability, text size and weight",
+        "Controls and Earth quality"
     };
     u64 now_ms = osGetTime();
     char line[128];
@@ -2155,18 +2156,19 @@ static void render_settings_panel(void) {
     }
 
     for (int i = 0; i < SETTINGS_TAB_COUNT; i++) {
-        float x = 5.0f + (float)i * 52.0f;
+        float x = 3.0f + (float)i * 45.0f;
         bool selected = (i == g_settings_tab);
         bool pressed = (i == SETTINGS_TAB_VIEW  && is_recent_settings_hit(SETTINGS_HIT_TAB_VIEW,  now_ms)) ||
                        (i == SETTINGS_TAB_TILES && is_recent_settings_hit(SETTINGS_HIT_TAB_TILES, now_ms)) ||
                        (i == SETTINGS_TAB_DATA  && is_recent_settings_hit(SETTINGS_HIT_TAB_DATA,  now_ms)) ||
                        (i == SETTINGS_TAB_GPS   && is_recent_settings_hit(SETTINGS_HIT_TAB_GPS,   now_ms)) ||
                        (i == SETTINGS_TAB_EXPLORE && is_recent_settings_hit(SETTINGS_HIT_TAB_EXPLORE, now_ms)) ||
-                       (i == SETTINGS_TAB_TEXT && is_recent_settings_hit(SETTINGS_HIT_TAB_TEXT, now_ms));
+                       (i == SETTINGS_TAB_TEXT && is_recent_settings_hit(SETTINGS_HIT_TAB_TEXT, now_ms)) ||
+                       (i == SETTINGS_TAB_MORE && is_recent_settings_hit(SETTINGS_HIT_TAB_MORE, now_ms));
         u32 fill = selected ? C2D_Color32f(0.28f, 0.48f, 0.66f, 1.0f)
                             : (pressed ? C2D_Color32f(0.24f, 0.29f, 0.35f, 1.0f) : C2D_Color32f(0.15f, 0.18f, 0.22f, 1.0f));
-        C2D_DrawRectSolid(x, 50.0f, 0.2f, 50.0f, 24.0f, fill);
-        draw_ui_text(x + 25.0f, 56.0f, 0.35f, 0.35f,
+        C2D_DrawRectSolid(x, 50.0f, 0.2f, 43.0f, 24.0f, fill);
+        draw_ui_text(x + 21.5f, 56.0f, 0.34f, 0.34f,
                      selected ? C2D_Color32f(0.97f, 0.99f, 1.0f, 1.0f) : C2D_Color32f(0.80f, 0.86f, 0.92f, 1.0f),
                      C2D_AlignCenter,
                      tab_names[i]);
@@ -2331,6 +2333,34 @@ static void render_settings_panel(void) {
         draw_ui_text(23,209,.43f,.43f,C2D_Color32(245,248,255,255),0,"High contrast");
         draw_ui_text(294,209,.43f,.43f,C2D_Color32(130,239,238,255),C2D_AlignRight,
                      a->high_contrast?"ON":"OFF");
+    } else if(g_settings_tab==SETTINGS_TAB_MORE){
+        const char *speed[]={"Slow","Normal","Fast"};
+        const char *quality[]={"Fast","Standard","Detail","Auto"};
+        const char *globe[]={"Low","Auto","High"};
+        const char *sampler[]={"Balanced","Urban","Rural","Broad"};
+        const char *labels[2][4]={
+            {"Map controls speed","Circle Pad deadzone","Invert gyro axes","Panorama quality"},
+            {"Terrain exaggeration","Stereoscopic buildings","Globe detail","StreetGuess locations"}};
+        char values[4][44];
+        if(!g_more_page){
+            snprintf(values[0],44,"%s",speed[g_earth_options.input_speed]);
+            snprintf(values[1],44,"%u",g_earth_options.dead_zone);
+            snprintf(values[2],44,"%s",g_earth_options.gyro_invert?"Yes":"No");
+            snprintf(values[3],44,"%s",quality[g_earth_options.panorama_quality]);
+        }else{
+            snprintf(values[0],44,"%.1fx",earth_options_terrain_scale(&g_earth_options));
+            snprintf(values[1],44,"%s",g_earth_options.buildings?"On":"Off");
+            snprintf(values[2],44,"%s",globe[g_earth_options.globe_detail]);
+            snprintf(values[3],44,"%s",sampler[g_earth_options.sampler]);
+        }
+        for(int i=0;i<4;i++){
+            float y=80+i*34;
+            C2D_DrawRectSolid(12,y,.3f,296,31,C2D_Color32(29,45,65,255));
+            draw_ui_text(19,y+7,.39f,.39f,C2D_Color32(231,241,252,255),0,labels[g_more_page][i]);
+            draw_ui_text(299,y+7,.39f,.39f,C2D_Color32(112,226,230,255),C2D_AlignRight,values[i]);
+        }
+        draw_ui_text(22,219,.37f,.37f,C2D_Color32(192,216,233,255),0,
+                     g_more_page?"More settings 2/2  Tap to return":"More settings 1/2  Tap for Earth options");
     } else { /* SETTINGS_TAB_GPS */
         bool client_mode   = (gps_get_source_mode() == GPS_SOURCE_NMEA_CLIENT);
         bool server_mode   = (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER);
