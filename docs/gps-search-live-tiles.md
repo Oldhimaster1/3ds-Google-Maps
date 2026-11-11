@@ -18,9 +18,9 @@ Changes are actual source files, not an unapplied patch.
   may warn about the bridge's existing self-signed HTTPS certificate.
 * Search: native keyboard restores the last query (for the current session);
   ASCII whitespace trim keeps UTF-8 intact; coordinate entry remains intact.
-  There is no extra area-selection prompt. X on a multi-result panel explicitly
-  retries worldwide. Touching a result selects it. Address/city can render on
-  two proportional lines. A short-lived result cache avoids duplicate API
+  There is no extra area-selection prompt. Empty nearby results automatically
+  retry worldwide once; X on a multi-result panel explicitly retries worldwide. Touching a result selects it. Address/city can render on
+  two proportional lines. QR drawing uses integer-aligned modules. A short-lived result cache avoids duplicate API
   requests, and a nonblocking cooldown prevents rapid calls to the public
   Nominatim server. **There is no remote per-keystroke autocomplete.**
 * GPS live tiles: `TileViewport` scores visible tiles and rejects outdated
