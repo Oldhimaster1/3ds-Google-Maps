@@ -42,6 +42,14 @@ The focused UI/game regression was rerun after recovery and passed with
 under ptrace. AddressSanitizer and UBSan remained enabled. See
 [country-streak-recheck.txt](country-streak-recheck.txt).
 
+## Later Azahar gameplay capture — scope and limits
+
+After the initial RC3 package verification, additional Azahar sessions successfully recorded a real Panoramax 360° scene, movement to a linked viewpoint, a Daily Challenge map pin/score reveal and live Grand Canyon terrain. See the [capture sources](../../media/rc3/capture-sources/README.md) and [media review](media.md).
+
+These later sessions used **the same RC3 application source** with a separate recording-only proxy CA, UTC clock correction, additional request logging and longer network deadlines. TLS peer and hostname checking stayed enabled. This does not show that the unchanged public RC3 binary has been tested end to end with these providers. The unchanged public CIA/3DSX remain the packages from source commit `9e09e27a12d88dee8de5aca5983f5d4a245b5999`.
+
+Live building captures remain blocked by Overpass failures, and high-resolution Google panorama detail has not been demonstrated in recorded footage. Physical original/New 3DS behavior remains untested.
+
 ## Feature scope and known limits
 
 These details accompany the preview download. They describe implemented scope,
