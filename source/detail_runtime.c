@@ -103,7 +103,8 @@ static void poll_finished(void){
    "%s detail z%u loaded",
    stream.context==DETAIL_PANORAMA?"Panorama":"NASA globe",
    (unsigned)stream.requested.z);
- }else if(current){
+ }else if(current && !atomic_load(&stream.cancel)){
+  /* Intentionally cancelled view changes must not trigger retry cooldown. */
   stream.failed=stream.requested;stream.failed_valid=true;
   stream.failed_since=osGetTime();
   snprintf(stream.status,sizeof(stream.status),
