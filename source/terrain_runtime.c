@@ -15,6 +15,7 @@ static struct {
     bool ready,ok;
     TerrainGrid grid;
     float span_m;
+    float focus_x,focus_z;
     double lat,lon;
     int z,x,y;
     char status[96];
@@ -73,9 +74,18 @@ bool terrain_runtime_start(double lat,double lon,int zoom) {
         return false;
     }
     if(zoom<8)zoom=8;
-    if(zoom>12)zoom=12;
+    if(zoom>15)zoom=15;
     terrain.lat=lat;terrain.lon=lon;terrain.z=zoom;
     terrain_web_tile(lat,lon,zoom,&terrain.x,&terrain.y);
+    /* Shift the local mesh so the exact selected map position, rather than
+     * the middle of its Mercator tile, is underneath the scene's orbit camera. */
+    double longitude=lon==180.0?-180.0:lon;
+    double ntiles=(double)(1<<zoom);
+    double fx=(longitude+180.0)/360.0*ntiles-terrain.x;
+    double fy=(1.0-asinh(tan(lat*.017453292519943295))/
+                3.141592653589793)*.5*ntiles-terrain.y;
+    terrain.focus_x=(float)((fx-.5)*2.0);
+    terrain.focus_z=(float)((fy-.5)*2.0);
     terrain.span_m=(float)(40075016.686*cos(lat*0.017453292519943295)/
                             (double)(1<<zoom));
     if(!isfinite(terrain.span_m)||terrain.span_m<100)terrain.span_m=100;
@@ -92,7 +102,8 @@ bool terrain_runtime_start(double lat,double lon,int zoom) {
              "Loading elevation for selected map position...");
     return true;
 }
-bool terrain_runtime_poll(TerrainGrid *out,float *span_m) {
+bool terrain_runtime_poll(TerrainGrid *out,float *span_m,
+                          float *focus_x,float *focus_z) {
     if(!terrain.thread||!atomic_load(&terrain.done))return false;
     threadJoin(terrain.thread,U64_MAX);
     threadFree(terrain.thread);
@@ -102,9 +113,11 @@ bool terrain_runtime_poll(TerrainGrid *out,float *span_m) {
                            "Live terrain loaded");
     else snprintf(terrain.status,sizeof(terrain.status),
                   "Elevation unavailable here; no demo location substituted");
-    if(!terrain.ready||!out||!span_m)return false;
+    if(!terrain.ready||!out||!span_m||!focus_x||!focus_z)return false;
     *out=terrain.grid;
     *span_m=terrain.span_m;
+    *focus_x=terrain.focus_x;
+    *focus_z=terrain.focus_z;
     terrain.ready=false;
     return true;
 }
