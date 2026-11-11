@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 struct MockThread{int value;};
-static int network_on=1,request_ok=1,image_ok=1,bad_size=0,opened,closed,requests;
+static int network_on=1,request_ok=1,image_ok=1,bad_size=0,opened,closed,requests,missing_z15;
 static char requested[192];
 Thread threadCreate(void (*func)(void *),void *arg,uint32_t stack,int priority,int core,bool detached){
     (void)stack;(void)priority;(void)core;(void)detached;
@@ -24,7 +24,7 @@ bool network_request(void *h,const char *url,size_t limit,atomic_bool *cancel,
     assert(h && url && limit>=32 && cancel && buffer && size);
     requests++;
     snprintf(requested,sizeof(requested),"%s",url);
-    if(!request_ok)return false;
+    if(!request_ok || (missing_z15 && strstr(url,"/terrarium/15/")))return false;
     *buffer=malloc(32);assert(*buffer);
     memset(*buffer,0xAA,32);*size=32;return true;
 }
@@ -56,6 +56,13 @@ int main(void){
     assert(strstr(requested,"/terrarium/15/")!=NULL);
     assert(terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
     assert(meters>300 && meters<3000);
+    missing_z15=1;
+    assert(terrain_runtime_start(40.7128,-74.0060,15));
+    assert(terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
+    assert(terrain_runtime_source_zoom()==14);
+    assert(strstr(requested,"/terrarium/14/")!=NULL);
+    assert(meters>600 && meters<6000);
+    missing_z15=0;
     assert(!terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
     assert(opened==closed);
     assert(terrain_runtime_start(0,179.99,10));
