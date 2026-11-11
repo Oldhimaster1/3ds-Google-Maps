@@ -5,6 +5,8 @@
 #include "explore.h"
 #include "map_tiles.h"
 #include "pano_gyro.h"
+#include "pano_motion.h"
+#include "ui_accessibility.h"
 #include "street_look_input.h"
 #include <citro2d.h>
 #include <3ds.h>
@@ -20,9 +22,11 @@
 
 typedef struct {
     bool active, scene_loaded, fetching, touch_active, touch_dragged, gyro;
+    bool gyro_accel, map_focused, tutorial_open;
     int map_zoom, time_choice, last_touch_x, last_touch_y, start_touch_x, start_touch_y;
     float yaw,pitch,fov,gyro_coeff;
     PanoGyroFilter gyro_filter;
+    PanoMotionFrame motion;
     u64 last_ms, next_search_ms;
     GuessPoint candidate, map_center;
     char start_id[48], note[96];
@@ -39,16 +43,22 @@ static const char *region_names[]={"World","United States","Europe"};
 static const char *rule_names[]={"Moving","No Move","NMPZ"};
 static void print(float x,float y,float scale,u32 color,const char *s) {
     if (!ui.text || !s || !*s)return;
+    const UiAccessConfig *cfg=ui_access_get();
+    if(scale<.65f)scale*=ui_access_scale();
     C2D_Text t;
     C2D_TextParse(&t,ui.text,s);
     C2D_TextOptimize(&t);
-    C2D_DrawText(&t,C2D_WithColor,x,y,.85f,scale,scale,color);
+    /* Dialogs are near z=.95; text at .85 was hidden behind them. */
+    C2D_DrawText(&t,C2D_WithColor,x,y,.99f,scale,scale,color);
+    if(cfg->weight>0)
+        C2D_DrawText(&t,C2D_WithColor,x+(cfg->weight==2?.7f:.35f),y,.991f,
+                     scale,scale,color);
 }
 static void card(float y,const char *heading,const char *detail){
     C2D_DrawRectSolid(10,y,.25f,300,35,C2D_Color32(25,40,58,255));
     C2D_DrawRectSolid(10,y,.26f,3,35,C2D_Color32(80,202,227,255));
-    print(19,y+4,.45f,C2D_Color32(242,247,253,255),heading);
-    if(detail)print(19,y+20,.31f,C2D_Color32(172,196,214,255),detail);
+    print(19,y+3,.48f,C2D_Color32(242,247,253,255),heading);
+    if(detail)print(19,y+19,.36f,C2D_Color32(209,232,247,255),detail);
 }
 static void load_records(void){
     FILE *f=fopen(GUESS_SAVES,"r");
@@ -75,7 +85,8 @@ static void save_records(void){
 }
 static void stop_gyro(void){
     if(ui.gyro) HIDUSER_DisableGyroscope();
-    ui.gyro=false;
+    if(ui.gyro_accel) HIDUSER_DisableAccelerometer();
+    ui.gyro=ui.gyro_accel=false;
 }
 static void drop_scene(void){
     stop_gyro();
@@ -103,6 +114,7 @@ bool guess_ui_enter(void){
     ui.text=C2D_TextBufNew(4096);
     if(!ui.text)return false;
     ui.active=true;
+    ui.tutorial_open=true;
     ui.last_ms=osGetTime();
     ui.road_rng=ui.game.rng^UINT64_C(0x6a09e667f3bcc909);
     /* Optional road geometry lives on SD; if absent, the self-contained
@@ -118,6 +130,7 @@ static void reset_guess_map(void){
     ui.map_center=ui.game.region==GUESS_WORLD?(GuessPoint){0,0}:
                   ui.game.region==GUESS_USA?(GuessPoint){39,-98}:(GuessPoint){51,11};
     ui.touch_active=false;ui.touch_dragged=false;
+    ui.map_focused=false;
 }
 static void new_game(void){
     drop_scene();
@@ -233,6 +246,7 @@ static void completed(void){
 }
 static void handle_menu(u32 keys,touchPosition touch){
     if(keys&KEY_B){guess_ui_leave();return;}
+    if(keys&KEY_Y){ui.tutorial_open=!ui.tutorial_open;return;}
     if(keys&KEY_A){ui.record_screen=false;new_game();return;}
     if(!(keys&KEY_TOUCH))return;
     int y=touch.py;
