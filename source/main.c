@@ -1225,9 +1225,7 @@ static void update_explore(void) {
             set_status_message(g_terrain_live?"Live elevation loaded":
                                                "Could not apply elevation data");
             if(g_terrain_live && g_earth_options.buildings) {
-                int z=g_terrain_origin_zoom;
-                if(z<8)z=8;
-                if(z>15)z=15;
+                int z=terrain_runtime_source_zoom();
                 building_runtime_start(g_terrain_origin_lat,g_terrain_origin_lon,
                                        &grid,span_m,z);
             }
