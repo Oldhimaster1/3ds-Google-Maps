@@ -115,7 +115,9 @@ bool guess_random_candidate(GuessGame *g,GuessPoint *out){
     const unsigned mask=g->region==GUESS_USA?U:g->region==GUESS_EUROPE?E:W;
     /* Prefer density priors for a responsive first panorama, but keep a
      * substantial share of wide-area candidates for rural variety. */
-    if(unit(&g->rng)<0.80) {
+    static const double urban_weights[4]={.80,.97,.32,.05};
+    unsigned sampling=g->sampler<4?g->sampler:0;
+    if(unit(&g->rng)<urban_weights[sampling]) {
         unsigned count=0;
         for(unsigned i=0;i<sizeof(hubs)/sizeof(hubs[0]);i++)
             if(hubs[i].scope&mask) count++;
@@ -125,7 +127,8 @@ bool guess_random_candidate(GuessGame *g,GuessPoint *out){
                 if(!(hubs[i].scope&mask))continue;
                 if(selected--!=0)continue;
                 double angle=unit(&g->rng)*(2.0*PI);
-                double radius=sqrt(unit(&g->rng))*55.0;
+                static const double radius_km[4]={55.0,18.0,130.0,160.0};
+                double radius=sqrt(unit(&g->rng))*radius_km[sampling];
                 out->lat=hubs[i].lat+radius*cos(angle)/111.2;
                 out->lon=wrap_lon(hubs[i].lon+radius*sin(angle)/
                          (111.2*fmax(0.2,cos(out->lat*DEG))));
