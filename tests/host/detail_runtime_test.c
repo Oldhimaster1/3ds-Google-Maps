@@ -98,6 +98,18 @@ int main(void){
  detail_runtime_update_panorama(&pano,0,0,55,3);
  assert(!active&&uploads==2&&last_uploaded.kind==DETAIL_PANORAMA);
  assert(strstr(last_url,"panoid=") && strstr(last_url,"zoom=2"));
+ /* A deliberately canceled image is NOT a failed provider request. */
+ advance(2);detail_runtime_update_panorama(&pano,2.5f,0,55,3);
+ advance(230);detail_runtime_update_panorama(&pano,2.5f,0,55,3);
+ assert(active);
+ detail_runtime_update_panorama(&pano,-2.5f,0,55,3);
+ detail_runtime_update_panorama(&pano,2.5f,0,55,3);
+ run_active();advance(1);detail_runtime_update_panorama(&pano,2.5f,0,55,3);
+ assert(!active && uploads==2);
+ advance(230);detail_runtime_update_panorama(&pano,2.5f,0,55,3);
+ assert(active);run_active();advance(1);
+ detail_runtime_update_panorama(&pano,2.5f,0,55,3);
+ assert(uploads==3);
  base_busy=1;advance(1);
  detail_runtime_update_panorama(&pano,0,0,28,2);
  advance(230);detail_runtime_update_panorama(&pano,0,0,28,2);
@@ -105,7 +117,7 @@ int main(void){
  base_busy=0;detail_runtime_update_panorama(&pano,0,0,28,2);
  assert(active);run_active();advance(1);
  detail_runtime_update_panorama(&pano,0,0,28,2);
- assert(uploads==3&&last_uploaded.z==4);
+ assert(uploads==4&&last_uploaded.z==4);
  int old_requests=requests;
  detail_runtime_update_panorama(&pano,0,0,55,0);
  assert(!active);
@@ -115,7 +127,7 @@ int main(void){
  detail_runtime_update_globe(0,0,2.1f,1);
  advance(230);detail_runtime_update_globe(0,0,2.1f,1);
  assert(active);run_active();advance(1);detail_runtime_update_globe(0,0,2.1f,1);
- assert(uploads==3);
+ assert(uploads==4);
  int failed_requests=requests;
  advance(500);detail_runtime_update_globe(0,0,2.1f,1);
  assert(requests==failed_requests);
