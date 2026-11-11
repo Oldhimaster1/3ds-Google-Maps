@@ -10,6 +10,7 @@ bool map_tiles_init(void);
 void map_tiles_cleanup(void);
 bool map_tiles_get_timing(TileTiming *timing);
 void map_tiles_set_coverage(bool enabled);
+bool map_tiles_get_coverage(void);
 void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset_y, 
                      int screen_width, int screen_height, bool is_top_screen);
 void map_tiles_view_changed(void);
