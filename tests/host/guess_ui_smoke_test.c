@@ -59,6 +59,8 @@ float C3D_AngleFromDegrees(float n){return n*.01745329252f;}
 static bool coverage_enabled=true;
 void map_tiles_set_coverage(bool enabled){coverage_enabled=enabled;}
 bool map_tiles_get_coverage(void){return coverage_enabled;}
+static unsigned map_cancel_count;
+void map_tiles_view_changed(void){++map_cancel_count;}
 void map_tiles_render(double lat,double lon,int z,int ox,int oy,int w,int h,bool top){
     (void)z;(void)ox;(void)oy;(void)w;(void)h;(void)top;
     last_map_lat=lat;last_map_lon=lon;
@@ -141,6 +143,7 @@ int main(void){
      * than the fallback hub sampler, before Google imagery acceptance. */
     install_fake_road_pack();
     TEST(guess_ui_enter());TEST(ui.roads.file!=NULL);
+    TEST(map_cancel_count==1);
     press(KEY_A);frame();frame();
     TEST(ui.game.phase==GUESS_PLAYING);
     TEST(query_lat>=40&&query_lat<=40.001);
