@@ -2118,8 +2118,8 @@ static void render_settings_panel(void) {
                        (i == SETTINGS_TAB_TILES && is_recent_settings_hit(SETTINGS_HIT_TAB_TILES, now_ms)) ||
                        (i == SETTINGS_TAB_DATA  && is_recent_settings_hit(SETTINGS_HIT_TAB_DATA,  now_ms)) ||
                        (i == SETTINGS_TAB_GPS   && is_recent_settings_hit(SETTINGS_HIT_TAB_GPS,   now_ms)) ||
-                       (i == SETTINGS_TAB_EXPLORE && is_recent_settings_hit(SETTINGS_HIT_TAB_EXPLORE)) ||
-                       (i == SETTINGS_TAB_TEXT && is_recent_settings_hit(SETTINGS_HIT_TAB_TEXT));
+                       (i == SETTINGS_TAB_EXPLORE && is_recent_settings_hit(SETTINGS_HIT_TAB_EXPLORE, now_ms)) ||
+                       (i == SETTINGS_TAB_TEXT && is_recent_settings_hit(SETTINGS_HIT_TAB_TEXT, now_ms));
         u32 fill = selected ? C2D_Color32f(0.28f, 0.48f, 0.66f, 1.0f)
                             : (pressed ? C2D_Color32f(0.24f, 0.29f, 0.35f, 1.0f) : C2D_Color32f(0.15f, 0.18f, 0.22f, 1.0f));
         C2D_DrawRectSolid(x, 50.0f, 0.2f, 50.0f, 24.0f, fill);

@@ -15,6 +15,7 @@
 #define KEY_DUP (1u<<6)
 #define KEY_DDOWN (1u<<7)
 #define R_FAILED(x) ((x)<0)
+#define R_SUCCEEDED(x) ((x)>=0)
 typedef struct {int16_t dx,dy;} circlePosition;
 typedef struct {uint16_t px,py;} touchPosition;
 typedef struct {int16_t x,y,z;} angularRate;
