@@ -13,6 +13,8 @@
 #include "gps_follow_gate.h"
 #include "geo_formats.h"
 #include "earth_options.h"
+#include "input_remap.h"
+#include "detail_runtime.h"
 #include "route_follow.h"
 #include "street_heading.h"
 #include "globe_detail.h"
@@ -177,6 +179,9 @@ static u64 g_fps_last_ms = 0;
 static u32 g_fps_frames = 0;
 static EarthOptions g_earth_options;
 static unsigned g_more_page;
+static InputRemap g_controls;
+static unsigned g_remap_profile,g_remap_action;
+static bool g_remap_capture;
 static int g_prefetch_ring = 1;            // 0 disables prefetch
 static int g_prefetch_every_n_frames = 1;  // 1 = every frame, 2 = every other frame, etc.
 
@@ -707,6 +712,9 @@ int main(int argc, char* argv[]) {
     street_fly_load();
     earth_options_default(&g_earth_options);
     earth_options_load(&g_earth_options,EARTH_OPTIONS_FILE);
+    input_remap_default(&g_controls);
+    input_remap_load(&g_controls,INPUT_REMAP_FILE);
+    input_remap_set_active(&g_controls);
     ui_access_load(UI_ACCESS_CFG);
     favorites_load();
     load_session();
@@ -860,8 +868,26 @@ void cleanup_graphics(void) {
 
 void update_input(void) {
     hidScanInput();
-    u32 kDown = hidKeysDown();
-    u32 kHeld = hidKeysHeld();
+    u32 rawDown=hidKeysDown(),rawHeld=hidKeysHeld();
+    if(g_screen_mode==APP_SCREEN_SETTINGS && g_remap_capture){
+        if(rawDown & KEY_START){
+            g_remap_capture=false;
+            set_status_message("Button binding canceled");
+        }else{
+            int physical=input_remap_pressed(rawDown);
+            if(physical>=0){
+                input_remap_bind(&g_controls,g_remap_profile,g_remap_action,
+                                 (unsigned)physical);
+                g_remap_capture=false;
+                if(!input_remap_save(&g_controls,INPUT_REMAP_FILE))
+                    set_status_message("Control bound, but could not save to SD");
+                else set_status_message("Button remapped and saved");
+            }
+        }
+        return;
+    }
+    u32 kDown=input_remap_apply(REMAP_MAP,rawDown);
+    u32 kHeld=input_remap_apply(REMAP_MAP,rawHeld);
     touchPosition touch;
 
     if (kDown || kHeld) {
@@ -1129,6 +1155,7 @@ static void close_explore(void) {
     g_street_reveal_ms=0;
     g_street_swap_start_ms=g_street_swap_end_ms=0;
     g_globe_from_zoom0=false;
+    detail_runtime_stop();
     building_runtime_stop();
     terrain_runtime_stop();
     pano_runtime_stop();
@@ -1275,7 +1302,9 @@ static void update_explore(void) {
     }
     if(g_explore_mode==EXPLORE_STREET)sync_street_world_heading();
     hidScanInput();
-    u32 keys = hidKeysDown(), held = hidKeysHeld();
+    unsigned profile=g_explore_mode==EXPLORE_STREET?REMAP_STREET:REMAP_EARTH;
+    u32 keys=input_remap_apply(profile,hidKeysDown());
+    u32 held=input_remap_apply(profile,hidKeysHeld());
     if ((keys & KEY_B) && !(keys & KEY_START) && g_provider_picker) {
         g_provider_picker=false;
         return;
@@ -1446,6 +1475,14 @@ static void update_explore(void) {
             g_explore_dive_ms = now;
         } else explore_show_map();
     }
+    if(g_explore_mode==EXPLORE_STREET){
+        detail_runtime_update_panorama(pano_runtime_current(),g_explore_yaw,
+              g_explore_pitch,g_explore_fov,g_earth_options.panorama_quality);
+    }else if(g_explore_mode==EXPLORE_GLOBE){
+        detail_runtime_update_globe(
+             g_explore_pitch*(180.0/M_PI),g_explore_yaw*(180.0/M_PI),
+             g_explore_distance,g_earth_options.globe_detail);
+    }
 }
 
 static void render_explore(void) {
@@ -1609,8 +1646,10 @@ static void render_explore(void) {
         draw_ui_text(14, 127, .40f, .40f, accent, 0,
                      g_explore_mode == EXPLORE_GLOBE ? "Zoom in fully to enter the map" :
                      stereo ? "3D slider  Stereo active" : "Raise 3D slider on supported systems");
-        if(g_explore_mode == EXPLORE_GLOBE)
-            draw_ui_text(14,162,.36f,.36f,dim,0,"NASA / GSFC Blue Marble");
+        if(g_explore_mode == EXPLORE_GLOBE){
+            draw_ui_text(14,157,.34f,.34f,dim,0,"NASA GIBS / Blue Marble");
+            draw_ui_text(14,173,.31f,.31f,dim,0,detail_runtime_status());
+        }
         else {
             draw_ui_text(14,148,.38f,.38f,white,0,
                 !g_terrain_live ? terrain_runtime_status() :
@@ -2721,7 +2760,7 @@ static void open_favorites(void) {
         }
 
         hidScanInput();
-        u32 kDown = hidKeysDown();
+        u32 kDown = input_remap_apply(REMAP_MAP,hidKeysDown());
         if (kDown & KEY_START) {
             g_should_exit = true;
             end_bottom_console_ui(NULL);
@@ -2795,7 +2834,7 @@ static bool wait_for_request(const char *url, const char *label, u8 **buffer, u3
                osGetTime()-g_last_geocoder_request_ms < 1100) {
             g_request_label="Waiting for search cooldown (B cancels)";
             hidScanInput();
-            u32 keys=hidKeysDown();
+            u32 keys=input_remap_apply(REMAP_MAP,hidKeysDown());
             if(keys&KEY_START)g_should_exit=true;
             if(keys&(KEY_B|KEY_START)){
                 g_request_label=NULL;
@@ -2816,7 +2855,7 @@ static bool wait_for_request(const char *url, const char *label, u8 **buffer, u3
     g_request_label = label;
     while (!atomic_load(&request.done) && aptMainLoop()) {
         hidScanInput();
-        u32 keys = hidKeysDown();
+        u32 keys = input_remap_apply(REMAP_MAP,hidKeysDown());
         if (keys & KEY_START) g_should_exit = true;
         if (keys & (KEY_B | KEY_START)) atomic_store(&request.cancel, true);
         if (atomic_load(&request.cancel)) g_request_label = "Cancelling...";
@@ -2918,7 +2957,7 @@ static int show_places(const GeocodeResult *places, int count, bool identify) {
     g_bottom_modal = render_place_panel;
     while (aptMainLoop() && !g_should_exit) {
         hidScanInput();
-        u32 keys = hidKeysDown();
+        u32 keys = input_remap_apply(REMAP_MAP,hidKeysDown());
         if (keys & KEY_START) g_should_exit = true;
         if (keys & (KEY_START | KEY_B)) break;
         if (!identify && (keys & KEY_A)) { result = place_selection; break; }
@@ -3195,7 +3234,7 @@ static void open_cache_stats(void) {
         printf("START: Exit\n");
 
         hidScanInput();
-        u32 kDown = hidKeysDown();
+        u32 kDown = input_remap_apply(REMAP_MAP,hidKeysDown());
         if (kDown & KEY_START) {
             g_should_exit = true;
             end_bottom_console_ui(NULL);
@@ -3286,7 +3325,7 @@ static void draw_region_panel(void) {
 
 static u32 region_frame(void) {
     hidScanInput();
-    u32 keys = hidKeysDown();
+    u32 keys = input_remap_apply(REMAP_MAP,hidKeysDown());
     if (keys & KEY_START) g_should_exit = true;
     gps_update();
     map_tiles_process_downloads();
@@ -3824,7 +3863,7 @@ static void open_recents(void) {
         printf("Press B or R to return\n");
         while (aptMainLoop() && !g_should_exit) {
             hidScanInput();
-            u32 kd = hidKeysDown();
+            u32 kd = input_remap_apply(REMAP_MAP,hidKeysDown());
             if (kd & KEY_START) {
                 g_should_exit = true;
                 end_bottom_console_ui(NULL);
@@ -3853,7 +3892,7 @@ static void open_recents(void) {
         }
 
         hidScanInput();
-        u32 kDown = hidKeysDown();
+        u32 kDown = input_remap_apply(REMAP_MAP,hidKeysDown());
         if (kDown & KEY_START) {
             g_should_exit = true;
             end_bottom_console_ui(NULL);
