@@ -36,4 +36,31 @@ with tempfile.TemporaryDirectory(prefix="gps-qr-test-") as temp:
                           (x+quiet)*scale:(x+quiet+1)*scale]=0
         decoded,points,_=cv2.QRCodeDetector().detectAndDecode(image)
         assert points is not None and decoded==url,(url,decoded,v)
+        # Also reproduce the QR's real 400x240 top-screen geometry.
+        # Quiet zone must stay white and modules pixel-aligned. Verify that
+        # mild rotation, camera blur, and JPEG compression still decode.
+        px=max(2,240//(size.value+8))
+        total_px=(size.value+8)*px
+        x0=(400-total_px)//2
+        y0=(240-total_px)//2
+        screen=np.full((240,400),255,np.uint8)
+        for row in range(size.value):
+            for col in range(size.value):
+                if modules[row*size.value+col]:
+                    x=x0+(col+4)*px
+                    y=y0+(row+4)*px
+                    screen[y:y+px,x:x+px]=0
+        rotated=cv2.warpAffine(screen,
+            cv2.getRotationMatrix2D((200,120),3,1),(400,240),borderValue=255)
+        jpeg=cv2.imdecode(cv2.imencode(".jpg",screen,
+            [cv2.IMWRITE_JPEG_QUALITY,65])[1],cv2.IMREAD_GRAYSCALE)
+        for name,screenshot in (
+            ("top-screen",screen),
+            ("camera-tilt",rotated),
+            ("jpeg-compressed",jpeg),
+            ("mild-blur",cv2.GaussianBlur(screen,(3,3),0.4))
+        ):
+            decoded,points,_=cv2.QRCodeDetector().detectAndDecode(screenshot)
+            assert points is not None and decoded==url,(name,url,decoded)
+
     print("QR scanned and decoded via OpenCV:",len(URLS),"independent test URLs")
