@@ -177,6 +177,11 @@ int main(void){
     TEST(ui.games==1);
     ui.game.rules=GUESS_NO_MOVE;
     press(KEY_A);frame();TEST(ui.game.phase==GUESS_PLAYING);
+    /* Opening a map does not guess or pause; B closes only the map. */
+    TEST(!ui.map_focused);
+    press(KEY_A);TEST(ui.map_focused && ui.game.phase==GUESS_PLAYING);
+    press(KEY_A);TEST(!ui.game.has_pin && ui.game.phase==GUESS_PLAYING);
+    press(KEY_B);TEST(!ui.map_focused && ui.game.phase==GUESS_PLAYING);
     initial=ui.yaw;
     press(KEY_L|KEY_R);
     TEST(moves_count==0&&ui.yaw!=initial);
