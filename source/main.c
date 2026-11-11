@@ -1801,8 +1801,10 @@ static void render_qr_top_screen(void) {
     int px = 240 / total_mods;
     if (px < 2) px = 2;
     int total_px = total_mods * px;
-    float x0 = (400.0f - (float)total_px) / 2.0f;
-    float y0 = (240.0f - (float)total_px) / 2.0f;
+    /* Integer pixel-aligned origins avoid half-pixel QR edges on versions
+     * whose total module count is odd (e.g. V2 and V4). */
+    int x0 = (400 - total_px) / 2;
+    int y0 = (240 - total_px) / 2;
 
     /* Draw black modules (background is already white) */
     for (int r = 0; r < g_qr_size; r++) {
