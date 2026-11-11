@@ -1806,11 +1806,10 @@ static void render_qr_top_screen(void) {
         }
     }
 
-    /* Label */
-    C2D_TextBufClear(g_ui_text_buf);
-    draw_ui_text(200.0f, 2.0f, 0.38f, 0.38f,
-                 C2D_Color32f(0.25f, 0.25f, 0.25f, 1.0f),
-                 C2D_AlignCenter, "Scan with phone to connect GPS");
+    /* Keep the entire top screen white except for QR modules. A header at
+     * y=2 previously overlapped the four-module quiet zone on some sizes,
+     * which could prevent phone cameras from scanning an otherwise valid QR.
+     * Connection instructions and live status remain on the bottom panel. */
 }
 
 static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
