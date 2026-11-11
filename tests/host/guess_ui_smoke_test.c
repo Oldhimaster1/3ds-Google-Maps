@@ -30,8 +30,11 @@ u32 hidKeysDown(void){return down;}
 u32 hidKeysHeld(void){return held;}
 void hidTouchRead(touchPosition *p){*p=touch;}
 void hidCircleRead(circlePosition *p){p->dx=145;p->dy=0;}
-void hidGyroRead(angularRate *p){p->y=0;p->z=0;}
+void hidGyroRead(angularRate *p){p->x=p->y=p->z=0;}
+void hidAccelRead(accelVector *p){p->x=0;p->y=0;p->z=256;}
 int HIDUSER_DisableGyroscope(void){return 0;}
+int HIDUSER_EnableAccelerometer(void){return 0;}
+int HIDUSER_DisableAccelerometer(void){return 0;}
 int HIDUSER_EnableGyroscope(void){return 0;}
 int HIDUSER_GetGyroscopeRawToDpsCoefficient(float *x){*x=10;return 0;}
 void pano_gyro_reset(PanoGyroFilter *f){f->ready=0;}
@@ -53,7 +56,9 @@ void C2D_DrawLine(float a,float b,u32 c,float d,float e,u32 f,float g,float h){(
 bool C3D_FrameBegin(int n){(void)n;return true;}
 void C3D_FrameEnd(int n){(void)n;}
 float C3D_AngleFromDegrees(float n){return n*.01745329252f;}
-void map_tiles_set_coverage(bool enabled){(void)enabled;}
+static bool coverage_enabled=true;
+void map_tiles_set_coverage(bool enabled){coverage_enabled=enabled;}
+bool map_tiles_get_coverage(void){return coverage_enabled;}
 void map_tiles_render(double lat,double lon,int z,int ox,int oy,int w,int h,bool top){
     (void)z;(void)ox;(void)oy;(void)w;(void)h;(void)top;
     last_map_lat=lat;last_map_lon=lon;
@@ -121,6 +126,7 @@ static void play_all(void){
     guess_ui_draw(&top,&bot);
     TEST(rendered);
     TEST(last_map_lat==ui.map_center.lat&&last_map_lon==ui.map_center.lon);
+    TEST(map_tiles_get_coverage());
     pick_pin();press(KEY_A);TEST(ui.game.phase==GUESS_RESULT);
     guess_ui_draw(&top,&bot);press(KEY_A);
 }
