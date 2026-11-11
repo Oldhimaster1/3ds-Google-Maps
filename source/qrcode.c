@@ -233,7 +233,7 @@ static void write_format(int sz, int mask, uint8_t out[][S])
 
 /* ---- Penalty evaluation ---- */
 
-static int penalty_score(int sz, const uint8_t q[][S])
+static int penalty_score(int sz, uint8_t q[][S])
 {
     int score = 0;
 
@@ -380,7 +380,7 @@ int qr_encode(const char *text, int len, uint8_t *modules, int *out_size)
     place_data(sz, bits, total_cw * 8);
 
     /* ---- Select best mask ---- */
-    int best_mask = 0, best_pen = 0x7FFFFFFF;
+    int best_pen = 0x7FFFFFFF;
     for (int m = 0; m < 8; m++) {
         memcpy(s_tmp, g, sizeof(s_tmp));
         for (int r = 0; r < sz; r++)
@@ -391,7 +391,6 @@ int qr_encode(const char *text, int len, uint8_t *modules, int *out_size)
         int pen = penalty_score(sz, s_tmp);
         if (pen < best_pen) {
             best_pen = pen;
-            best_mask = m;
             memcpy(s_best, s_tmp, sizeof(s_best));
         }
     }
