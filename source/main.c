@@ -1974,13 +1974,14 @@ static void apply_settings_hit(SettingsHitTarget hit) {
 }
 
 static void render_settings_panel(void) {
-    static const char* tab_names[SETTINGS_TAB_COUNT] = { "View", "Tiles", "Data", "GPS", "Explore" };
+    static const char* tab_names[SETTINGS_TAB_COUNT] = { "View", "Tiles", "Data", "GPS", "Explore", "Text" };
     static const char* tab_hints[SETTINGS_TAB_COUNT] = {
         "Style and live overlays",
         "Tile loading behavior",
         "Network and storage",
         "GPS source and server",
-        "Globe, terrain and street-level photos"
+        "Globe, terrain and street-level photos",
+        "Readability, text size and weight"
     };
     u64 now_ms = osGetTime();
     char line[128];
@@ -2004,16 +2005,18 @@ static void render_settings_panel(void) {
     }
 
     for (int i = 0; i < SETTINGS_TAB_COUNT; i++) {
-        float x = 8.0f + (float)i * 61.0f;
+        float x = 5.0f + (float)i * 52.0f;
         bool selected = (i == g_settings_tab);
         bool pressed = (i == SETTINGS_TAB_VIEW  && is_recent_settings_hit(SETTINGS_HIT_TAB_VIEW,  now_ms)) ||
                        (i == SETTINGS_TAB_TILES && is_recent_settings_hit(SETTINGS_HIT_TAB_TILES, now_ms)) ||
                        (i == SETTINGS_TAB_DATA  && is_recent_settings_hit(SETTINGS_HIT_TAB_DATA,  now_ms)) ||
-                       (i == SETTINGS_TAB_GPS   && is_recent_settings_hit(SETTINGS_HIT_TAB_GPS,   now_ms));
+                       (i == SETTINGS_TAB_GPS   && is_recent_settings_hit(SETTINGS_HIT_TAB_GPS,   now_ms)) ||
+                       (i == SETTINGS_TAB_EXPLORE && is_recent_settings_hit(SETTINGS_HIT_TAB_EXPLORE)) ||
+                       (i == SETTINGS_TAB_TEXT && is_recent_settings_hit(SETTINGS_HIT_TAB_TEXT));
         u32 fill = selected ? C2D_Color32f(0.28f, 0.48f, 0.66f, 1.0f)
                             : (pressed ? C2D_Color32f(0.24f, 0.29f, 0.35f, 1.0f) : C2D_Color32f(0.15f, 0.18f, 0.22f, 1.0f));
-        C2D_DrawRectSolid(x, 50.0f, 0.2f, 59.0f, 24.0f, fill);
-        draw_ui_text(x + 29.5f, 56.0f, 0.38f, 0.38f,
+        C2D_DrawRectSolid(x, 50.0f, 0.2f, 50.0f, 24.0f, fill);
+        draw_ui_text(x + 25.0f, 56.0f, 0.35f, 0.35f,
                      selected ? C2D_Color32f(0.97f, 0.99f, 1.0f, 1.0f) : C2D_Color32f(0.80f, 0.86f, 0.92f, 1.0f),
                      C2D_AlignCenter,
                      tab_names[i]);
@@ -2135,18 +2138,13 @@ static void render_settings_panel(void) {
         snprintf(line, sizeof(line), "backend %s", network_get_effective_tile_backend_name());
         draw_ui_text(12.0f, 222.0f, 0.30f, 0.30f, C2D_Color32f(0.56f, 0.62f, 0.70f, 1.0f), 0, line);
     } else if (g_settings_tab == SETTINGS_TAB_EXPLORE) {
-        static const char *names[] = {"World globe", "Terrain in 3D",
+        static const char *names[] = {"World globe", "3D terrain",
                                       "Street View Explorer", "Play StreetGuess"};
-        static const char *details[] = {"Rotate Earth and return to map",
-                                       "Grand Canyon with stereo 3D",
-                                       "Browse actual street imagery",
-                                       "Five rounds, Google imagery, 25,000 pts"};
         for (int i = 0; i < 4; i++) {
             float y = 80 + i * 27;
             C2D_DrawRectSolid(12, y, .2f, 296, 24, C2D_Color32(30, 42, 58, 255));
             C2D_DrawRectSolid(12, y, .3f, 3, 24, C2D_Color32(113, 215, 235, 255));
-            draw_ui_text(24, y + 1, .37f, .37f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
-            draw_ui_text(24, y + 13, .27f, .27f, C2D_Color32(164, 190, 211, 255), 0, details[i]);
+            draw_ui_text(24, y + 4, .43f, .43f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
         }
         char fly_label[45];
         if (g_street_fly_ms==0) snprintf(fly_label,sizeof(fly_label),"Fly-in: OFF");
@@ -2161,6 +2159,28 @@ static void render_settings_panel(void) {
             pano_runtime_coverage_enabled() ?
                 "Street imagery markers: ON (tap to toggle)" :
                 "Street imagery markers: OFF (tap to toggle)");
+    } else if (g_settings_tab == SETTINGS_TAB_TEXT) {
+        const UiAccessConfig *a=ui_access_get();
+        const char *sizes[]={"Normal","Large","Extra Large"};
+        const char *weights[]={"Regular","Medium","Bold"};
+        draw_ui_text(13,83,.45f,.45f,C2D_Color32(242,249,255,255),0,"Text size");
+        for(int i=0;i<3;i++){
+            float x=12+i*99;
+            u32 bg=a->size==(unsigned)i?C2D_Color32(30,128,149,255):C2D_Color32(35,48,64,255);
+            C2D_DrawRectSolid(x,103,.25f,96,34,bg);
+            draw_ui_text(x+48,112,.40f,.40f,C2D_Color32(255,255,255,255),C2D_AlignCenter,sizes[i]);
+        }
+        draw_ui_text(13,143,.45f,.45f,C2D_Color32(242,249,255,255),0,"Text weight");
+        for(int i=0;i<3;i++){
+            float x=12+i*99;
+            u32 bg=a->weight==(unsigned)i?C2D_Color32(30,128,149,255):C2D_Color32(35,48,64,255);
+            C2D_DrawRectSolid(x,161,.25f,96,32,bg);
+            draw_ui_text(x+48,169,.40f,.40f,C2D_Color32(255,255,255,255),C2D_AlignCenter,weights[i]);
+        }
+        C2D_DrawRectSolid(12,203,.2f,296,30,C2D_Color32(35,48,64,255));
+        draw_ui_text(23,209,.43f,.43f,C2D_Color32(245,248,255,255),0,"High contrast");
+        draw_ui_text(294,209,.43f,.43f,C2D_Color32(130,239,238,255),C2D_AlignRight,
+                     a->high_contrast?"ON":"OFF");
     } else { /* SETTINGS_TAB_GPS */
         bool client_mode   = (gps_get_source_mode() == GPS_SOURCE_NMEA_CLIENT);
         bool server_mode   = (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER);
