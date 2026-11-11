@@ -1366,15 +1366,24 @@ static void render_explore(void) {
          * already-cached tile textures. Never download tiles for the effect. */
         float p=street_fly_progress(frame_now,g_street_enter_ms,g_street_fly_ms);
         float descend=fminf(1.0f,p/.75f);
+        float pending=(frame_now>g_street_enter_ms+(u64)g_street_fly_ms)?
+            (frame_now-g_street_enter_ms-g_street_fly_ms)*.001f:0.0f;
+        float breathe=pending>0?.015f*sinf(pending*4.5f):0.0f;
         C2D_Prepare();
         C2D_TargetClear(top_screen,C2D_Color32(13,20,29,255));
         C2D_SceneBegin(top_screen);
         map_tiles_draw_fly(g_street_origin_lat,g_street_origin_lon,
                            g_street_origin_zoom,g_street_origin_x,g_street_origin_y,
-                           street_fly_scale(descend));
-        C2D_DrawCircleSolid(200,120,.75f,6.0f+descend*14.0f,
-                            C2D_Color32(66,205,234,60));
+                           street_fly_scale(descend)*(1.0f+breathe));
+        float pulse=4.0f*sinf(frame_now*.009f);
+        C2D_DrawCircleSolid(200,120,.75f,19.0f+descend*8.0f+pulse,
+                            C2D_Color32(66,205,234,75));
         C2D_DrawCircleSolid(200,120,.78f,3.0f,C2D_Color32(130,245,255,220));
+        if(pending>0) {
+            float t=fmodf(pending*.8f,1.0f);
+            C2D_DrawRectSolid(90,213,.85f,220,4,C2D_Color32(15,35,49,230));
+            C2D_DrawRectSolid(90+t*174,213,.86f,46,4,C2D_Color32(96,218,237,255));
+        }
         C2D_DrawRectSolid(0,0,.9f,400,240,
             C2D_Color32f(0.015f,0.035f,0.055f,.12f+.34f*descend));
     } else {
