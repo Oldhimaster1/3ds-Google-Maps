@@ -132,9 +132,9 @@ static void tick(DetailKey wanted){
   if(stream.thread && !detail_plan_equal(stream.requested,wanted))
    atomic_store(&stream.cancel,true);
  }
- if(stream.thread||stream.loaded_valid&&detail_plan_equal(stream.loaded,wanted)||
-    stream.failed_valid&&detail_plan_equal(stream.failed,wanted)&&
-    now>=stream.failed_since&&now-stream.failed_since<DETAIL_RETRY_MS||
+ if(stream.thread||(stream.loaded_valid&&detail_plan_equal(stream.loaded,wanted))||
+    (stream.failed_valid&&detail_plan_equal(stream.failed,wanted)&&
+    now>=stream.failed_since&&now-stream.failed_since<DETAIL_RETRY_MS)||
     !is_connected()||now<stream.desired_since||
     now-stream.desired_since<DETAIL_STABLE_MS||
     now<stream.last_request||now-stream.last_request<DETAIL_STABLE_MS)return;
