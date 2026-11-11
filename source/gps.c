@@ -43,6 +43,7 @@ static double current_lat = 0.0;
 static double current_lon = 0.0;
 static bool has_fix = false;
 static u64 fix_time;
+static unsigned fix_sequence;
 static double fix_accuracy = -1;
 static GpsMotion gps_motion;
 static bool discard_sentence;
@@ -133,6 +134,7 @@ void gps_inject_fix_with_motion(double lat, double lon, double accuracy, double 
         return;
     }
     fix_time = osGetTime();
+    fix_sequence++;
     fix_accuracy = isfinite(accuracy) && accuracy >= 0 ? accuracy : -1;
     current_lat = lat;
     current_lon = lon;
@@ -365,7 +367,7 @@ bool gps_get_fix(GpsFix *fix) {
     if (valid && fix) {
         *fix = (GpsFix){ current_lat, current_lon, fix_accuracy, (unsigned)age,
                gps_motion.speed_mps, gps_motion.heading_deg,
-               gps_motion.has_speed,gps_motion.has_heading };
+               gps_motion.has_speed,gps_motion.has_heading,fix_sequence };
     }
     LightLock_Unlock(&g_fix_lock);
     return valid;
