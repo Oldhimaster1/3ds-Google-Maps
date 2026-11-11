@@ -1,11 +1,11 @@
 # Explore on Nintendo 3DS
 
-Open **R → Explore** and tap a scene. Globe and Grand Canyon terrain work offline; live Street View requires a supported imagery source and Wi-Fi. **B** returns to the current scene's map position. The regular map, route, GPS and offline-pack controls are unchanged.
+Open **R → Explore** and tap a scene. The base globe works offline. Selected-location terrain, buildings and Street View need Wi-Fi and available provider data. **B** returns to the current scene's map position. The regular map, route, GPS and offline-pack controls are unchanged.
 
 | Scene | Controls and coverage |
 | --- | --- |
 | World globe | Circle Pad or D-Pad rotates across all longitudes and up to 89° latitude. **X / Y** zoom. Press **X** at the closest zoom or **A** for an animated dive into the existing map at the selected coordinates. The 2D map clamps to the Web Mercator latitude limit and loads details from its normal sources. |
-| Terrain in 3D | Orbit and zoom a roughly 32 × 29 km Grand Canyon relief model. Raise the 3D slider for distinct left and right views on a stereoscopic console. With the slider down or on 2DS, the same relief is visible in mono. Elevation is exaggerated 2.2× for readability. |
+| Terrain in 3D | Orbit and zoom elevation at the current map position, fetched from one Terrarium tile. Optional simple buildings use nearby OpenStreetMap footprints and available heights. Raise the 3D slider for separate left and right views on a stereoscopic console; 2DS and a lowered slider use mono. Terrain exaggeration and buildings are adjustable in Settings → More. No unrelated demo terrain or buildings are substituted when data is unavailable. |
 | Street View Explorer | Searches imagery near the **current map center**. Tap the source row to choose **Automatic, Panoramax, Mapillary, KartaView, Google (experimental), or Bing (experimental)**; **Y** remains a cycling shortcut. **R** follows a verified forward link, **L** backtracks when history exists, and touchscreen arrows choose intersection branches. **D-pad Up/Down** zooms, **D-pad Left/Right** turns, **L+Down** retries; **X** toggles gyro and **Select** recenters/recalibrates. The bottom minimap tracks live panoramas; available higher-quality Google tiles replace the initial preview when valid. Ordinary street photos remain flat. The bundled demonstration panoramas no longer display or ship in the app. Entry starts a real provider search immediately; the overhead map flies down while imagery downloads. |
 
 
@@ -20,7 +20,7 @@ Bold is currently a thicker system-font overprint, not a separate font file.
 ## StreetGuess development game
 
 **Explore → Play StreetGuess** opens a completely separate five-round
-Google Street View geography game with its own world/US/Europe random
+street-imagery geography game with curated challenges and experimental Google world/US/Europe random
 location sampling, Moving/No Move/NMPZ rules, independent touchscreen
 guessing map, scores and local records. B from the game menu returns to
 ordinary Maps at the unchanged location and settings.
@@ -122,7 +122,7 @@ analog cross-talk while turning horizontally. This is only applied to
 Street View; the globe and terrain keep their existing controls. The
 gyroscope now requires 45 stationary samples before movement is accepted,
 rejects noisy cross-axis readings, and stops when rotation settles.
-**Up** recalibrates; hold the console still and watch for the calibration
+**Select** recalibrates; hold the console still and watch for the calibration
 message to disappear.
 
 Individual photographs may have an inherently tilted horizon due to how
@@ -140,7 +140,7 @@ The release CIA uses the 64 MiB application memory profile. The renderer draws o
 | --- | --- |
 | CPU reprojection vs. GPU perspective | A perspective sphere handles the photo seam and poles and avoids per-pixel ARM work. A fixed camera and bounded geometry keep render costs predictable. |
 | Global tiled globe vs. a world texture | One NASA mosaic provides immediate offline coverage. It hands off to Web Mercator at regional scale. A continuous LOD surface would need its own tile hierarchy, texture budgets, edge stitching and verified providers. The current handoff is an animated zoom and fade. |
-| Regional mesh vs. live elevation and buildings | One verified USGS DEM enables real stereoscopic relief without live TIFF decoding, tile coordination or height guesses. Worldwide terrain would need a separate service and LOD system. Building extrusion would need licensed footprints, height data and a geometry pipeline. This build has one region and zero buildings. |
+| Regional mesh vs. live elevation and buildings | Selected-location Terrarium elevation supplies one bounded mesh at a time. Optional OpenStreetMap footprints become simple extruded buildings, using tagged heights or a floor-based estimate. Availability depends on both services; this is not a continuously streamed 3D city or terrain LOD system. |
 | Live imagery without fictional fallbacks | Only real results from the user-selected source display in Street View. No unrelated demo scene appears when no coverage exists. Google remains experimental and subject to imagery access, attribution and caching restrictions. Nonpanoramic photos are drawn flat rather than projected onto a sphere. |
 
 Old 3DS frame rate, GPU timing, cold entry latency, physical slider behavior and gyro calibration require device measurements. The existing **View → Debug overlay** enables the FPS readout in Explore. Target 30 FPS or better with stereo enabled, then profile frame time and linear heap on the console before enabling wider data coverage.
