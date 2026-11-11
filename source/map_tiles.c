@@ -417,6 +417,8 @@ static bool show_coverage;
 void map_tiles_set_coverage(bool enabled) {
     show_coverage = enabled;
 }
+/* The game's guess map must not change the normal map overlay state. */
+bool map_tiles_get_coverage(void) { return show_coverage; }
 
 void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset_y, 
                      int screen_width, int screen_height, bool is_top_screen) {
