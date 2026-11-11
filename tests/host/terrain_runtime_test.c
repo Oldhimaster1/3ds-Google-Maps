@@ -1,5 +1,6 @@
 #include "terrain_runtime.h"
 #include <3ds.h>
+#include <stdatomic.h>
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
