@@ -1690,6 +1690,12 @@ void render_map(void) {
 static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 color, u32 flags, const char* text) {
     if (!g_ui_text_buf || !text || !text[0]) return;
     const UiAccessConfig *pref=ui_access_get();
+    if(pref->high_contrast){
+        unsigned r=color&255u,g=(color>>8)&255u,b=(color>>16)&255u;
+        unsigned maximum=r>g?(r>b?r:b):(g>b?g:b);
+        if(maximum>=120 && maximum<220 && ((color>>24)&255u)>195)
+            color=C2D_Color32(221,237,247,(color>>24)&255u);
+    }
     if (fabsf(scale_x-scale_y)<0.01f && scale_y<.61f) {
         scale_x*=ui_access_scale();
         scale_y*=ui_access_scale();
