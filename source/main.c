@@ -13,6 +13,7 @@
 #include "gps_follow_gate.h"
 #include "geo_formats.h"
 #include "earth_options.h"
+#include "route_follow.h"
 #include "street_heading.h"
 #include "globe_detail.h"
 #include "pano_detail.h"
@@ -245,6 +246,10 @@ static RoutePoint *g_route_geometry;
 static unsigned g_route_geometry_count;
 static int g_route_count = 0;
 static bool g_route_active = false;
+static RouteFollow g_route_follow;
+static bool g_route_has_destination;
+static double g_route_destination_lat,g_route_destination_lon;
+static unsigned g_route_last_fix_sequence;
 static char g_route_next_text[80] = {0};
 static int g_route_next_dist_m = 0;
 static TouchAction g_last_touch_action = TOUCH_ACTION_NONE;
@@ -288,6 +293,7 @@ static void open_recents(void);
 static void open_favorites(void);
 static void open_cache_stats(void);
 static void open_route_to_address(void);
+static void reroute_from_gps(double lat,double lon);
 static bool geocode_pick(const char* query, GeocodeResult* out);
 static bool parse_route_json(const char* json, u32 json_size);
 static void render_route_overlay(double center_lat, double center_lon, int zoom, int screen_width, int screen_height);
@@ -756,6 +762,22 @@ int main(int argc, char* argv[]) {
                 set_camera_target(fix.lat,fix.lon,g_target_zoom,false);
         }
 
+        /* Consume each accepted GPS update once, not every rendered frame.
+         * Three distinct off-route fixes are required before automatic retry.
+         * Routing does NOT add maneuver/turn-by-turn instructions. */
+        if(g_route_active && g_route_follow.path && g_route_has_destination){
+            GpsFix fix;
+            if(gps_get_fix(&fix) && fix.age_ms<5000 &&
+               fix.fix_sequence!=g_route_last_fix_sequence){
+                g_route_last_fix_sequence=fix.fix_sequence;
+                if(route_follow_update(&g_route_follow,fix.lat,fix.lon,
+                        fix.accuracy_m>=0?fix.accuracy_m:8.,now_ms) &&
+                   route_follow_needs_reroute(&g_route_follow,now_ms) &&
+                   is_connected())
+                    reroute_from_gps(fix.lat,fix.lon);
+            }
+        }
+
         update_input();
         if (g_should_exit) break;
         if (guess_ui_active()) {
@@ -793,6 +815,7 @@ int main(int argc, char* argv[]) {
 cleanup:
     if (guess_ui_active()) guess_ui_leave();
     if (g_explore_mode) close_explore();
+    route_follow_reset(&g_route_follow);
     free(g_route_geometry);
     // Cleanup
     gps_cleanup();
@@ -2579,6 +2602,16 @@ static void render_bottom_panel(void) {
         else if (fix.accuracy_m >= 0)
             snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy %.0f m", fix.age_ms / 1000.0, fix.accuracy_m);
         else snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy unavailable", fix.age_ms / 1000.0);
+    } else if (g_route_active && g_route_follow.matched) {
+        if(g_route_follow.off_route)
+            snprintf(line,sizeof(line),"Off route: checking GPS position");
+        else if(g_route_follow.duration_s>0)
+            snprintf(line,sizeof(line),"Route %.1f mi left, ETA %.0f min",
+                     g_route_follow.remaining_m/1609.344,
+                     g_route_follow.eta_s/60);
+        else
+            snprintf(line,sizeof(line),"Route %.1f mi left",
+                     g_route_follow.remaining_m/1609.344);
     } else if (g_route_active) {
         snprintf(line, sizeof(line), "Route: %.34s", g_route_next_text[0] ? g_route_next_text : "Active");
     } else if (g_last_place_name[0]) {
@@ -2983,9 +3016,21 @@ static bool parse_route_json(const char *json, u32 size) {
         next = json_string_value(json_object_get(step, "name"));
     }
     double distance = json_number_value(json_object_get(poly ? root : route, poly ? "distance_m" : "distance"));
+    double duration=json_number_value(json_object_get(poly ? root : route,
+                                          poly ? "duration_s" : "duration"));
+    if(!isfinite(distance)||distance<0)distance=0;
+    if(!isfinite(duration)||duration<0)duration=0;
+    RouteFollow fresh={0};
+    if(!route_follow_begin(&fresh,(const RouteFollowPoint *)points,count,
+                           distance,duration)){
+        free(points);json_decref(root);return false;
+    }
     g_route_next_dist_m = (int)fmin(2147483647, fmax(0, distance));
     snprintf(g_route_next_text, sizeof(g_route_next_text), "%s", next && *next ? next : "Route");
+    route_follow_reset(&g_route_follow);
     free(g_route_geometry);
+    g_route_follow=fresh;
+    g_route_last_fix_sequence=0;
     g_route_geometry = points;
     g_route_geometry_count = count;
     g_route_count = count < MAX_ROUTE_POINTS ? (int)count : MAX_ROUTE_POINTS;
@@ -3048,8 +3093,31 @@ static void open_route_to_address(void) {
     }
 
     g_route_active = true;
+    g_route_destination_lat=dest.lat;
+    g_route_destination_lon=dest.lon;
+    g_route_has_destination=true;
     add_recent(dest.name, dest.lat, dest.lon);
-    set_status_message("Route ready");
+    set_status_message("Route ready: progress and ETA enabled");
+}
+
+/* Reroute only after three fresh, accurate off-route fixes with cooldown.
+ * Current geometry is preserved if the provider is unavailable or canceled. */
+static void reroute_from_gps(double lat,double lon) {
+    if(!g_route_active||!g_route_has_destination||!is_connected())return;
+    char url[512];
+    if(network_get_proxy_enabled())
+        snprintf(url,sizeof(url),"%s/route?from=%.6f,%.6f&to=%.6f,%.6f",
+                 network_get_proxy_base_url(),lat,lon,
+                 g_route_destination_lat,g_route_destination_lon);
+    else
+        snprintf(url,sizeof(url),"https://router.project-osrm.org/route/v1/driving/"
+                 "%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=false",
+                 lon,lat,g_route_destination_lon,g_route_destination_lat);
+    u8 *buf=NULL;u32 length=0;
+    if(!wait_for_request(url,"Rerouting", &buf,&length))return;
+    bool ok=parse_route_json((const char*)buf,length);
+    free(buf);
+    set_status_message(ok?"Route updated from GPS":"Could not recalculate route");
 }
 
 static void render_route_overlay(double center_lat, double center_lon, int zoom, int screen_width, int screen_height) {
