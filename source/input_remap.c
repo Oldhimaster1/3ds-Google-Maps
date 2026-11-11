@@ -4,6 +4,11 @@
 #include <string.h>
 /* Keep START as an untouchable hardware escape; touch and analog are unmodified.
  * Within each context, the 11 mapped digital keys form a bijection. */
+static const InputRemap *active_map;
+void input_remap_set_active(const InputRemap *m){active_map=m;}
+uint32_t input_remap_apply(unsigned profile,uint32_t raw){
+ return input_remap_keys(active_map,profile,raw);
+}
 static const uint32_t keys[INPUT_REMAP_BUTTONS]={
  KEY_A,KEY_B,KEY_X,KEY_Y,KEY_L,KEY_R,
  KEY_DUP,KEY_DDOWN,KEY_DLEFT,KEY_DRIGHT,KEY_SELECT
