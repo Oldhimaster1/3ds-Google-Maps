@@ -1,6 +1,9 @@
 #include "guess_ui.h"
 #include "guess_core.h"
 #include "guess_roads.h"
+#include "guess_replay.h"
+#include "street_heading.h"
+#include "earth_options.h"
 #include "pano_runtime.h"
 #include "explore.h"
 #include "map_tiles.h"
@@ -32,6 +35,10 @@ typedef struct {
     char start_id[48], note[96];
     GuessGame game;
     GuessRoads roads;
+    GuessReplay replay;
+    EarthOptions options;
+    float last_azimuth;
+    char last_view_id[48];
     uint64_t road_rng;
     unsigned best[GUESS_MAP_COUNT][GUESS_RULE_COUNT], games;
     C2D_TextBuf text;
@@ -105,6 +112,7 @@ void guess_ui_leave(void){
     drop_scene();
     pano_runtime_end_game_google();
     guess_roads_close(&ui.roads);
+    guess_replay_save(&ui.replay,GUESS_REPLAY_FILE);
     if(ui.text){C2D_TextBufDelete(ui.text);ui.text=NULL;}
     ui.active=false;
     gfxSet3D(false);
@@ -129,6 +137,11 @@ bool guess_ui_enter(void){
     /* Optional road geometry lives on SD; if absent, the self-contained
      * global geographic sampler remains fully functional. */
     guess_roads_open(&ui.roads,GUESS_ROADS_FILE);
+    guess_replay_clear(&ui.replay);
+    guess_replay_load(&ui.replay,GUESS_REPLAY_FILE);
+    earth_options_default(&ui.options);
+    earth_options_load(&ui.options,EARTH_OPTIONS_FILE);
+    ui.game.sampler=ui.options.sampler;
     load_records();
     gfxSet3D(false);
     C2D_Prepare();
@@ -143,10 +156,12 @@ static void reset_guess_map(void){
 }
 static void new_game(void){
     drop_scene();
+    ui.game.sampler=ui.options.sampler;
     guess_begin(&ui.game,ui.game.region,ui.game.rules,times[ui.time_choice]);
     reset_guess_map();
     ui.yaw=0;ui.pitch=0;ui.fov=55;
     ui.start_id[0]=0;
+    ui.last_view_id[0]=0;
     ui.next_search_ms=0;
     ui.note[0]=0;
     if(!explore_load(EXPLORE_STREET,0)){
@@ -187,7 +202,8 @@ static void find_round(u64 now){
             ui.candidate=road;
         /* Reject recently visited geographic cells BEFORE an HTTP lookup.
          * This does not store or index Google's imagery. */
-        if(!guess_candidate_acceptable(&ui.game,ui.candidate)){
+        if(!guess_candidate_acceptable(&ui.game,ui.candidate) ||
+           !guess_replay_can_play(&ui.replay,ui.candidate.lat,ui.candidate.lon,1)){
             ui.next_search_ms=now;
             return;
         }
@@ -207,8 +223,13 @@ static void find_round(u64 now){
          * far from the sampled point. The true panorama position is scored. */
         bool good=p->provider==STREET_PROVIDER_GOOGLE&&p->is_pano&&
                   guess_distance_km(ui.candidate,actual)<40.0&&
+                  guess_replay_can_play(&ui.replay,actual.lat,actual.lon,1)&&
                   guess_accept_start(&ui.game,actual,now);
         if(good){
+            guess_replay_add(&ui.replay,actual.lat,actual.lon);
+            guess_replay_save(&ui.replay,GUESS_REPLAY_FILE);
+            snprintf(ui.last_view_id,sizeof(ui.last_view_id),"%s",p->id);
+            ui.last_azimuth=p->azimuth;
             snprintf(ui.start_id,sizeof(ui.start_id),"%s",p->id);
             /* Deterministic per-round random initial direction, not always north. */
             ui.yaw=(float)(((ui.game.rng>>17)%360)*PI/180.0f);
@@ -356,6 +377,15 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
         }
     }
     pano_runtime_poll();
+    const PanoLiveImage *after=pano_runtime_current();
+    if(after && after->is_pano && after->id[0] &&
+       strcmp(after->id,ui.last_view_id)!=0){
+        float corrected=ui.yaw;
+        if(ui.last_view_id[0] && street_heading_transfer(ui.last_azimuth,
+                ui.yaw,after->azimuth,&corrected))ui.yaw=corrected;
+        snprintf(ui.last_view_id,sizeof(ui.last_view_id),"%s",after->id);
+        ui.last_azimuth=after->azimuth;
+    }
     guess_tick(&ui.game,now);
     if(ui.game.phase==GUESS_RESULT){ui.map_focused=false;result_center();}
     ui.last_ms=now;
