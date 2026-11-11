@@ -37,4 +37,14 @@ static inline int tile_view_score(const TileViewport *v,int x,int y,int zoom,int
     int score=dx*dx+dy*dy;
     return visible_x&&visible_y?score:100+score;
 }
+/* Compare queued live requests as new visible tiles arrive. This preserves
+ * centre-first priority even when the viewport stays within one tile grid. */
+static inline int tile_request_outranks(const TileViewport *view,
+    int nx,int ny,int nz,int np,int ox,int oy,int oz,int op) {
+    if(np) return 0;
+    if(op) return 1;
+    int new_score=tile_view_score(view,nx,ny,nz,np);
+    int other_score=tile_view_score(view,ox,oy,oz,op);
+    return new_score>=0 && (other_score<0 || new_score<other_score);
+}
 #endif
