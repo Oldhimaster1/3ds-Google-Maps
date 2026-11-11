@@ -4,6 +4,8 @@
 #include "guess_replay.h"
 #include "street_heading.h"
 #include "earth_options.h"
+#include "input_remap.h"
+#include "detail_runtime.h"
 #include "pano_runtime.h"
 #include "explore.h"
 #include "map_tiles.h"
@@ -103,6 +105,7 @@ static void stop_gyro(void){
 }
 static void drop_scene(void){
     stop_gyro();
+    detail_runtime_stop();
     pano_runtime_stop();
     if(ui.scene_loaded){explore_unload();ui.scene_loaded=false;}
     ui.fetching=false;
@@ -393,7 +396,8 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
 void guess_ui_update(void){
     if(!ui.active)return;
     hidScanInput();
-    u32 keys=hidKeysDown(),held=hidKeysHeld();
+    u32 keys=input_remap_apply(REMAP_GUESS,hidKeysDown());
+    u32 held=input_remap_apply(REMAP_GUESS,hidKeysHeld());
     touchPosition touch={0};hidTouchRead(&touch);
     u64 now=osGetTime();
     switch(ui.game.phase){
@@ -424,6 +428,11 @@ void guess_ui_update(void){
         else if(keys&KEY_B){drop_scene();ui.game.phase=GUESS_MENU;}
         break;
     }
+    if(ui.scene_loaded && (ui.game.phase==GUESS_PLAYING ||
+        ui.game.phase==GUESS_RESULT ||
+        (ui.game.phase==GUESS_PAUSED && ui.game.resume==GUESS_PLAYING)))
+        detail_runtime_update_panorama(pano_runtime_current(),ui.yaw,ui.pitch,
+                                       ui.fov,ui.options.panorama_quality);
 }
 static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
     C2D_TargetClear(bottom,C2D_Color32(15,25,39,255));
