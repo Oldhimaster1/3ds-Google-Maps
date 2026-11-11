@@ -202,23 +202,33 @@ static uint16_t compute_format_bits(int mask)
     return bits;
 }
 
-/* Bit positions for format info copy 1 (around top-left finder) */
-static const int F1R[] = {8,8,8,8,8,8,8,8, 7,5,4,3,2,1,0};
-static const int F1C[] = {0,1,2,3,4,5,7,8, 8,8,8,8,8,8,8};
-
+/* Both copies of the 15-bit format metadata are placed per ISO/IEC 18004.
+ * Bit 0 starts above the upper-left finder and at the right edge of row 8.
+ * The older implementation transposed these two format copies and wrote over
+ * the wrong modules. That produces a visible but undecodable QR code. */
 static void write_format(int sz, int mask, uint8_t out[][S])
 {
     uint16_t bits = compute_format_bits(mask);
     for (int i = 0; i < 15; i++) {
         int v = (bits >> i) & 1;
-        /* Copy 1 */
-        out[F1R[i]][F1C[i]] = v;
-        /* Copy 2: bits 0-7 -> bottom-left, bits 8-14 -> top-right. */
-        if (i < 8)
-            out[sz - 1 - i][8] = v;
+        /* Vertical: upper-left, skipping timing row, then bottom-left. */
+        if (i < 6)
+            out[i][8] = v;
+        else if (i < 8)
+            out[i + 1][8] = v;
         else
-            out[8][sz - 15 + i] = v;
+            out[sz - 15 + i][8] = v;
+
+        /* Horizontal: top-right, then around upper-left finder. */
+        if (i < 8)
+            out[8][sz - 1 - i] = v;
+        else if (i == 8)
+            out[8][7] = v;
+        else
+            out[8][14 - i] = v;
     }
+    /* This module is fixed black, not part of the format information. */
+    out[sz - 8][8] = 1;
 }
 
 /* ---- Penalty evaluation ---- */
