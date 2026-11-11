@@ -11,6 +11,11 @@
 #include <unistd.h>
 #include "map_tiles.h"
 #include "gps_follow_gate.h"
+#include "geo_formats.h"
+#include "earth_options.h"
+#include "street_heading.h"
+#include "globe_detail.h"
+#include "pano_detail.h"
 #include "search_input.h"
 #include "network.h"
 #include "gps.h"
@@ -386,32 +391,7 @@ static void end_bottom_console_ui(const char* status_message) {
 
 
 static bool parse_latlon(const char* s, double* out_lat, double* out_lon) {
-    if (!s || !out_lat || !out_lon) return false;
-
-    // Accept: "lat,lon" with optional spaces.
-    while (*s == ' ' || *s == '\t') s++;
-    char* end1 = NULL;
-    double lat = strtod(s, &end1);
-    if (!end1 || end1 == s) return false;
-
-    while (*end1 == ' ' || *end1 == '\t') end1++;
-    if (*end1 != ',') return false;
-    end1++;
-    while (*end1 == ' ' || *end1 == '\t') end1++;
-
-    char* end2 = NULL;
-    double lon = strtod(end1, &end2);
-    if (!end2 || end2 == end1) return false;
-
-    while (*end2 == ' ' || *end2 == '\t' || *end2 == '\r' || *end2 == '\n') end2++;
-    if (*end2 != '\0') return false;
-
-    if (!isfinite(lat) || lat < -90.0 || lat > 90.0) return false;
-    if (!isfinite(lon) || lon < -180.0 || lon > 180.0) return false;
-
-    *out_lat = lat;
-    *out_lon = lon;
-    return true;
+    return geo_parse_coordinates(s,out_lat,out_lon)!=GEO_INVALID;
 }
 
 static double approach_lon(double current, double target, double alpha) {
