@@ -17,17 +17,17 @@ to `sdmc:/3ds_google_maps/ui_access.cfg`. Long search/address results are now
 line-wrapped or truncated proportionally instead of horizontally compressed.
 Bold is currently a thicker system-font overprint, not a separate font file.
 
-## StreetGuess development game
+## StreetGuess geography game
 
-**Explore → Play StreetGuess** opens a completely separate five-round
-street-imagery geography game with curated challenges and experimental Google world/US/Europe random
-location sampling, Moving/No Move/NMPZ rules, independent touchscreen
-guessing map, scores and local records. B from the game menu returns to
-ordinary Maps at the unchanged location and settings.
+**Explore → Play StreetGuess** opens a separate geography game with classic
+World/US/Europe random rounds, curated Daily Challenges, friend codes, local
+pass-and-play, Mystery Expeditions and Country Streak. Play using a separate
+touchscreen guessing map; the normal Maps view and saved Street View provider
+are preserved when you leave the game.
 
-This is a **development feature**, not a released or hardware-verified
-game. [Read StreetGuess controls, implementation details, test coverage
-and remaining verification gates](streetguess.md).
+Curated challenges use Panoramax imagery; classic random mode uses experimental
+Google imagery. [Read the current StreetGuess guide](streetguess.md) for gameplay,
+controls, location availability and compatibility details.
 
 ## Multi-provider Street View
 
