@@ -1658,14 +1658,81 @@ void render_map(void) {
     C3D_FrameEnd(0);
 }
 
+/* Preserve uniform glyph proportions; font size and weight preferences apply
+ * to the entire application's lightweight UI without external fonts. */
 static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 color, u32 flags, const char* text) {
-    C2D_Text ui_text;
-
     if (!g_ui_text_buf || !text || !text[0]) return;
-
-    C2D_TextParse(&ui_text, g_ui_text_buf, text);
+    const UiAccessConfig *pref=ui_access_get();
+    if (fabsf(scale_x-scale_y)<0.01f && scale_y<.61f) {
+        scale_x*=ui_access_scale();
+        scale_y*=ui_access_scale();
+    }
+    C2D_Text ui_text;
+    C2D_TextParse(&ui_text,g_ui_text_buf,text);
     C2D_TextOptimize(&ui_text);
-    C2D_DrawText(&ui_text, flags | C2D_WithColor, x, y, 0.5f, scale_x, scale_y, color);
+    C2D_DrawText(&ui_text,flags|C2D_WithColor,x,y,.50f,scale_x,scale_y,color);
+    if(pref->weight>0){
+        float spread=pref->weight==2?.80f:.40f;
+        C2D_DrawText(&ui_text,flags|C2D_WithColor,x+spread,y,.51f,
+                     scale_x,scale_y,color);
+    }
+}
+/* Measure text instead of compressing it horizontally. UTF-8 is always
+ * trimmed at complete codepoint boundaries, with an optional ellipsis. */
+static void draw_ui_fit_line(float x,float y,float scale,u32 color,
+                             const char *input,float max_width){
+    if(!input||!input[0]||!g_ui_text_buf)return;
+    char line[192];
+    size_t total=strlen(input);
+    if(total>=sizeof(line))total=sizeof(line)-1;
+    size_t lo=0,hi=total;
+    float real_scale=scale*ui_access_scale();
+    while(lo<hi){
+        size_t mid=(lo+hi+1)/2;
+        while(mid>0 && mid<total && ((unsigned char)input[mid]&0xc0)==0x80)mid--;
+        if(mid<=lo)mid=lo+1;
+        if(mid>total)mid=total;
+        while(mid<total && ((unsigned char)input[mid]&0xc0)==0x80)mid++;
+        if(mid>=sizeof(line))mid=sizeof(line)-1;
+        memcpy(line,input,mid);line[mid]=0;
+        C2D_Text measure;
+        C2D_TextParse(&measure,g_ui_text_buf,line);
+        float width=measure.width*real_scale;
+        if(width<=max_width)lo=mid;
+        else hi=mid-1;
+    }
+    size_t take=lo;
+    if(take<strlen(input)){
+        while(take>0 && ((unsigned char)input[take]&0xc0)==0x80)take--;
+        while(take>0 && (input[take-1]==' '||input[take-1]==','))take--;
+        while(take>0){
+            memcpy(line,input,take);memcpy(line+take,"...",4);
+            C2D_Text t;C2D_TextParse(&t,g_ui_text_buf,line);
+            if(t.width*real_scale<=max_width)break;
+            take--;
+            while(take>0 && ((unsigned char)input[take]&0xc0)==0x80)take--;
+        }
+    }else{memcpy(line,input,take);line[take]=0;}
+    draw_ui_text(x,y,scale,scale,color,0,line);
+}
+static void draw_ui_address_two_lines(const char *name,u32 color){
+    if(!name)return;
+    char left[160],right[160];
+    size_t total=strlen(name),cut=0;
+    /* A comma nearest the middle makes addresses far easier to scan. */
+    for(size_t i=0;i<total && i<75;i++)
+        if(name[i]==',' && i>14 && i<65)cut=i+1;
+    if(!cut){
+        cut=total>42?42:total;
+        while(cut<total && cut>16 && name[cut]!=' ')cut--;
+        if(cut<=16)cut=total>42?42:total;
+    }
+    if(cut>=sizeof(left))cut=sizeof(left)-1;
+    memcpy(left,name,cut);left[cut]=0;
+    while(cut<total && (name[cut]==' '||name[cut]==','))cut++;
+    snprintf(right,sizeof(right),"%s",name+cut);
+    draw_ui_fit_line(17,67,.48f,color,left,283);
+    if(right[0])draw_ui_fit_line(17,88,.45f,color,right,283);
 }
 
 static void render_qr_top_screen(void) {
@@ -2538,23 +2605,21 @@ static void render_place_panel(void) {
     draw_ui_text(12, 9, .57f, .57f, white, 0, place_identify ? "Map center" : "Search results");
     char line[72];
     if (place_identify) {
+        C2D_DrawRectSolid(9,57,.20f,302,67,C2D_Color32(31,74,91,255));
+        draw_ui_address_two_lines(place_rows[0].name,white);
         snprintf(line, sizeof(line), "%.6f, %.6f", place_rows[0].lat, place_rows[0].lon);
-        draw_ui_text(13, 106, .45f, .45f, dim, 0, line);
-        draw_ui_text(13, 134, .42f, .42f, dim, 0, "Saved to Recents");
+        draw_ui_text(13, 146, .45f, .45f, dim, 0, line);
+        draw_ui_text(13, 172, .43f, .43f, dim, 0, "Saved to Recents");
     } else {
         snprintf(line, sizeof(line), "%d of %d", place_selection + 1, place_count);
         draw_ui_text(12, 31, .39f, .39f, dim, 0, line);
-    }
-    int first = place_selection > 2 ? place_selection - 2 : 0;
-    for (int i = first; i < place_count && i < first + 3; i++) {
-        int y = 57 + (i - first) * 40;
-        C2D_DrawRectSolid(9, y, .2f, 302, 35, i == place_selection ?
-                          C2D_Color32(31, 74, 91, 255) : C2D_Color32(30, 42, 58, 255));
-        C2D_Text text;
-        C2D_TextParse(&text, g_ui_text_buf, place_rows[i].name);
-        C2D_TextOptimize(&text);
-        float scale = text.width > 0 ? fminf(.47f, 284 / text.width) : .47f;
-        C2D_DrawText(&text, C2D_WithColor, 17, y + 8, .5f, scale, .47f, white);
+        int first=place_selection>2?place_selection-2:0;
+        for(int i=first;i<place_count && i<first+3;i++){
+            int y=57+(i-first)*43;
+            C2D_DrawRectSolid(9,y,.20f,302,39,i==place_selection?
+                C2D_Color32(31,74,91,255):C2D_Color32(30,42,58,255));
+            draw_ui_fit_line(17,y+9,.45f,white,place_rows[i].name,282);
+        }
     }
     C2D_DrawRectSolid(0, 194, .2f, 320, 46, C2D_Color32(23, 32, 45, 255));
     draw_ui_text(12, 205, .43f, .43f, dim, 0, place_identify ? "B  Back" : "Up/Down  Select     A  Choose     B  Cancel");
