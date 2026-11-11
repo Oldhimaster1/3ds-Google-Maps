@@ -213,8 +213,8 @@ static void write_format(int sz, int mask, uint8_t out[][S])
         int v = (bits >> i) & 1;
         /* Copy 1 */
         out[F1R[i]][F1C[i]] = v;
-        /* Copy 2: bits 0-6 → bottom-left column, bits 7-14 → top-right row */
-        if (i < 7)
+        /* Copy 2: bits 0-7 -> bottom-left, bits 8-14 -> top-right. */
+        if (i < 8)
             out[sz - 1 - i][8] = v;
         else
             out[8][sz - 15 + i] = v;
@@ -300,6 +300,8 @@ static uint8_t s_best[S][S];
 
 int qr_encode(const char *text, int len, uint8_t *modules, int *out_size)
 {
+    if (!text || !modules || !out_size || len < 0) return 0;
+    *out_size = 0;
     gf_init();
 
     /* Pick smallest version that can hold the data */
