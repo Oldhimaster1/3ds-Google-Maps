@@ -2055,7 +2055,7 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             g_settings_tab = SETTINGS_TAB_MORE;
             break;
         case SETTINGS_HIT_MORE_PAGE:
-            g_more_page=(g_more_page+1)%2;
+            g_more_page=(g_more_page+1)%3;
             break;
         case SETTINGS_HIT_MORE_ROW1:
         case SETTINGS_HIT_MORE_ROW2:
@@ -2067,13 +2067,28 @@ static void apply_settings_hit(SettingsHitTarget hit) {
                 if(row==1)g_earth_options.dead_zone=g_earth_options.dead_zone>=60?10:g_earth_options.dead_zone+10;
                 if(row==2)g_earth_options.gyro_invert=!g_earth_options.gyro_invert;
                 if(row==3)g_earth_options.panorama_quality=(g_earth_options.panorama_quality+1)%4;
-            }else{
+            }else if(g_more_page==1){
                 if(row==0)g_earth_options.terrain_exaggeration=(g_earth_options.terrain_exaggeration+1)%5;
                 if(row==1)g_earth_options.buildings=!g_earth_options.buildings;
                 if(row==2)g_earth_options.globe_detail=(g_earth_options.globe_detail+1)%3;
                 if(row==3)g_earth_options.sampler=(g_earth_options.sampler+1)%4;
+            }else{
+                if(row==0)g_remap_profile=(g_remap_profile+1)%INPUT_REMAP_PROFILES;
+                if(row==1)g_remap_action=(g_remap_action+1)%INPUT_REMAP_BUTTONS;
+                if(row==2){
+                    g_remap_capture=true;
+                    set_status_message("Press physical button; START cancels");
+                }
+                if(row==3){
+                    InputRemap defaults;input_remap_default(&defaults);
+                    for(unsigned i=0;i<INPUT_REMAP_BUTTONS;i++)
+                        g_controls.physical[g_remap_profile][i]=defaults.physical[g_remap_profile][i];
+                    if(!input_remap_save(&g_controls,INPUT_REMAP_FILE))
+                        set_status_message("Reset in RAM; could not save to SD");
+                    else set_status_message("This control profile reset");
+                }
             }
-            earth_options_save(&g_earth_options,EARTH_OPTIONS_FILE);
+            if(g_more_page<2)earth_options_save(&g_earth_options,EARTH_OPTIONS_FILE);
             break;
         }
         case SETTINGS_HIT_TEXT_NORMAL:
@@ -2475,20 +2490,29 @@ static void render_settings_panel(void) {
         const char *quality[]={"Fast","Standard","Detail","Auto"};
         const char *globe[]={"Low","Auto","High"};
         const char *sampler[]={"Balanced","Urban","Rural","Broad"};
-        const char *labels[2][4]={
+        const char *labels[3][4]={
             {"Map controls speed","Circle Pad deadzone","Invert gyro axes","Panorama quality"},
-            {"Terrain exaggeration","Stereoscopic buildings","Globe detail","StreetGuess locations"}};
+            {"Terrain exaggeration","Stereoscopic buildings","Globe detail","StreetGuess locations"},
+            {"Control profile","Remap logical action","Bind physical button","Reset this profile"}
+        };
         char values[4][44];
-        if(!g_more_page){
+        if(g_more_page==0){
             snprintf(values[0],44,"%s",speed[g_earth_options.input_speed]);
             snprintf(values[1],44,"%u",g_earth_options.dead_zone);
             snprintf(values[2],44,"%s",g_earth_options.gyro_invert?"Yes":"No");
             snprintf(values[3],44,"%s",quality[g_earth_options.panorama_quality]);
-        }else{
+        }else if(g_more_page==1){
             snprintf(values[0],44,"%.1fx",earth_options_terrain_scale(&g_earth_options));
             snprintf(values[1],44,"%s",g_earth_options.buildings?"On":"Off");
             snprintf(values[2],44,"%s",globe[g_earth_options.globe_detail]);
             snprintf(values[3],44,"%s",sampler[g_earth_options.sampler]);
+        }else{
+            snprintf(values[0],44,"%s",input_remap_profile_name(g_remap_profile));
+            snprintf(values[1],44,"%s <- %s",
+                     input_remap_button_name(g_remap_action),
+                     input_remap_button_name(g_controls.physical[g_remap_profile][g_remap_action]));
+            snprintf(values[2],44,"%s",g_remap_capture?"Listening...":"Tap to bind");
+            snprintf(values[3],44,"Defaults");
         }
         for(int i=0;i<4;i++){
             float y=80+i*34;
@@ -2497,7 +2521,9 @@ static void render_settings_panel(void) {
             draw_ui_text(299,y+7,.39f,.39f,C2D_Color32(112,226,230,255),C2D_AlignRight,values[i]);
         }
         draw_ui_text(22,219,.37f,.37f,C2D_Color32(192,216,233,255),0,
-                     g_more_page?"More settings 2/2  Tap to return":"More settings 1/2  Tap for Earth options");
+                     g_more_page==0?"More settings 1/3  Tap for Earth options":
+                     g_more_page==1?"More settings 2/3  Tap for button mapping":
+                                    "More settings 3/3  START cancels binding");
     } else { /* SETTINGS_TAB_GPS */
         bool client_mode   = (gps_get_source_mode() == GPS_SOURCE_NMEA_CLIENT);
         bool server_mode   = (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER);
