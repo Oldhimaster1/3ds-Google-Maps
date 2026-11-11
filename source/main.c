@@ -1481,7 +1481,7 @@ static void render_explore(void) {
                 enabled?white:dim,0,arrows[cell]);
         }
         draw_ui_text(14,174,.27f,.27f,dim,0,
-            live ? live->credit : "G. Edward Johnson / CC BY 4.0");
+            live ? live->credit : "Live panorama loading...");
         if (live && live->license[0])
             draw_ui_text(200,174,.26f,.26f,dim,0,live->license);
         if (g_provider_picker) {
@@ -1508,7 +1508,7 @@ static void render_explore(void) {
         draw_ui_text(12,190,.34f,.34f,dim,0,
             live && !live->is_pano ? "Flat photo  (gyro only for 360)" :
             g_explore_gyro && !g_explore_gyro_filter.ready ? "Gyro: HOLD STILL to calibrate" :
-            g_explore_gyro ? "X Gyro ON  Up Calibrate" : "X Gyro OFF  Up Calibrate");
+            g_explore_gyro ? "X Gyro ON  Select Recenter" : "X Gyro OFF  Select Recenter");
         draw_ui_text(12,205,.31f,.31f,dim,0,
             g_explore_gyro_inverted ? "Select Reverse gyro: ON" :
                                       "Select Reverse gyro: OFF");
@@ -1688,10 +1688,10 @@ static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 col
     C2D_Text ui_text;
     C2D_TextParse(&ui_text,g_ui_text_buf,text);
     C2D_TextOptimize(&ui_text);
-    C2D_DrawText(&ui_text,flags|C2D_WithColor,x,y,.50f,scale_x,scale_y,color);
+    C2D_DrawText(&ui_text,flags|C2D_WithColor,x,y,.98f,scale_x,scale_y,color);
     if(pref->weight>0){
         float spread=pref->weight==2?.80f:.40f;
-        C2D_DrawText(&ui_text,flags|C2D_WithColor,x+spread,y,.51f,
+        C2D_DrawText(&ui_text,flags|C2D_WithColor,x+spread,y,.985f,
                      scale_x,scale_y,color);
     }
 }
