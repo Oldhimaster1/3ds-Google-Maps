@@ -9,3 +9,6 @@ for part in geo_formats gps_motion street_heading terrain_math building_mesh ear
   ASAN_OPTIONS=detect_leaks=1 /tmp/earth3d_test_"$part"
   rm -f /tmp/earth3d_test_"$part"
 done
+
+echo "Testing asynchronous live terrain worker"
+sh tests/run-live-terrain-host.sh
