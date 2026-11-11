@@ -75,13 +75,14 @@ static const char GPS_PAGE[] =
     "var n=0, busy=false, lastSend=0;\n"
     "function send(p){\n"
     "  var now=Date.now(),la=p.coords.latitude,lo=p.coords.longitude,ac=p.coords.accuracy;\n"
+    "  var speed=p.coords.speed,heading=p.coords.heading;\n"
     "  if(busy || now-lastSend<1500)return;\n"
     "  busy=true;lastSend=now;\n"
     "  var status=document.getElementById('s');\n"
     "  status.textContent='Sending GPS position to 3DS...';\n"
     "  fetch('/location',{method:'POST',\n"
     "    headers:{'Content-Type':'application/json'},\n"
-    "    body:JSON.stringify({lat:la,lon:lo,acc:ac})})\n"
+    "    body:JSON.stringify({lat:la,lon:lo,acc:ac,speed:speed,heading:heading})})\n"
     "   .then(function(r){if(!r.ok)throw Error('3DS returned HTTP '+r.status);\n"
     "     n++;status.textContent='Fix #'+n+' delivered: '+la.toFixed(6)+', '+lo.toFixed(6)\n"
     "       +' (accuracy '+Math.round(ac)+'m)';status.className='box ok';})\n"
@@ -224,13 +225,17 @@ static bool read_exact(mbedtls_ssl_context *ssl, char *buf, int len)
  * Minimal JSON parser for {"lat":<float>,"lon":<float>,...}.
  * Does NOT require a full JSON library.
  */
-static bool parse_location_json(const char *body, double *lat, double *lon, double *accuracy) {
+static bool parse_location_json(const char *body, double *lat, double *lon, double *accuracy,
+                                double *speed, double *heading) {
     json_t *root = json_loads(body, JSON_REJECT_DUPLICATES, NULL);
     json_t *y = json_object_get(root, "lat"), *x = json_object_get(root, "lon");
     json_t *acc = json_object_get(root, "acc");
+    json_t *spd = json_object_get(root, "speed"), *dir = json_object_get(root, "heading");
     *lat = json_number_value(y);
     *lon = json_number_value(x);
     *accuracy = json_is_number(acc) ? json_number_value(acc) : -1;
+    *speed = json_is_number(spd) ? json_number_value(spd) : NAN;
+    *heading = json_is_number(dir) ? json_number_value(dir) : NAN;
     bool ok = json_is_number(y) && json_is_number(x) &&
               isfinite(*lat) && isfinite(*lon) && fabs(*lat) <= 90 && fabs(*lon) <= 180;
     json_decref(root);
@@ -291,9 +296,9 @@ static void handle_client(mbedtls_ssl_context *ssl)
             char body[257];
             if (read_exact(ssl, body, body_len)) {
                 body[body_len] = '\0';
-                double lat, lon, accuracy;
-                if (parse_location_json(body, &lat, &lon, &accuracy)) {
-                    gps_inject_fix_with_accuracy(lat, lon, accuracy);
+                double lat, lon, accuracy, speed, heading;
+                if (parse_location_json(body, &lat, &lon, &accuracy, &speed, &heading)) {
+                    gps_inject_fix_with_motion(lat, lon, accuracy, speed, heading);
                     s_fix_count++;
                     accepted=true;
                 }
