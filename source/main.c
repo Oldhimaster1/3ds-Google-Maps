@@ -1823,10 +1823,11 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
 
     static const SettingsHitTarget tabs[] = {
         SETTINGS_HIT_TAB_VIEW, SETTINGS_HIT_TAB_TILES, SETTINGS_HIT_TAB_DATA,
-        SETTINGS_HIT_TAB_GPS, SETTINGS_HIT_TAB_EXPLORE, SETTINGS_HIT_TAB_TEXT
+        SETTINGS_HIT_TAB_GPS, SETTINGS_HIT_TAB_EXPLORE, SETTINGS_HIT_TAB_TEXT,
+        SETTINGS_HIT_TAB_MORE
     };
     for (int i = 0; i < SETTINGS_TAB_COUNT; i++)
-        if (point_in_rect(touch->px, touch->py, 5 + i * 52, 50, 50, 24)) return tabs[i];
+        if (point_in_rect(touch->px, touch->py, 3 + i * 45, 50, 43, 24)) return tabs[i];
 
     switch (g_settings_tab) {
         case SETTINGS_TAB_VIEW:
@@ -1863,6 +1864,13 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
                        touch->px<209?SETTINGS_HIT_TEXT_MEDIUM:SETTINGS_HIT_TEXT_BOLD;
             if (point_in_rect(touch->px,touch->py,12,203,296,30))
                 return SETTINGS_HIT_TEXT_CONTRAST;
+            break;
+        case SETTINGS_TAB_MORE:
+            for(int i=0;i<4;i++)
+                if(point_in_rect(touch->px,touch->py,12,80+i*34,296,31))
+                    return (SettingsHitTarget)(SETTINGS_HIT_MORE_ROW1+i);
+            if(point_in_rect(touch->px,touch->py,12,215,296,25))
+                return SETTINGS_HIT_MORE_PAGE;
             break;
         case SETTINGS_TAB_GPS:
             /* [Client] / [Server] source mode buttons (same position as tile source) */
@@ -1906,6 +1914,31 @@ static void apply_settings_hit(SettingsHitTarget hit) {
         case SETTINGS_HIT_TAB_TEXT:
             g_settings_tab = SETTINGS_TAB_TEXT;
             break;
+        case SETTINGS_HIT_TAB_MORE:
+            g_settings_tab = SETTINGS_TAB_MORE;
+            break;
+        case SETTINGS_HIT_MORE_PAGE:
+            g_more_page=(g_more_page+1)%2;
+            break;
+        case SETTINGS_HIT_MORE_ROW1:
+        case SETTINGS_HIT_MORE_ROW2:
+        case SETTINGS_HIT_MORE_ROW3:
+        case SETTINGS_HIT_MORE_ROW4: {
+            unsigned row=(unsigned)(hit-SETTINGS_HIT_MORE_ROW1);
+            if(g_more_page==0){
+                if(row==0)g_earth_options.input_speed=(g_earth_options.input_speed+1)%3;
+                if(row==1)g_earth_options.dead_zone=g_earth_options.dead_zone>=60?10:g_earth_options.dead_zone+10;
+                if(row==2)g_earth_options.gyro_invert=!g_earth_options.gyro_invert;
+                if(row==3)g_earth_options.panorama_quality=(g_earth_options.panorama_quality+1)%4;
+            }else{
+                if(row==0)g_earth_options.terrain_exaggeration=(g_earth_options.terrain_exaggeration+1)%5;
+                if(row==1)g_earth_options.buildings=!g_earth_options.buildings;
+                if(row==2)g_earth_options.globe_detail=(g_earth_options.globe_detail+1)%3;
+                if(row==3)g_earth_options.sampler=(g_earth_options.sampler+1)%4;
+            }
+            earth_options_save(&g_earth_options,EARTH_OPTIONS_FILE);
+            break;
+        }
         case SETTINGS_HIT_TEXT_NORMAL:
         case SETTINGS_HIT_TEXT_LARGE:
         case SETTINGS_HIT_TEXT_XL:
