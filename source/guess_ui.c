@@ -44,6 +44,12 @@ static const char *rule_names[]={"Moving","No Move","NMPZ"};
 static void print(float x,float y,float scale,u32 color,const char *s) {
     if (!ui.text || !s || !*s)return;
     const UiAccessConfig *cfg=ui_access_get();
+    if(cfg->high_contrast){
+        unsigned r=color&255u,g=(color>>8)&255u,b=(color>>16)&255u;
+        unsigned maximum=r>g?(r>b?r:b):(g>b?g:b);
+        if(maximum>=120 && maximum<220 && ((color>>24)&255u)>195)
+            color=C2D_Color32(221,237,247,(color>>24)&255u);
+    }
     if(scale<.65f)scale*=ui_access_scale();
     C2D_Text t;
     C2D_TextParse(&t,ui.text,s);
