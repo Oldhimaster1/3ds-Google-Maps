@@ -197,6 +197,27 @@ static bool g_explore_accel;
 static float g_explore_gyro_counts_per_dps;
 static float g_explore_fov=55.0f;
 static float g_explore_yaw, g_explore_pitch, g_explore_distance, g_explore_goal;
+static char g_street_last_image_id[48];
+static float g_street_last_azimuth;
+static StreetProvider g_street_last_provider;
+static void sync_street_world_heading(void){
+    const PanoLiveImage *next=pano_runtime_current();
+    if(!next || !next->is_pano || !next->id[0])return;
+    bool changed=g_street_last_image_id[0] &&
+        (strcmp(g_street_last_image_id,next->id)!=0 ||
+         g_street_last_provider!=next->provider);
+    if(changed){
+        float corrected=g_explore_yaw;
+        if(street_heading_transfer(g_street_last_azimuth,
+             g_explore_yaw,next->azimuth,&corrected))
+            g_explore_yaw=corrected;
+    }
+    if(changed || !g_street_last_image_id[0]){
+        snprintf(g_street_last_image_id,sizeof(g_street_last_image_id),"%s",next->id);
+        g_street_last_provider=next->provider;
+        g_street_last_azimuth=next->azimuth;
+    }
+}
 static u64 g_explore_last_ms, g_explore_dive_ms, g_map_fade_ms;
 static bool g_globe_from_zoom0, g_provider_picker;
 static int g_street_fly_ms=STREET_FLY_DEFAULT_MS;
@@ -1075,6 +1096,7 @@ static bool handle_touch_button_action(TouchAction action) {
 static void close_explore(void) {
     g_provider_picker=false;
     g_street_entering=false;
+    g_street_last_image_id[0]=0;
     g_street_reveal_ms=0;
     g_street_swap_start_ms=g_street_swap_end_ms=0;
     g_globe_from_zoom0=false;
@@ -1096,6 +1118,7 @@ static void close_explore(void) {
 static void open_explore(ExploreMode mode) {
     /* Start the real imagery request BEFORE creating the scene or flying in. */
     if (mode == EXPLORE_STREET) {
+        g_street_last_image_id[0]=0;
         g_street_origin_lat=map_state.lat;
         g_street_origin_lon=map_state.lon;
         g_street_origin_zoom=map_state.zoom;
@@ -1187,6 +1210,7 @@ static void update_explore(void) {
         g_street_swap_start_ms=0;
         pano_runtime_poll();
     }
+    if(g_explore_mode==EXPLORE_STREET)sync_street_world_heading();
     hidScanInput();
     u32 keys = hidKeysDown(), held = hidKeysHeld();
     if ((keys & KEY_B) && !(keys & KEY_START) && g_provider_picker) {
