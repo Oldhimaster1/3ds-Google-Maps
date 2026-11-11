@@ -1,0 +1,1 @@
+StreetGuess UI: classic, daily five rounds, retry without penalty, daily records, identical pass-and-play rounds passed

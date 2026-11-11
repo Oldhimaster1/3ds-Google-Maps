@@ -1,0 +1,555 @@
+{
+  "version": 2,
+  "selection": "Verified 360-degree city panoramas. Geographic coverage follows contributed imagery; each five-round challenge favors different countries. Exact image IDs are immutable. Missing images can be retried without consuming the round.",
+  "locations": [
+    {
+      "id": "53b951d0-3999-434c-9a21-fdb3c2321e96",
+      "lat": 48.581866372,
+      "lon": 7.746025568,
+      "country": "FR",
+      "name": "Strasbourg",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "eurom\u00e9tropole de strasbourg",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/871b93cb-d67e-4ac8-9f54-c5da27c5884e/items/53b951d0-3999-434c-9a21-fdb3c2321e96",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "fdb8f3dd9ce0d835a592eeb1f9817a1f848ae941b71c4ed838e587c54612a0b8"
+    },
+    {
+      "id": "f5cf671a-4391-4c72-ace0-5c3f9df2e3ef",
+      "lat": 45.760054,
+      "lon": 4.8399049,
+      "country": "FR",
+      "name": "Lyon",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "ecartip",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/7a223f59-06ea-429b-bb94-fb9b09f84568/items/f5cf671a-4391-4c72-ace0-5c3f9df2e3ef",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "7f4c9d3a7175bfef471460aa2eca915deea9d00861df2e8882ba330114b75ff2"
+    },
+    {
+      "id": "27975fbc-7420-4fb7-b585-817f914dde3f",
+      "lat": 43.2960555,
+      "lon": 5.3699869,
+      "country": "FR",
+      "name": "Marseille",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "r\u00e9gion sud / R\u00e9gion Provence-Alpes-C\u00f4te d'Azur - Immergis",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/cd0b48d7-d718-4ed2-b704-ae8bc73a8487/items/27975fbc-7420-4fb7-b585-817f914dde3f",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "9ca4847cc98f74d6e98cd21dbceba4db3bdc523633f1837bfab0aa83c7c31eb8"
+    },
+    {
+      "id": "326590b8-e958-41f5-838c-5020aaa213f1",
+      "lat": 44.840022222,
+      "lon": -0.579930556,
+      "country": "FR",
+      "name": "Bordeaux",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "bordeaux m\u00e9tropole",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/9f440dc1-54cd-4571-8808-bcfdd7fa9b7a/items/326590b8-e958-41f5-838c-5020aaa213f1",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "baf33b08d1d3fcaefdd767a2841509a44b085524ea788151fb39d811e597449e"
+    },
+    {
+      "id": "ef3686df-bbe1-4558-9e26-93cce0aaaafb",
+      "lat": 40.7132831,
+      "lon": -74.0130796,
+      "country": "US",
+      "name": "New York",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "jg13",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/abb75b44-dcf2-49f0-98ae-831d5791b640/items/ef3686df-bbe1-4558-9e26-93cce0aaaafb",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        987
+      ],
+      "image_sha256": "d29926e0856009d646f7c1c46c65156704a0aff66a02ca089c1a057f0b7e940e"
+    },
+    {
+      "id": "d6c9341c-758c-42eb-9056-397893859460",
+      "lat": 47.217649596,
+      "lon": -1.550096907,
+      "country": "FR",
+      "name": "Nantes",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "immergis",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/b1cc49ad-6d1c-4308-ae6e-d3d87c8b5ab6/items/d6c9341c-758c-42eb-9056-397893859460",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "c489035ea938520d0c9ba30d6acec7264163d0eee721734efcd541d2272a538d"
+    },
+    {
+      "id": "37e5ab2d-ba53-4484-a42b-50a564b98fe4",
+      "lat": 43.6000101,
+      "lon": 1.4400313,
+      "country": "FR",
+      "name": "Toulouse",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "sc_vigicrues",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/42971917-0fa2-4515-941b-dbb2472606a3/items/37e5ab2d-ba53-4484-a42b-50a564b98fe4",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "c38c06c7a01972edc5fb5d0023a0bc12547719e4185ad91a18de9ea564ed2243"
+    },
+    {
+      "id": "a45a1263-4ea5-45e4-94eb-b64ecf376d04",
+      "lat": 45.187775,
+      "lon": 5.724,
+      "country": "FR",
+      "name": "Grenoble",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "zach@rando360.com",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/d1b7548f-80cc-476d-9db8-55c037c86cb0/items/a45a1263-4ea5-45e4-94eb-b64ecf376d04",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "fb52ebb8faee45ae5cd5af4c5bb7fee026f668f0261419bd3078f42a8d96bf34"
+    },
+    {
+      "id": "a1023803-94fa-445b-b745-c6b50fafcdbc",
+      "lat": 52.521141944,
+      "lon": 13.413131111,
+      "country": "DE",
+      "name": "Berlin",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "n8aktiver",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/7d3c8b5d-c1fe-4217-a14d-8f12714a720a/items/a1023803-94fa-445b-b745-c6b50fafcdbc",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "38f66baf72b39cd8bc7a6fd7bdf62d05b49f921a66db36ee74254b4a9c945d96"
+    },
+    {
+      "id": "17c550a4-eb75-4b21-adf3-9842fa339fa4",
+      "lat": 48.1956747,
+      "lon": 16.3737288,
+      "country": "AT",
+      "name": "Vienna",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "geologist",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/2be1c8af-35ee-465e-b693-cc6870f0a062/items/17c550a4-eb75-4b21-adf3-9842fa339fa4",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "b59f23787fa300b698c15faf4b7fc967ffe71bd27b4a080a0e47a28e95731384"
+    },
+    {
+      "id": "88b21233-b978-4f1e-89e1-c1df3e73da92",
+      "lat": 52.370076,
+      "lon": 4.89475,
+      "country": "NL",
+      "name": "Amsterdam",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Panoramax Test-NL / City of Amsterdam",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/29ca6ae2-ade2-409f-9fc5-8963f0f771b4/items/88b21233-b978-4f1e-89e1-c1df3e73da92",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "f2b86d6cfca2bb7999a63171ed76ce8437b66fe0aa59688960c8a171a5bd700b"
+    },
+    {
+      "id": "ba92d7da-7419-4583-9afb-c628df005b15",
+      "lat": 40.4195453,
+      "lon": -3.7112536,
+      "country": "ES",
+      "name": "Madrid",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Bustikiller",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/e3e45224-8f40-4e57-950c-cd1a4264b237/items/ba92d7da-7419-4583-9afb-c628df005b15",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "32e0deaa9ab97e972f661ed75c0244d503a986bcac60ee5df84ffbeca72495d5"
+    },
+    {
+      "id": "20aae997-0c7b-4877-87cb-a42e155f2fb8",
+      "lat": 41.890942111,
+      "lon": 12.491903,
+      "country": "IT",
+      "name": "Colosseum",
+      "hint": "An ancient arena in an imperial capital.",
+      "license": "cc-by-sa-4.0",
+      "credit": "NechiforCristian",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/2be06ff8-d9cd-442d-b777-2bad3f2f7068/items/20aae997-0c7b-4877-87cb-a42e155f2fb8",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "899edd896ccd60d4d562b2a9a9dab7cd22e59b8639ff5671a9eafa0e80837e3e",
+      "landmark": true
+    },
+    {
+      "id": "746d6095-a1bc-4966-aa6d-5f17c62a7453",
+      "lat": 51.5344956,
+      "lon": -0.17604142,
+      "country": "GB",
+      "name": "London",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Reeal360man (elevonicmedia)",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/89236d5b-fa2a-418a-973b-2b711b894feb/items/746d6095-a1bc-4966-aa6d-5f17c62a7453",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "f91a422d53e638dcaf2082294fe0965a9edb3047984e5aff1bdbf5b0d12035ae"
+    },
+    {
+      "id": "fc93595d-d08e-4016-8b24-466605eea850",
+      "lat": 35.678932,
+      "lon": 139.75955,
+      "country": "JP",
+      "name": "Tokyo",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Irvin Chen",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/f6eef59b-f4b1-4713-b0df-c20f45e9df40/items/fc93595d-d08e-4016-8b24-466605eea850",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "74baa728928901b284d22782671a045d3d2df5a7dc7e43f89154c791a388189e"
+    },
+    {
+      "id": "b15527c4-6320-4623-bfd1-bf701c6d7cc0",
+      "lat": 25.03112909,
+      "lon": 121.5585076,
+      "country": "TW",
+      "name": "Taipei",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Irvin Chen",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/8bc03b19-2dde-4c67-b8b6-2c8b4b6f1915/items/b15527c4-6320-4623-bfd1-bf701c6d7cc0",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "9cd76b4c19e5b2da46d72819a2ed2f4376b5b26bf4540a5073acd0e295677ad5"
+    },
+    {
+      "id": "9dd659f3-17f4-4fd7-879b-10d34b857e9f",
+      "lat": -33.891271306,
+      "lon": 151.158313306,
+      "country": "AU",
+      "name": "Sydney",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Leif Metcalf",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/87a95ea4-e1a8-4c88-ab91-326799bdc5df/items/9dd659f3-17f4-4fd7-879b-10d34b857e9f",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "2a8315c363ea27e25d4fb04d9cf18eb8f5fe1081c40e517633275bfc149c2c35"
+    },
+    {
+      "id": "31762b4e-d4f4-4e15-b552-8475250030e4",
+      "lat": -34.6229447,
+      "lon": -58.3789255,
+      "country": "AR",
+      "name": "Buenos Aires",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Bastian Greshake Tzovaras",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/393f4088-081b-490f-96cc-7c5c1f10a286/items/31762b4e-d4f4-4e15-b552-8475250030e4",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "e7828fa2776eea90745177b67740e6bddf305c82d5651d20e08cf5d4fb6bc883"
+    },
+    {
+      "id": "72c23c21-2f7b-4063-a248-ebf848e9d364",
+      "lat": 43.6506443,
+      "lon": -79.3799476,
+      "country": "CA",
+      "name": "Toronto",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "tallcoleman",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/e3da9cc6-8790-4a88-8a08-58dca808cf79/items/72c23c21-2f7b-4063-a248-ebf848e9d364",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "00b085bf14cfd25fe7eb9c76d40ef8d19568f22f5e2a9b911d1caf26fc03e507"
+    },
+    {
+      "id": "0bbf0a47-27e7-41d8-aa04-e3d9e4ca3298",
+      "lat": 37.7798727,
+      "lon": -122.4220477,
+      "country": "US",
+      "name": "San Francisco",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "LowestPotential",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/fe92f0ed-6a4b-44ca-9c1d-8b84de34813d/items/0bbf0a47-27e7-41d8-aa04-e3d9e4ca3298",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "1c0a7fe1a3c8d274a8accf4149d0de0b7cb00781fb8d5d281a9b6e75cf97d65b"
+    },
+    {
+      "id": "4f3087d2-8860-4db5-aa87-fab3f0af5482",
+      "lat": 38.717853889,
+      "lon": -9.143726944,
+      "country": "PT",
+      "name": "Lisbon",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "etalab-2.0",
+      "credit": "cajax1@gmail.com",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/db77c849-6d1d-4291-a30a-eb74f435df07/items/4f3087d2-8860-4db5-aa87-fab3f0af5482",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "4246ad7850f7fc7a5573b5508508a173ec6e380339415a76905300bdbeedfcc3"
+    },
+    {
+      "id": "b53ed9e6-28ee-450f-bddf-445ea8571403",
+      "lat": 59.9084564,
+      "lon": 10.7503425,
+      "country": "NO",
+      "name": "Oslo",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "LandskapsLars",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/656fa07f-0dc8-4040-b0cc-d1f0f59abf99/items/b53ed9e6-28ee-450f-bddf-445ea8571403",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "43dd9aaee278c89ad3f89a02d8ef65e6a8feabd9c9bb8f74bb5a6207975b40d7"
+    },
+    {
+      "id": "6b2cd4d9-1753-43dc-8bc6-067b2c25c491",
+      "lat": 59.330116,
+      "lon": 18.0601725,
+      "country": "SE",
+      "name": "Stockholm",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "osmtch9",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/4225b80d-8eb4-466a-83d4-8bae9ea55096/items/6b2cd4d9-1753-43dc-8bc6-067b2c25c491",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "c69693ac43a9af3e27fb775f08de70e59035d6dd220bf99839e4182f96a4d488"
+    },
+    {
+      "id": "8b942fef-baac-452d-975a-274d3abe250e",
+      "lat": 41.0106226,
+      "lon": 28.9695718,
+      "country": "TR",
+      "name": "Istanbul",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "p20r4h08zu8",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/d41a551b-6c2a-49f0-a1d4-4027c2cf408e/items/8b942fef-baac-452d-975a-274d3abe250e",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "0bb252f36c77833622b457a471065d10dbebf53129abb9f96ec662e2a69557a8"
+    },
+    {
+      "id": "388547c3-4d91-4594-b0a8-dcfef9d08f23",
+      "lat": 50.8498243,
+      "lon": 4.3501122,
+      "country": "BE",
+      "name": "Brussels",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "RaphaelPasloin",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/e92d236f-6b95-4fd0-8c82-09bb79a2b8a8/items/388547c3-4d91-4594-b0a8-dcfef9d08f23",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "30d89ede958d94fdcffe82d49072000c2ec8ee0e8645acf0eeb22b7b2641158f"
+    },
+    {
+      "id": "0b53c65a-7a38-4eca-bf83-09a5cbf8f054",
+      "lat": 47.372921,
+      "lon": 8.533599,
+      "country": "CH",
+      "name": "Zurich",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "OneOSMUser",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/7804bb97-94ac-4973-bc86-7caf3b10035e/items/0b53c65a-7a38-4eca-bf83-09a5cbf8f054",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "bafb46e6109623da7ea8fa31a597b55e4fd9d99b8c5621a9261c677daa6f8906"
+    },
+    {
+      "id": "78c4a141-3108-4449-8ee8-e4ce7c77d7b2",
+      "lat": 59.425155102,
+      "lon": 24.71733855,
+      "country": "EE",
+      "name": "Tallinn",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "MarkusTLN",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/edbb2efc-caac-405e-990c-dab15ed317c6/items/78c4a141-3108-4449-8ee8-e4ce7c77d7b2",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "a4b11b9dc2a48cb42e9d4df73424a22a8a1d8f6a36e38c87ca79f9e9c20537ff"
+    },
+    {
+      "id": "d231cd01-5746-437f-b35a-d059800f9123",
+      "lat": 53.349972307,
+      "lon": -6.260239662,
+      "country": "IE",
+      "name": "Dublin",
+      "hint": "Look for language, road markings and architecture.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Pierre Beyssac",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/a73000dd-b319-4b85-9c09-f94671f79b2d/items/d231cd01-5746-437f-b35a-d059800f9123",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "d949a68df0ae7f459fedc0a0f5d3bc0e6417db1a292cc494140cb69c7d62a345"
+    },
+    {
+      "id": "65cf20e0-6f2b-4b45-af73-e075de8b85aa",
+      "lat": 48.8577,
+      "lon": 2.295045,
+      "country": "FR",
+      "name": "Eiffel Tower",
+      "hint": "An iron landmark beside the Seine.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Cyril5C",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/779fb271-0ad3-4fe7-a392-7f42212eaa36/items/65cf20e0-6f2b-4b45-af73-e075de8b85aa",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "041ad89040d662ea8386fc01cc2106f75382880e7f97794d400eb2b2ff1a0055",
+      "landmark": true
+    },
+    {
+      "id": "d2e37876-cbed-4716-b6c6-bd70db515fd2",
+      "lat": 25.03317994,
+      "lon": 121.5645158,
+      "country": "TW",
+      "name": "Taipei 101",
+      "hint": "A bamboo-shaped tower in an island capital.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Irvin Chen",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/43ad147f-9bec-4e13-9191-552a5e129879/items/d2e37876-cbed-4716-b6c6-bd70db515fd2",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "ab185d112e9cc4e62b90f2330b675a7fc70b49145d9dd88291f5351fea078537",
+      "landmark": true
+    },
+    {
+      "id": "75d0b328-473b-4886-bf45-a9f18be5d87d",
+      "lat": 50.8950688,
+      "lon": 4.3419707,
+      "country": "BE",
+      "name": "Atomium",
+      "hint": "A giant model of a crystal, built for a world fair.",
+      "license": "cc-by-sa-4.0",
+      "credit": "RaphaelPasloin",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/4152fbf2-fbda-4f8b-a378-616cf4285a74/items/75d0b328-473b-4886-bf45-a9f18be5d87d",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "3b0652de68aed37e02750ca011a560e793a4d254a791d718fb814056da053727",
+      "landmark": true
+    },
+    {
+      "id": "81ebd40f-6ddf-422b-abfa-d2d844228fdf",
+      "lat": 53.345532028,
+      "lon": -6.258002396,
+      "country": "IE",
+      "name": "Trinity College",
+      "hint": "A historic campus in the city of the Book of Kells.",
+      "license": "cc-by-sa-4.0",
+      "credit": "Pierre Beyssac",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/a73000dd-b319-4b85-9c09-f94671f79b2d/items/81ebd40f-6ddf-422b-abfa-d2d844228fdf",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "fd8cf44603202fca885d2c0041d1aab58417dbe540d553c9f054333effba9446",
+      "landmark": true
+    }
+  ]
+}

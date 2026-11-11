@@ -1,0 +1,194 @@
+=== tests/run-detail-mesh-host.sh ===
+detail geometry: PASS
+PASS tests/run-detail-mesh-host.sh
+=== tests/run-detail-plan-host.sh ===
+detail plan: PASS
+PASS tests/run-detail-plan-host.sh
+=== tests/run-detail-runtime-host.sh ===
+detail runtime: PASS
+PASS tests/run-detail-runtime-host.sh
+=== tests/run-earth3d-host.sh ===
+Testing geo_formats
+Coordinate formats passed
+Testing gps_motion
+GPS speed, direction, jitter and dateline tests passed
+Testing street_heading
+Panorama heading preservation tests passed
+Testing terrain_math
+Terrarium decoding and mesh geometry tests passed
+Testing building_mesh
+Stereoscopic building mesh geometry bounds and triangulation passed
+Testing earth_options
+Expanded persistent controls and graphics settings passed
+Testing pano_detail
+High-resolution panorama viewport tile selection passed
+Testing globe_detail
+Progressive globe image patch LOD tests passed
+Testing guess_replay
+StreetGuess persistent anti-repeat history tests passed
+Testing asynchronous live terrain worker
+Live terrain worker: location, URL, decoding, failures, cleanup passed
+Testing on-demand live building worker
+Live building worker: URL, terrain alignment, mesh, errors and cleanup passed
+PASS tests/run-earth3d-host.sh
+=== tests/run-feature-integration-host.sh ===
+feature source wiring: PASS
+GPS bearer pairing: missing, mismatched, duplicate, path injection passed
+Challenge codes: 30k deterministic roundtrips, unique rounds, dataset mismatch and corruption passed
+input remap: PASS
+detail plan: PASS
+detail geometry: PASS
+detail runtime: PASS
+Testing geo_formats
+Coordinate formats passed
+Testing gps_motion
+GPS speed, direction, jitter and dateline tests passed
+Testing street_heading
+Panorama heading preservation tests passed
+Testing terrain_math
+Terrarium decoding and mesh geometry tests passed
+Testing building_mesh
+Stereoscopic building mesh geometry bounds and triangulation passed
+Testing earth_options
+Expanded persistent controls and graphics settings passed
+Testing pano_detail
+High-resolution panorama viewport tile selection passed
+Testing globe_detail
+Progressive globe image patch LOD tests passed
+Testing guess_replay
+StreetGuess persistent anti-repeat history tests passed
+Testing asynchronous live terrain worker
+Live terrain worker: location, URL, decoding, failures, cleanup passed
+Testing on-demand live building worker
+Live building worker: URL, terrain alignment, mesh, errors and cleanup passed
+Route progress, rerouting debounce, dateline, GPS quality tests passed
+RouteFollow 16k-point / 4k-fix sanitizer stress passed
+StreetGuess core host tests passed
+StreetGuess sampled 48000 candidate coordinates across 5935 geographic 1-degree cells; geographic diversity and scoring invariants pass (not Google coverage)
+StreetGuess optional road-pack random-access/region/corruption tests passed
+StreetGuess GeoJSON generator -> 3DS reader roundtrip tests passed
+StreetGuess UI: classic, daily five rounds, retry without penalty, daily records, identical pass-and-play rounds passed
+Feature integration host checks: PASS
+PASS tests/run-feature-integration-host.sh
+=== tests/run-gps-follow-host.sh ===
+GPS-follow jitter gate and dateline tests passed
+PASS tests/run-gps-follow-host.sh
+=== tests/run-gps-pairing-host.sh ===
+GPS bearer pairing: missing, mismatched, duplicate, path injection passed
+PASS tests/run-gps-pairing-host.sh
+=== tests/run-gps-qr-host.sh ===
+GPS QR format-information and input validation tests passed
+QR scanned and decoded via OpenCV: 6 independent test URLs
+PASS tests/run-gps-qr-host.sh
+=== tests/run-gps-search-live-host.sh ===
+1/8 QR BCH and independent decoded top-screen QR
+GPS QR format-information and input validation tests passed
+QR scanned and decoded via OpenCV: 6 independent test URLs
+2/8 HTTPS GPS response framing and acknowledgement ordering
+PASS ack after accepted fix
+PASS valid/invalid responses
+PASS response lengths from sizeof
+PASS HTTP framing
+PASS phone checks HTTP result
+PASS phone counts acknowledged fixes
+3/8 Search input normalization
+Search input UTF-8 preservation and whitespace tests passed
+4/8 GPS follow jitter filtering
+GPS-follow jitter gate and dateline tests passed
+5/8 Live viewport tile relevance
+Live tile viewport priority tests passed
+200,000 randomized GPS viewport/priority cases passed
+6/8 Existing map/cache/region tests
+Region planning, resume, progress, retry and concurrent append tests passed.
+7/8 Existing panorama and input tests
+PASS street input 8-axis test cases
+PASS 3DS gyro 14.375 counts/dps calibration, smooth turn, stillness, invert, invalid inputs
+PASS provider URL escaping, Panoramax limits, Mapillary 360, KartaView flat/CDN, Google links, Bing metadata and face keys
+8/8 StreetGuess regression tests
+StreetGuess core host tests passed
+StreetGuess sampled 48000 candidate coordinates across 5935 geographic 1-degree cells; geographic diversity and scoring invariants pass (not Google coverage)
+StreetGuess optional road-pack random-access/region/corruption tests passed
+StreetGuess GeoJSON generator -> 3DS reader roundtrip tests passed
+StreetGuess UI: classic, daily five rounds, retry without penalty, daily records, identical pass-and-play rounds passed
+Completed host regression gates. Native build, Wi-Fi and physical GPS scanning are separate.
+PASS tests/run-gps-search-live-host.sh
+=== tests/run-guess-all-host.sh ===
+StreetGuess core host tests passed
+StreetGuess sampled 48000 candidate coordinates across 5935 geographic 1-degree cells; geographic diversity and scoring invariants pass (not Google coverage)
+StreetGuess optional road-pack random-access/region/corruption tests passed
+StreetGuess GeoJSON generator -> 3DS reader roundtrip tests passed
+StreetGuess UI: classic, daily five rounds, retry without penalty, daily records, identical pass-and-play rounds passed
+PASS tests/run-guess-all-host.sh
+=== tests/run-guess-challenge-host.sh ===
+Challenge codes: 30k deterministic roundtrips, unique rounds, dataset mismatch and corruption passed
+PASS tests/run-guess-challenge-host.sh
+=== tests/run-guess-core-host.sh ===
+StreetGuess core host tests passed
+PASS tests/run-guess-core-host.sh
+=== tests/run-guess-roads-host.sh ===
+StreetGuess optional road-pack random-access/region/corruption tests passed
+StreetGuess GeoJSON generator -> 3DS reader roundtrip tests passed
+PASS tests/run-guess-roads-host.sh
+=== tests/run-guess-stress-host.sh ===
+StreetGuess sampled 48000 candidate coordinates across 5935 geographic 1-degree cells; geographic diversity and scoring invariants pass (not Google coverage)
+PASS tests/run-guess-stress-host.sh
+=== tests/run-guess-ui-host.sh ===
+StreetGuess UI: classic, daily five rounds, retry without penalty, daily records, identical pass-and-play rounds passed
+PASS tests/run-guess-ui-host.sh
+=== tests/run-input-remap-host.sh ===
+input remap: PASS
+PASS tests/run-input-remap-host.sh
+=== tests/run-live-building-host.sh ===
+Live building worker: URL, terrain alignment, mesh, errors and cleanup passed
+PASS tests/run-live-building-host.sh
+=== tests/run-live-terrain-host.sh ===
+Live terrain worker: location, URL, decoding, failures, cleanup passed
+PASS tests/run-live-terrain-host.sh
+=== tests/run-live-tile-host.sh ===
+Live tile viewport priority tests passed
+200,000 randomized GPS viewport/priority cases passed
+PASS tests/run-live-tile-host.sh
+=== tests/run-multisource-host.sh ===
+PASS street input 8-axis test cases
+PASS 3DS gyro 14.375 counts/dps calibration, smooth turn, stillness, invert, invalid inputs
+PASS provider URL escaping, Panoramax limits, Mapillary 360, KartaView flat/CDN, Google links, Bing metadata and face keys
+PASS tests/run-multisource-host.sh
+=== tests/run-pano-motion-host.sh ===
+Pano gravity-aware axis tests passed
+PASS tests/run-pano-motion-host.sh
+=== tests/run-panorama-host.sh ===
+Street View: URL, STAC parsing, 360 filter, nearest sort, sequence and gyro passed
+PASS tests/run-panorama-host.sh
+=== tests/run-route-follow-host.sh ===
+Route progress, rerouting debounce, dateline, GPS quality tests passed
+RouteFollow 16k-point / 4k-fix sanitizer stress passed
+PASS tests/run-route-follow-host.sh
+=== tests/run-search-input-host.sh ===
+Search input UTF-8 preservation and whitespace tests passed
+PASS tests/run-search-input-host.sh
+=== tests/run-street-fly-host.sh ===
+Street fly transition host tests passed
+PASS tests/run-street-fly-host.sh
+=== tests/run-street-image-host.sh ===
+PASS Google tile assembly: two halves, Morton indexing, vertical flip
+PASS tests/run-street-image-host.sh
+=== tests/run-street-nav-host.sh ===
+PASS navigation: forward, back, touch sectors, bearing, empty links
+PASS tests/run-street-nav-host.sh
+=== tests/run-street-recent-host.sh ===
+Street recently-visited cache tests passed
+PASS tests/run-street-recent-host.sh
+=== tests/run-ui-access-host.sh ===
+UI accessibility preferences passed
+PASS tests/run-ui-access-host.sh
+=== tests/run-ui-motion-host.sh ===
+UI accessibility preferences passed
+Pano gravity-aware axis tests passed
+StreetGuess UI: classic, daily five rounds, retry without penalty, daily records, identical pass-and-play rounds passed
+UI, gyro and simulated StreetGuess checks finished
+PASS tests/run-ui-motion-host.sh
+=== tests/run-host.sh ===
+Region planning, resume, progress, retry and concurrent append tests passed.
+PASS tests/run-host.sh
+Explore fallback textures and terrain grid passed; obsolete street defaults absent.
+PASS tests/explore_assets_test.py

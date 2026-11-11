@@ -1,0 +1,89 @@
+[
+  {
+    "path": "docs/media/rc3/challenges.png",
+    "bytes": 28094,
+    "sha256": "0ab0e2a41810856d10745c1cd8a6a77a68dd2b6cc57f091d2e2e53d6b03cad62"
+  },
+  {
+    "path": "docs/media/rc3/daily-menu.png",
+    "bytes": 49983,
+    "sha256": "c8f250977ece336e162d9f332d0492ea2a71a3588559b301932d6d68bb72c071"
+  },
+  {
+    "path": "docs/media/rc3/globe.png",
+    "bytes": 53469,
+    "sha256": "5b7b65befd00a9b7b61f3acccef11f3fec85195ee810aaebb91e8a611d692c6e"
+  },
+  {
+    "path": "docs/media/rc3/hero.gif",
+    "bytes": 1529776,
+    "sha256": "0fd6b3f523f9853c9467b18faccd9c85b9e5eb29f31b035d57070088bda92234",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 400,
+          "height": 540,
+          "r_frame_rate": "12/1"
+        }
+      ],
+      "format": {
+        "duration": "9.410000"
+      }
+    }
+  },
+  {
+    "path": "docs/media/rc3/local-play-menu.png",
+    "bytes": 49861,
+    "sha256": "085a0fae70f224e2bca243cdd5e0d62c36d5ab20caa2cd0d7a8ab72150443523"
+  },
+  {
+    "path": "docs/media/rc3/map-cached.png",
+    "bytes": 249955,
+    "sha256": "8e63637fb4a7e7ee948bb0ddafbb97165170bdbcf803c9d2eb0167eed962209c"
+  },
+  {
+    "path": "docs/media/rc3/map-close.png",
+    "bytes": 265678,
+    "sha256": "9e8eb4110bc37b6cfe7678c7a3867b4f7788c5ed5f14716e9c58b4512cc39db1"
+  },
+  {
+    "path": "docs/media/rc3/review-walkthrough.mp4",
+    "bytes": 2368071,
+    "sha256": "7381554415d7eee96216623593181c195a75d05d8adb8db7be5f07a34cf04a8e",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 1280,
+          "height": 720,
+          "r_frame_rate": "30/1"
+        }
+      ],
+      "format": {
+        "duration": "32.000000"
+      }
+    }
+  },
+  {
+    "path": "docs/media/rc3/teaser.mp4",
+    "bytes": 1851559,
+    "sha256": "c2db45f343dfddbedb5e2998902b6e0c91bb9f5bc738e87e60b50dee8f3157ab",
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 1280,
+          "height": 720,
+          "r_frame_rate": "30/1"
+        }
+      ],
+      "format": {
+        "duration": "20.300000"
+      }
+    }
+  }
+]

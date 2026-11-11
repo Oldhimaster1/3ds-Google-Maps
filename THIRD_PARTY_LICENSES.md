@@ -3,6 +3,9 @@
 This project links against or includes the following third-party libraries.
 Their licenses and required notices are reproduced below.
 
+The bundled Explore imagery and elevation assets have separate licenses and
+attribution. See [Explore data credits](docs/explore.md#data-credits-and-regeneration).
+
 -----
 
 ## libcurl
@@ -270,3 +273,48 @@ Map data displayed by this application is provided by
 Satellite and street map tiles are served by Esri (World Imagery /
 World Street Map). Use of those tiles is subject to
 [Esri’s Terms of Use](https://www.esri.com/en-us/legal/terms/full-master-agreement).
+
+-----
+
+## Streetlevel
+
+The experimental Google and Bing protocol adapters use Streetlevel as a reference.
+
+```
+MIT License
+
+Copyright (c) 2022 skzk
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+## CA roots and StreetGuess challenge metadata (RC1)
+
+`data/ca_bundle.bin` is the Mozilla CA root list distributed by
+https://curl.se/ca/cacert.pem. Its embedded Mozilla source and MPL 2.0 notices
+remain intact; it is a PEM text bundle despite the `.bin` build-resource suffix.
+
+`docs/datasets/streetguess-v1.json` records the Panoramax image creators, exact
+STAC item links and per-image license identifiers. All eight selected items
+reported Etalab Open Licence 2.0 when checked on 11 November 2026. The generated
+C table carries those credits into the application. The images are fetched at
+play time and are not distributed in this repository or saved to an SD imagery
+cache. See the manifest and `docs/release/rc1/provider-review.md` for source links,
+verification limits and separate provider-access obligations.

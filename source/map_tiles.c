@@ -3,6 +3,7 @@
 #include "simple_png.h"
 #include "stb_image.h"
 #include "logging.h"
+#include "tile_priority.h"
 #include <citro2d.h>
 #include <3ds.h>
 #include <stdio.h>
@@ -129,6 +130,49 @@ static bool dl_thread_running;
 static u32 dl_generation;
 static TileTiming last_timing;
 static bool has_timing;
+static TileViewport live_view;
+static bool gps_follow_mode;
+/* Set by the map's main thread; no cross-thread mutable view state is read
+ * without the request queue lock. */
+void map_tiles_set_gps_follow(bool enabled) {
+    if(gps_follow_mode!=enabled){
+        gps_follow_mode=enabled;
+        live_view.valid=0;
+    }
+}
+static void reprioritize_live_requests(const TileViewport *view) {
+    if(!view||!view->valid)return;
+    LightLock_Lock(&dl_req_lock);
+    /* Workers have already dequeued their in-flight requests; do not touch
+     * those slots. Only cancel requests still sitting in the queue. */
+    DLRequest ordered[DL_QUEUE_SIZE];
+    int scores[DL_QUEUE_SIZE];
+    int count=0;
+    for(int i=dl_req_head;i<dl_req_tail;i++){
+        DLRequest r=dl_req_q[i&DL_QUEUE_MASK];
+        int score=tile_view_score(view,r.tile_x,r.tile_y,r.zoom,r.prefetch);
+        if(score<0 || r.generation!=dl_generation){
+            if(r.slot && r.slot->pending && r.generation==dl_generation &&
+               r.slot->tile_x==r.tile_x &&
+               r.slot->tile_y==r.tile_y && r.slot->zoom==r.zoom)
+                r.slot->pending=false;
+            continue;
+        }
+        int j=count;
+        while(j>0 && scores[j-1]>score){
+            ordered[j]=ordered[j-1];
+            scores[j]=scores[j-1];
+            j--;
+        }
+        ordered[j]=r;scores[j]=score;count++;
+    }
+    for(int i=0;i<count;i++)dl_req_q[i]=ordered[i];
+    dl_req_head=0;dl_req_tail=count;
+    live_view=*view;
+    if(count)LightEvent_Signal(&dl_work_event);
+    LightLock_Unlock(&dl_req_lock);
+}
+
 
 bool map_tiles_get_timing(TileTiming *timing) {
     if (has_timing && timing) *timing = last_timing;
@@ -248,8 +292,14 @@ static void enqueue_tile_download(int tile_x, int tile_y, int zoom, CachedTile *
     LightLock_Lock(&dl_req_lock);
     if ((dl_req_tail - dl_req_head) < DL_QUEUE_SIZE - (prefetch ? 8 : 0)) {
         int pos = dl_req_tail;
-        while (!prefetch && pos > dl_req_head && dl_req_q[(pos - 1) & DL_QUEUE_MASK].prefetch) {
-            dl_req_q[pos & DL_QUEUE_MASK] = dl_req_q[(pos - 1) & DL_QUEUE_MASK];
+        while (!prefetch && pos > dl_req_head) {
+            DLRequest *previous=&dl_req_q[(pos-1)&DL_QUEUE_MASK];
+            if(!tile_request_outranks(&live_view,
+                    tile_x,tile_y,zoom,false,
+                    previous->tile_x,previous->tile_y,
+                    previous->zoom,previous->prefetch))
+                break;
+            dl_req_q[pos & DL_QUEUE_MASK] = *previous;
             pos--;
         }
         dl_req_q[pos & DL_QUEUE_MASK] = (DLRequest){
@@ -284,6 +334,8 @@ bool map_tiles_init(void) {
     dl_req_head = dl_req_tail = 0;
     dl_res_head = dl_res_tail = 0;
     dl_thread_running = true;
+    memset(&live_view,0,sizeof(live_view));
+    gps_follow_mode=false;
     /* Two worker threads — if one is stuck on a slow HTTPS handshake the
      * other can still service queued requests. 128 KB stack each. */
     for (int i = 0; i < DL_NUM_THREADS; i++) {
@@ -417,6 +469,8 @@ static bool show_coverage;
 void map_tiles_set_coverage(bool enabled) {
     show_coverage = enabled;
 }
+/* The game's guess map must not change the normal map overlay state. */
+bool map_tiles_get_coverage(void) { return show_coverage; }
 
 void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset_y, 
                      int screen_width, int screen_height, bool is_top_screen) {
@@ -433,6 +487,23 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
     int center_tile_x = center_x / TILE_SIZE;
     int center_tile_y = center_y / TILE_SIZE;
 
+    /* On every tile-boundary movement, discard obsolete QUEUED work and
+     * prioritize currently visible centre tiles. Existing HTTP transfers
+     * continue safely, preserving warm caches and connection reuse. */
+    TileViewport view={
+        .zoom=zoom,.world=1<<zoom,
+        .start_x=start_tile_x,.start_y=start_tile_y,
+        .tiles_x=tiles_x,.tiles_y=tiles_y,
+        .center_x=center_tile_x,.center_y=center_tile_y,
+        .gps_follow=gps_follow_mode,.valid=1
+    };
+    if(!live_view.valid || live_view.zoom!=view.zoom ||
+       live_view.start_x!=view.start_x || live_view.start_y!=view.start_y ||
+       live_view.tiles_x!=view.tiles_x || live_view.tiles_y!=view.tiles_y ||
+       live_view.center_x!=view.center_x || live_view.center_y!=view.center_y ||
+       live_view.gps_follow!=view.gps_follow)
+        reprioritize_live_requests(&view);
+
     /* Phase 1 — collect uncached visible tiles, sort by distance from the map
      * centre, then enqueue downloads centre-first so the tile under the
      * crosshair always enters the worker queue before edge/corner tiles. */
@@ -445,7 +516,7 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
             int tile_x = start_tile_x + tx;
             int tile_y = start_tile_y + ty;
             if (tile_y < 0 || tile_y >= max_tile) continue;
-            tile_x = (tile_x + max_tile) % max_tile;
+            tile_x = ((tile_x % max_tile) + max_tile) % max_tile;
             if (!find_cached_tile(tile_x, tile_y, zoom) && npq < 16) {
                 int dx = start_tile_x + tx - center_tile_x;
                 int dy = tile_y - center_tile_y;
@@ -485,7 +556,7 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
             int tile_x = start_tile_x + tx;
             int tile_y = start_tile_y + ty;
             if (tile_y < 0 || tile_y >= max_tile) continue;
-            tile_x = (tile_x + max_tile) % max_tile;
+            tile_x = ((tile_x % max_tile) + max_tile) % max_tile;
 
             CachedTile *cached = find_cached_tile(tile_x, tile_y, zoom);
 
@@ -532,6 +603,32 @@ void map_tiles_render(double lat, double lon, int zoom, int offset_x, int offset
     
 }
 
+/* Draw ONLY already-cached overhead tiles during Street View entry.
+ * No downloads, allocations or tile-cache invalidation on the render thread. */
+void map_tiles_draw_fly(double lat, double lon, int zoom, int offset_x,
+                        int offset_y, float scale) {
+    if (!initialized || zoom < 0 || zoom > 18) return;
+    if (scale < 1.0f) scale = 1.0f;
+    if (scale > 4.0f) scale = 4.0f;
+    int center_x=0, center_y=0;
+    lat_lon_to_pixel(lat, lon, zoom, &center_x, &center_y);
+    const int world = (1 << zoom) * TILE_SIZE;
+    for (int i=0; i<MAX_CACHED_TILES; i++) {
+        CachedTile *tile=&tile_cache[i];
+        if (!tile->valid || !tile->image.tex || tile->zoom != zoom) continue;
+        int dx=tile->tile_x*TILE_SIZE-center_x;
+        if (dx > world/2) dx -= world;
+        if (dx < -world/2) dx += world;
+        float x=200.0f+(dx+offset_x)*scale;
+        float y=120.0f+(tile->tile_y*TILE_SIZE-center_y+offset_y)*scale;
+        if (x >= 400.0f || y >= 240.0f ||
+            x+TILE_SIZE*scale <= 0.0f || y+TILE_SIZE*scale <= 0.0f)
+            continue;
+        tile->last_used=cache_counter++;
+        C2D_DrawImageAt(tile->image,x,y,0.1f,NULL,scale,scale);
+    }
+}
+
 void map_tiles_clear_cache(void) {
     if (!initialized) return;
     
@@ -549,6 +646,7 @@ void map_tiles_view_changed(void) {
     LightLock_Lock(&dl_req_lock);
     dl_req_head = dl_req_tail;
     dl_generation++;
+    live_view.valid=0;
     LightLock_Unlock(&dl_req_lock);
     for (int i = 0; i < MAX_CACHED_TILES; i++) {
         tile_cache[i].pending = false;
@@ -644,6 +742,53 @@ void map_tiles_prefetch_step(double lat, double lon, int zoom, int screen_width,
 
     // Queue finished.
     prefetch_active = false;
+}
+
+/* Small Street View minimap, clipped to a fixed rectangle. Uses the SAME
+ * tile cache, offline packs and low-priority worker queue as the 2D map. */
+void map_tiles_draw_minimap(double lat,double lon,int zoom,
+                            float x,float y,float width,float height,
+                            bool allow_requests) {
+    if (!initialized || zoom<0 || zoom>18) return;
+    C2D_DrawRectSolid(x,y,.30f,width,height,C2D_Color32(31,48,62,255));
+    int cx,cy;lat_lon_to_pixel(lat,lon,zoom,&cx,&cy);
+    const float scale=.34f;
+    int half_w=(int)ceilf(width/(2*scale));
+    int half_h=(int)ceilf(height/(2*scale));
+    int tx0=(int)floor((cx-half_w)/256.0),tx1=(int)floor((cx+half_w)/256.0);
+    int ty0=(int)floor((cy-half_h)/256.0),ty1=(int)floor((cy+half_h)/256.0);
+    int n=1<<zoom;
+    static u64 last_request_ms;
+    u64 now=osGetTime();
+    bool queued=false;
+    allow_requests=allow_requests && (!last_request_ms || now-last_request_ms>=300);
+    for(int ty=ty0;ty<=ty1;ty++) for(int tx=tx0;tx<=tx1;tx++) {
+        if(ty<0 || ty>=n)continue;
+        int wrapped=((tx%n)+n)%n;
+        CachedTile *tile=find_cached_tile(wrapped,ty,zoom);
+        if(!tile && !queued && allow_requests) {
+            CachedTile *slot=get_cache_slot();
+            if(slot) {
+                enqueue_tile_download(wrapped,ty,zoom,slot,true);
+                last_request_ms=now;
+                queued=true;
+            }
+        }
+        if(!tile || !tile->valid || !tile->image.tex)continue;
+        float left=x+width*.5f+(tx*256-cx)*scale;
+        float top=y+height*.5f+(ty*256-cy)*scale;
+        float x0=fmaxf(x,left), y0=fmaxf(y,top);
+        float x1=fminf(x+width,left+256*scale);
+        float y1=fminf(y+height,top+256*scale);
+        if(x1<=x0 || y1<=y0)continue;
+        float u0=(x0-left)/(256*scale),u1=(x1-left)/(256*scale);
+        float v0=(y0-top)/(256*scale),v1=(y1-top)/(256*scale);
+        Tex3DS_SubTexture sub={.width=(u16)roundf((x1-x0)/scale),
+            .height=(u16)roundf((y1-y0)/scale),
+            .left=u0,.right=u1,.top=1.f-v0,.bottom=1.f-v1};
+        C2D_Image part={tile->image.tex,&sub};
+        C2D_DrawImageAt(part,x0,y0,.31f,NULL,scale,scale);
+    }
 }
 
 void lat_lon_to_tile(double lat, double lon, int zoom, int* tile_x, int* tile_y) {

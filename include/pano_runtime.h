@@ -1,0 +1,36 @@
+#ifndef PANO_RUNTIME_H
+#define PANO_RUNTIME_H
+#include <stdbool.h>
+#include "panorama_live.h"
+
+/* HTTP / image decode run on a worker; GPU swap runs in poll on the UI thread. */
+bool pano_runtime_start(double lat, double lon);
+/* Exact licensed dataset item; no coordinate search or provider substitution. */
+bool pano_runtime_start_curated(const char *id,const char *metadata_url);
+/* Google-only game lookup; never modifies normal user provider preference. */
+bool pano_runtime_start_game_google(double lat,double lon);
+void pano_runtime_end_game_google(void);
+bool pano_runtime_jump_game_google(const char *id,double lat,double lon);
+bool pano_runtime_step(int direction);
+bool pano_runtime_step_at(int direction,float view_yaw_rad);
+bool pano_runtime_follow(unsigned index);
+bool pano_runtime_switch_provider(StreetProvider provider,double lat,double lon);
+void pano_runtime_poll(void);
+void pano_runtime_stop(void);
+bool pano_runtime_busy(void);
+/* A successful next-panorama image is decoded and can be swapped on UI thread. */
+bool pano_runtime_next_ready(void);
+bool pano_runtime_has_live(void);
+bool pano_runtime_network_active(void);
+const char *pano_runtime_status(void);
+const PanoLiveImage *pano_runtime_current(void);
+
+/* Provider preference and map-marker toggle are saved on SD (never token). */
+void pano_runtime_set_provider(StreetProvider p);
+StreetProvider pano_runtime_provider(void);
+void pano_runtime_set_coverage(bool enabled);
+bool pano_runtime_coverage_enabled(void);
+unsigned pano_runtime_coverage(PanoLiveImage *items, unsigned max_items);
+unsigned pano_runtime_coverage_count(void);
+const PanoLiveImage *pano_runtime_coverage_at(unsigned i);
+#endif

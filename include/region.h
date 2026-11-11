@@ -21,7 +21,17 @@ bool region_append(RegionJob *job, unsigned index, const void *bytes, unsigned s
 bool region_finish(RegionJob *job, const char *part, const char *final);
 void region_close(RegionJob *job);
 typedef struct { double lat, lon; } RegionPoint;
+typedef struct {
+    double tiles_per_second;
+    uint64_t eta_seconds;
+    bool eta_known;
+} RegionProgressMetrics;
+
 unsigned region_plan(TilePackEntry *tiles, unsigned capacity, int min_zoom, int max_zoom,
                      const RegionPoint *path, unsigned points,
                      int reference_zoom, int padding);
+RegionProgressMetrics region_progress_metrics(unsigned initial_saved, unsigned saved,
+                                               unsigned total, uint64_t elapsed_ms);
+unsigned region_retry_delay_ms(unsigned attempt, long http_status,
+                               unsigned retry_after_ms, bool invalid_payload);
 #endif

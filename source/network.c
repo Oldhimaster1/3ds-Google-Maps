@@ -10,8 +10,19 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdatomic.h>
+#include <strings.h>
 #include <malloc.h>
 #include <curl/curl.h>
+#include "ca_bundle_bin.h"
+
+static bool configure_tls(CURL *curl) {
+    struct curl_blob ca = { (void *)ca_bundle_bin, ca_bundle_bin_size, CURL_BLOB_NOCOPY };
+    return curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &ca) == CURLE_OK &&
+           curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L) == CURLE_OK &&
+           curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L) == CURLE_OK &&
+           curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https") == CURLE_OK;
+}
+
 
 #define WEB_MERCATOR_HALF_WORLD 20037508.342789244
 
@@ -134,11 +145,10 @@ static bool download_url_curl(const char *url, u8 **buffer, u32 *size) {
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    if (!configure_tls(curl)) { curl_easy_cleanup(curl); return false; }
     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 16384L);
 
-    log_write("[CURL] GET %s\n", url);
+    log_write("[CURL] request started\n");
     CURLcode res = curl_easy_perform(curl);
 
     if (res != CURLE_OK) {
@@ -188,8 +198,7 @@ void *network_alloc_tile_curl(void) {
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS,        5L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT,         15L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,  10L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,   0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST,   0L);
+    if (!configure_tls(curl)) { curl_easy_cleanup(curl); return NULL; }
     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE,    16384L);
     /* Keep the TCP connection alive between requests */
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE,    1L);
@@ -272,7 +281,7 @@ bool fetch_map_tile(int tile_x, int tile_y, int zoom, void *curl_handle, bool on
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA,     &buf);
 
-        log_write("[CURL-P] GET %s\n", url);
+        log_write("[CURL-P] request started\n");
         CURLcode res = curl_easy_perform(curl);
 
         if (res == CURLE_OK) {
@@ -406,27 +415,61 @@ static int transfer_progress(void *context, curl_off_t total, curl_off_t now,
     return atomic_load((atomic_bool *)context);
 }
 
-bool network_request(void *handle, const char *url, size_t limit, atomic_bool *cancel,
-                     u8 **buffer, u32 *size) {
+static size_t retry_header(void *ptr, size_t size, size_t count, void *context) {
+    size_t length = size * count;
+    NetworkRequestInfo *info = context;
+    static const char prefix[] = "Retry-After:";
+    if (info && length > sizeof(prefix) - 1 &&
+        !strncasecmp(ptr, prefix, sizeof(prefix) - 1)) {
+        const char *value = (const char *)ptr + sizeof(prefix) - 1;
+        const char *end = (const char *)ptr + length;
+        while (value < end && (*value == ' ' || *value == '\t')) value++;
+        unsigned long seconds = 0;
+        bool has_digits = false;
+        while (value < end && *value >= '0' && *value <= '9') {
+            has_digits = true;
+            if (seconds <= 300) seconds = seconds * 10 + (unsigned)(*value - '0');
+            value++;
+        }
+        if (has_digits) {
+            if (seconds > 300) seconds = 300;
+            info->retry_after_ms = (unsigned)seconds * 1000;
+        }
+    }
+    return length;
+}
+
+bool network_request_ex(void *handle, const char *url, size_t limit, atomic_bool *cancel,
+                        u8 **buffer, u32 *size, NetworkRequestInfo *info) {
     if (!handle || !url || !limit) return false;
     CURL *curl = handle;
     struct curl_buf data = { NULL, 0, limit };
+    NetworkRequestInfo local_info = {0};
+    if (!info) info = &local_info;
+    *info = (NetworkRequestInfo){0};
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, retry_header);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, info);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, cancel ? 0L : 1L);
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, transfer_progress);
     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel);
     CURLcode code = curl_easy_perform(curl);
-    long status = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-    if (code != CURLE_OK || status != 200 || !data.size) {
+    info->curl_code = code;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &info->http_status);
+    if (code != CURLE_OK || info->http_status != 200 || !data.size) {
         free(data.data);
         return false;
     }
     *buffer = data.data;
     *size = data.size;
     return true;
+}
+
+bool network_request(void *handle, const char *url, size_t limit, atomic_bool *cancel,
+                     u8 **buffer, u32 *size) {
+    return network_request_ex(handle, url, limit, cancel, buffer, size, NULL);
 }
 
 bool network_region_endpoint(TileSource source, char *endpoint, size_t size) {
@@ -446,7 +489,11 @@ bool network_region_endpoint(TileSource source, char *endpoint, size_t size) {
                          source == TILE_SOURCE_SATELLITE ? "/sat" : "");
         return n > 0 && (size_t)n < size;
     }
-    return false;
+    const char *preset = source == TILE_SOURCE_SATELLITE ?
+        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}" :
+        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}";
+    int n = snprintf(endpoint, size, "%s", preset);
+    return n > 0 && (size_t)n < size;
 }
 
 bool network_region_url(const char *endpoint, int x, int y, int z, char *url, size_t size) {
@@ -721,7 +768,7 @@ bool network_init(void) {
                 if (len > 0) {
                     network_set_proxy_base_url(line);
                     proxy_enabled = true;
-                    log_write("[NET] proxy.cfg loaded: %s\n", g_proxy_base_url);
+                    log_write("[NET] request state changed\n");
                     printf("Proxy configured: %s\n", g_proxy_base_url);
                 }
             }
@@ -799,18 +846,18 @@ bool download_url(const char* url, u8** buffer, u32* size) {
     // Work with a local copy of the URL so we can follow redirects.
     char cur_url[512];
     snprintf(cur_url, sizeof(cur_url), "%s", url);
-    log_write("[DL] start url=%s\n", cur_url);
+    log_write("[NET] request state changed\n");
 
     int redirects = 0;
     while (redirects <= 3) {
-        log_write("[DL] httpcOpenContext url=%s\n", cur_url);
+        log_write("[NET] request state changed\n");
         ret = httpcOpenContext(&context, HTTPC_METHOD_GET, cur_url, 0);
         if (R_FAILED(ret)) {
             log_write("[DL] httpcOpenContext FAILED ret=0x%08lX\n", ret);
             return false;
         }
 
-        httpcSetSSLOpt(&context, SSLCOPT_DisableVerify);
+        /* HTTPS always goes through the verified curl path, including redirects. */
 
         ret = httpcAddRequestHeaderField(&context, "User-Agent",
                                         "3DS-Google-Maps/1.0 (Nintendo 3DS)");
@@ -828,7 +875,7 @@ bool download_url(const char* url, u8** buffer, u32* size) {
             log_write("[DL] httpcGetResponseStatusCode FAILED ret=0x%08lX\n", ret);
             httpcCloseContext(&context); return false;
         }
-        log_write("[DL] HTTP status=%lu url=%s\n", statuscode, cur_url);
+        log_write("[NET] request state changed\n");
 
         if (statuscode == 301 || statuscode == 302 || statuscode == 303) {
             char location[512];
@@ -838,7 +885,8 @@ bool download_url(const char* url, u8** buffer, u32* size) {
                 log_write("[DL] redirect but no Location header, ret=0x%08lX\n", ret);
                 return false;
             }
-            log_write("[DL] redirect %d -> %s\n", redirects, location);
+            if (!strncmp(location, "https://", 8))
+                return download_url_curl(location, buffer, size);
             snprintf(cur_url, sizeof(cur_url), "%s", location);
             redirects++;
             continue;
@@ -896,7 +944,7 @@ bool download_url(const char* url, u8** buffer, u32* size) {
         httpcCloseContext(&context);
         return false;
     }
-    log_write("[DL] download complete bytes=%lu url=%s\n", downloaded_size, cur_url);
+    log_write("[NET] request state changed\n");
 
     // Resize buffer to final size
     if (downloaded_size > 0) {

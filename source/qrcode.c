@@ -38,6 +38,7 @@ static void rs_compute_ec(const uint8_t *data, int dlen, int eclen, uint8_t *ec)
 {
     /* Build generator polynomial g[0..eclen-1] (coeff of x^0..x^(eclen-1)).
      * Leading x^eclen coefficient = 1 (implicit). */
+    if (eclen <= 0 || eclen > 32 || dlen < 0) return;
     uint8_t g[32];
     memset(g, 0, sizeof(g));
     g[0] = 1;
@@ -202,28 +203,38 @@ static uint16_t compute_format_bits(int mask)
     return bits;
 }
 
-/* Bit positions for format info copy 1 (around top-left finder) */
-static const int F1R[] = {8,8,8,8,8,8,8,8, 7,5,4,3,2,1,0};
-static const int F1C[] = {0,1,2,3,4,5,7,8, 8,8,8,8,8,8,8};
-
+/* Both copies of the 15-bit format metadata are placed per ISO/IEC 18004.
+ * Bit 0 starts above the upper-left finder and at the right edge of row 8.
+ * The older implementation transposed these two format copies and wrote over
+ * the wrong modules. That produces a visible but undecodable QR code. */
 static void write_format(int sz, int mask, uint8_t out[][S])
 {
     uint16_t bits = compute_format_bits(mask);
     for (int i = 0; i < 15; i++) {
         int v = (bits >> i) & 1;
-        /* Copy 1 */
-        out[F1R[i]][F1C[i]] = v;
-        /* Copy 2: bits 0-6 → bottom-left column, bits 7-14 → top-right row */
-        if (i < 7)
-            out[sz - 1 - i][8] = v;
+        /* Vertical: upper-left, skipping timing row, then bottom-left. */
+        if (i < 6)
+            out[i][8] = v;
+        else if (i < 8)
+            out[i + 1][8] = v;
         else
-            out[8][sz - 15 + i] = v;
+            out[sz - 15 + i][8] = v;
+
+        /* Horizontal: top-right, then around upper-left finder. */
+        if (i < 8)
+            out[8][sz - 1 - i] = v;
+        else if (i == 8)
+            out[8][7] = v;
+        else
+            out[8][14 - i] = v;
     }
+    /* This module is fixed black, not part of the format information. */
+    out[sz - 8][8] = 1;
 }
 
 /* ---- Penalty evaluation ---- */
 
-static int penalty_score(int sz, const uint8_t q[][S])
+static int penalty_score(int sz, uint8_t q[][S])
 {
     int score = 0;
 
@@ -300,6 +311,8 @@ static uint8_t s_best[S][S];
 
 int qr_encode(const char *text, int len, uint8_t *modules, int *out_size)
 {
+    if (!text || !modules || !out_size || len < 0) return 0;
+    *out_size = 0;
     gf_init();
 
     /* Pick smallest version that can hold the data */
@@ -368,7 +381,7 @@ int qr_encode(const char *text, int len, uint8_t *modules, int *out_size)
     place_data(sz, bits, total_cw * 8);
 
     /* ---- Select best mask ---- */
-    int best_mask = 0, best_pen = 0x7FFFFFFF;
+    int best_pen = 0x7FFFFFFF;
     for (int m = 0; m < 8; m++) {
         memcpy(s_tmp, g, sizeof(s_tmp));
         for (int r = 0; r < sz; r++)
@@ -379,7 +392,6 @@ int qr_encode(const char *text, int len, uint8_t *modules, int *out_size)
         int pen = penalty_score(sz, s_tmp);
         if (pen < best_pen) {
             best_pen = pen;
-            best_mask = m;
             memcpy(s_best, s_tmp, sizeof(s_best));
         }
     }

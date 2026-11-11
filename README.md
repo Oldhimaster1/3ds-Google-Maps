@@ -1,103 +1,158 @@
+<div align="center">
+
 # Maps for Nintendo 3DS
 
-Browse street maps and satellite imagery, search for places, and plan routes. Download map regions directly to your 3DS for offline use, or pair your phone to display your GPS position.
+**Explore the world. Find the place. Pass the console.**
 
-[Download v2.1 preview (.cia)][preview-cia] · [Download v2.1 preview (.3dsx)][preview-3dsx] · [Watch the v2.1 preview][preview-video] · [Installation guide](#install)
+Maps, real street panoramas, a globe you can spin, and geography challenges to play with friends — all on your Nintendo 3DS.
 
-> The named offline regions shown here require **v2.1**. The links above serve the tested **v2.1.0-preview.1** packages. [Download stable v2.0 (.3dsx)][stable-3dsx] · [Preview SHA256SUMS][preview-sums]
+Pick somewhere you've never been. Wander down a street, take a closer look at the landscape, or find out how well you really know the world.
 
-<p>
-  <img src="docs/media/maps-for-nintendo-3ds-hero.png" width="432" alt="Golden Gate Bridge imagery on the top screen, with map controls on the touch screen">
-</p>
+![Maps for Nintendo 3DS: globe movement, Manhattan map exploration and StreetGuess menu — genuine RC3 emulator footage](docs/media/rc3/hero.gif)
 
-*Golden Gate Bridge in Azahar. Imagery from USDA and USGS The National Map.*
+**[Download the latest preview](#download)** · **[Watch the teaser](docs/media/rc3/teaser.mp4?raw=true)** · [What's new since v2.0](#whats-new-since-v20) · [How to install](#download)
 
-[Offline map preview (GIF)](docs/media/maps-for-nintendo-3ds-preview.gif?raw=true) · [Full introduction video (MP4)](docs/media/maps-for-nintendo-3ds-intro.mp4?raw=true)
+</div>
 
-## Install
+## What's new since v2.0?
 
-### .3dsx · Homebrew Launcher
+The original release was mainly about browsing maps, searching for places, planning routes and taking maps offline. This version takes things a lot further.
 
-1. Download the [v2.1 preview (.3dsx)][preview-3dsx].
-2. Copy it to `sdmc:/3ds/3ds_google_maps/3ds_google_maps.3dsx`.
-3. Open **Homebrew Launcher**, then select **3ds_google_maps**.
+- **Street View Explorer:** Find real panoramic imagery, look around, follow connected viewpoints and try motion controls on a New 3DS. Panoramax, KartaView and optional Mapillary are supported; Google and Bing integrations are experimental.
+- **A globe in your pocket:** Spin the Earth, zoom back into maps and explore NASA Blue Marble imagery, with extra historical GIBS detail where available.
+- **3D places:** Explore elevation near your chosen location and simple OpenStreetMap buildings, including stereoscopic views on supported 3DS models.
+- **StreetGuess:** Guess where you are from street imagery, play daily challenges, share a friend code, or pass the console around.
+- **Better everyday maps:** More flexible search, offline regions, favorites, route progress and estimated arrival times, plus phone-based GPS following.
+- **Your controls, your way:** Four remapping profiles, text-size options, contrast settings and adjustable gyro behavior.
 
-### .cia · HOME Menu
+Some of these features require Wi-Fi and nearby imagery. [Full version changes and known limits](docs/releases/v2.2.0.md).
 
-On a 3DS with [custom firmware](https://3ds.hacks.guide/), open [FBI](https://github.com/Steveice10/FBI) and choose **Remote Install → Scan QR Code**. Scan this code over Wi-Fi to download the v2.1 preview CIA.
+## Explore somewhere new
 
-<img src="docs/media/fbi-install-preview.png" width="220" alt="FBI remote install QR code for the v2.1 preview CIA">
+**Browse the world.** Pan and zoom around street maps and satellite imagery, search for a place, save a favorite or prepare supported map regions for offline use.
 
-You can also copy the [preview CIA][preview-cia] to the SD card. In FBI, open **SD**, select the file, and choose **Install CIA**. Return to the HOME Menu to launch **3DS Google Maps**.
+**Step into the street.** Enter Street View Explorer to look around a real panorama. Follow an available connection to another viewpoint or use the minimap to see where you are. On a New 3DS, you can try the gyro for looking around. Imagery coverage varies by location and provider.
 
-[Preview release notes](docs/release/preview-notes.md)
+**Spin the globe.** Zoom all the way out to leave the flat map behind. The globe works with bundled Blue Marble imagery and can request more detailed NASA imagery when online. It's a beautiful Earth viewer, not a real-time satellite feed.
 
-## Try offline maps
+**See some depth.** Switch to terrain or nearby buildings in Explore. Elevation is loaded for the selected area, and building shapes come from available OpenStreetMap data. Raise the 3D slider on a compatible 3DS to try stereoscopic views.
 
-Requires the v2.1 preview and a tile source that permits offline downloads. Configure the source for the layer you want to save.
+**Bring your phone for GPS.** Pair a phone on the same trusted Wi-Fi network and let the map follow your position. You can also search for places, plot a route and follow its progress.
 
-The Azahar demo used a controlled tile endpoint. A separate direct USGS request hit a DNS error in Azahar. Check the [tile source guide](docs/usage.md#tile-sources) for compatible sources and setup.
+## StreetGuess — where in the world are you?
 
-1. Connect the 3DS to Wi-Fi. Tap **Search** or press **Select**, then look up a familiar place.
-2. Open **Menu → Data → Offline regions**. Press **L** for **Tile source** and enter a raster tile URL that permits offline downloads for the selected layer. The [tile source guide](docs/usage.md#tile-sources) includes a USGS imagery example for the contiguous United States.
-3. Press **Y** for **New pack**. Start with a narrow zoom range and check the size estimate. Press **A** to name and download the pack, or **Select** for **Quick save**. **B** pauses a transfer. Select the paused pack and press **A** to resume.
-4. Once the pack is ready, press **Start** to exit, switch off Wi-Fi, and reopen the app. In **Offline regions**, select the pack and press **A** to preview it. Browse the saved area at the zoom levels you downloaded.
+Look for clues in the panorama, place a pin on the map, and see how close your guess was. Play alone or turn it into a competition.
 
-Planning a new route requires a connection. With a route on screen, press **X** on the new pack screen to save a corridor of map tiles along it. This saves map coverage for the trip. Route calculation still uses the online routing service, and the route line itself does not persist with the pack.
+- **Classic:** Five-round games with World, US and Europe options, movement rules and timers.
+- **Daily Challenge:** The same five curated places for players on the same UTC day and dataset version.
+- **Friend Challenges:** Share a code so someone else can play the same locations and rules.
+- **Pass and Play:** Two to four people share a console and take turns.
+- **Country Streak:** Name the country and see how long you can keep your streak alive.
+- **Mystery Expeditions and Surprise Me:** Let the game pick somewhere unexpected.
 
-| Pack saved | Map reopened from the saved pack |
-| --- | --- |
-| <img src="docs/media/offline-complete.png" width="300" alt="Offline regions shows 16 tiles checked and zero unreadable"> | <img src="docs/media/offline-golden-gate.png" width="300" alt="Golden Gate Bridge visible from the saved pack after a cold relaunch"> |
-| Azahar checked all 16 tiles before exit. | After relaunch, the tile server was stopped and the browsing cache was empty. |
+There are currently **32 curated panorama locations across 21 countries**, plus classic random-location play. Explorer difficulty offers hints without a timer; Standard and Expert provide a bigger challenge. Your records stay on the SD card, and no online account is required.
 
-## Use phone GPS
+The curated challenges use Panoramax imagery. Classic random play uses experimental Google imagery and may not work in every area. Missing challenge images can be retried without losing the round.
 
-Connect the phone and 3DS to the same Wi-Fi network, or connect the 3DS to the phone’s hotspot if it permits local connections. On the 3DS, open **Menu → GPS** and tap **Server**. Scan the pairing QR on the top screen with the phone, open the local page, and allow location access. Keep the page open while using GPS. Press **A** on the map to toggle following your position.
+[How StreetGuess works](docs/streetguess.md)
 
-The local GPS page uses a self-signed HTTPS certificate. Some browser setups will block the page or location access. See [GPS setup and troubleshooting](docs/usage.md#phone-gps) for what to check. The GPS QR pairs a phone to the running app.
+## See it in action
 
-The preview accepted a simulated fix in Azahar. Physical phone pairing is pending.
+| Explore a real panorama | Spin the Earth |
+| :---: | :---: |
+| ![Real Panoramax panorama displayed in Street View Explorer](docs/media/rc3/panorama.png) | ![NASA Blue Marble globe displayed on the 3DS](docs/media/rc3/globe.png) |
+| **Make a StreetGuess guess** | **See the actual result** |
+| ![StreetGuess showing the guessing map and pin](docs/media/rc3/streetguess-round.png) | ![StreetGuess showing the submitted guess, distance and points](docs/media/rc3/streetguess-result.png) |
+| **Explore live elevation** | **Explore Manhattan** |
+| ![Live Terrarium elevation in the 3D terrain viewer](docs/media/rc3/terrain-live.png) | ![Satellite imagery over lower Manhattan](docs/media/rc3/map-close.png) |
 
-## Explore
+**[Watch the 20-second teaser](docs/media/rc3/teaser.mp4?raw=true)** · [Watch the 32-second showcase](docs/media/rc3/review-walkthrough.mp4?raw=true)
 
-**Grand Canyon** · Follow the Colorado River through the canyon in imagery mode.
+### Real gameplay clips
 
-<img src="docs/media/grand-canyon.png" width="330" alt="Grand Canyon imagery above the Nintendo 3DS touch controls">
+These are short, genuine recordings of the newer features. They haven't yet been edited into the teaser or showcase:
 
-**A route to City Hall Park** · The route overlay follows the streets from The Battery.
+**[Look around a 360° panorama](docs/media/rc3/capture-sources/panorama-look.mp4?raw=true)** · [Move to another viewpoint](docs/media/rc3/capture-sources/panorama-move.mp4?raw=true) · [Make a guess and reveal the score](docs/media/rc3/capture-sources/daily-guess.mp4?raw=true) · [Explore live 3D terrain](docs/media/rc3/capture-sources/terrain.mp4?raw=true)
 
-<img src="docs/media/manhattan-route.png" width="330" alt="Yellow route line from The Battery toward City Hall Park, with Route active on the touch screen">
+*These clips were captured in Azahar from RC3 application code, with recording-only network and clock adjustments. They aren't physical-console performance footage. The published CIA and 3DSX do not include those recording adjustments. [Capture details](docs/media/rc3/capture-sources/README.md).*
 
-*All captures are from Azahar. The demo uses USGS topographic maps and USDA/USGS imagery through a test endpoint. Search and routing data © OpenStreetMap contributors. These captures do not establish physical console performance.*
+## Download
 
-## Controls
+**Latest available build: v2.2.0 RC3 (preview).** You need a Nintendo 3DS-family system set up for homebrew. This is a major feature upgrade over the [v2.0 release][stable]; its new features still need hands-on testing on physical consoles.
 
-| Control | Action |
-| --- | --- |
-| Circle Pad / D-Pad | Pan the map |
-| **X** / **Y** | Zoom in / out |
-| **Select** | Search |
-| **L** | Identify the map center |
-| **R** | Open settings |
-| **B** / **A** on the map | Connect GPS / toggle GPS follow |
-| **Start** | Exit and save the current view |
+**[Download CIA][cia]** · **[Download 3DSX][three]** · [SHA-256 checksums][sums]
 
-Use the touch panel for favorites, recents, and routing. Context-specific controls appear on the bottom screen. [Full controls and troubleshooting](docs/usage.md)
+### Install with FBI
 
-## Compatibility and issues
+On your 3DS, open **FBI → Remote Install → Scan QR Code** and scan:
 
-Both preview packages were built with devkitARM and launched in Azahar. Physical Old 3DS testing is pending, including live tile sources and HOME Menu banner playback. See the [verification record](docs/release/verification.md) for the exact coverage.
+<div align="center">
 
-When [reporting an issue](https://github.com/Oldhimaster1/3ds-Google-Maps/issues/new/choose), include the console model or emulator version, app version or commit, and steps to reproduce it. For a tile problem, say which layer and provider you were using. Remove private locations, addresses, and pairing URLs before attaching logs or captures.
+<img src="preview-builds/rc3/fbi-rc3.png" width="240" alt="FBI install QR code for the verified RC3 CIA download">
 
-## Providers and development
+</div>
 
-The default street layer uses [OpenStreetMap](https://www.openstreetmap.org/copyright) and the default imagery layer uses [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9). Search uses [Nominatim](https://nominatim.org/) and route calculation uses [OSRM](https://project-osrm.org/). Offline packs use the tile source you configure. Provider terms apply separately from the app’s [MIT license](LICENSE).
+You can also copy the CIA to your SD card and install it in FBI. The CIA uses the same title ID as earlier versions, so **back up your saves and app data before upgrading**.
 
-[Build instructions, SD layout, and tilepack format](docs/usage.md#build-from-source) · [Contributing](CONTRIBUTING.md) · [Third-party licenses](THIRD_PARTY_LICENSES.md)
+### Install with Homebrew Launcher
 
-[stable-3dsx]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/download/v2.0/3ds_google_maps.3dsx
-[preview-video]: docs/media/maps-for-nintendo-3ds-intro.mp4?raw=true
-[preview-cia]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/c5ce07ae55b5d201875f818bf74a88f6b30a9f5b/3ds_google_maps.cia
-[preview-3dsx]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/c5ce07ae55b5d201875f818bf74a88f6b30a9f5b/3ds_google_maps.3dsx
-[preview-sums]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/c5ce07ae55b5d201875f818bf74a88f6b30a9f5b/SHA256SUMS
+Download the 3DSX and copy it to:
+
+```text
+sdmc:/3ds/3ds_google_maps/3ds_google_maps.3dsx
+```
+
+Then launch it from the Homebrew Launcher.
+
+## Getting started
+
+1. **Explore the map:** Use the Circle Pad or D-pad to move, **X/Y** to zoom, **Select** to search, and **R** for settings.
+2. **Try a globe or panorama:** Open **Settings → Explore**, or zoom out past the smallest map zoom to enter the globe. Street View needs an internet connection and available imagery.
+3. **Play StreetGuess:** Choose **Settings → Explore → Play StreetGuess**. Press **Select** to open the challenge menu, then choose a mode or a friend code.
+4. **Connect your phone for GPS:** Use the GPS server option while both devices are on the same trusted Wi-Fi. Scan the private pairing QR, allow location access and keep that QR private.
+
+[Full map controls](docs/usage.md) · [Explore and gyro guide](docs/explore.md) · [StreetGuess guide](docs/streetguess.md)
+
+## A few useful tips
+
+- Download a small offline region before heading somewhere without Wi-Fi. Only use tile sources that permit offline downloads.
+- Zoom into a panorama to try higher-resolution detail on supported imagery. It improves a central section rather than sharpening the entire panorama at once.
+- Daily challenges follow **UTC**, so check that your console clock is accurate.
+- If street imagery isn't available nearby, try a different provider or location.
+- Adjust text size, contrast or button mappings in Settings if the default layout isn't comfortable.
+
+## FAQ
+
+**Does it run on the original 3DS?**  
+The original 3DS is the performance target, with New 3DS models supported by the same source. The RC3 build and several features have run in Azahar; full original/New 3DS hardware testing, including gyro and stereo behavior, has not yet been completed.
+
+**Does StreetGuess need an account?**  
+No. Daily challenges, friend codes and local records work without accounts or an online leaderboard. Street imagery still needs a working network connection.
+
+**Why isn't Street View available everywhere?**  
+Coverage depends on the imagery provider. Panoramax, Mapillary and KartaView have different coverage; Google and Bing remain experimental and have unresolved access permissions. [Provider details](docs/release/rc1/provider-review.md).
+
+**Can I use everything without Wi-Fi?**  
+Previously cached maps and supported offline regions can work offline, and the basic globe uses bundled imagery. Fresh street panoramas, live elevation/building data and most online services need Wi-Fi.
+
+**Is the globe showing the Earth right now?**  
+No. It uses NASA's Blue Marble composite imagery and additional GIBS detail when available.
+
+**What if something doesn't work?**  
+Check the [troubleshooting guide](docs/usage.md#troubleshoot) and [known limitations](docs/release/rc3/verification.md#feature-scope-and-known-limits), or [open an issue][issues]. Do not include a private GPS pairing QR or your exact location in public screenshots.
+
+## Build, credits and license
+
+The project is open source. [Build it with devkitPro](docs/usage.md#build-from-source) or browse the [release changes](docs/releases/v2.2.0.md).
+
+Maps © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Satellite imagery shown in the current gallery is credited to Esri and contributors; the globe uses NASA Blue Marble/GIBS. Elevation uses Terrarium data, and street imagery belongs to its credited creators. [StreetGuess image credits and licenses](docs/datasets/streetguess-v2.json) · [Third-party licenses](THIRD_PARTY_LICENSES.md).
+
+This is an independent homebrew project, not affiliated with Nintendo, Google, NASA or the imagery providers.
+
+[MIT License](LICENSE) · [Report a problem][issues] · [Stable v2.0][stable]
+
+[stable]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.0
+[issues]: https://github.com/Oldhimaster1/3ds-Google-Maps/issues
+[cia]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/3ds_google_maps.cia
+[three]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/3ds_google_maps.3dsx
+[sums]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/SHA256SUMS

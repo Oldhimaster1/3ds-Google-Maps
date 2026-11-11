@@ -1,12 +1,57 @@
-name: CI
-
+name: Tests and 3DS release candidate build
 on:
   push:
   pull_request:
-
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
-  build:
+  host:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: echo "Hello"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y libjansson-dev python3-opencv python3-numpy
+      - name: Full host regression gate with ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: sh tests/run-all-host.sh
+  build:
+    needs: host
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install CIA packaging tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/maps-tools/banner" "$RUNNER_TEMP/maps-tools/rom"
+          gh release download 1.2.3 -R carstene1ns/3ds-bannertool -p bannertool-1.2.3-linux.tar.gz -D "$RUNNER_TEMP/maps-tools/banner"
+          gh release download makerom-v0.18.4 -R 3DSGuy/Project_CTR -p makerom-v0.18.4-ubuntu_x86_64.zip -D "$RUNNER_TEMP/maps-tools/rom"
+          tar -xzf "$RUNNER_TEMP/maps-tools/banner/bannertool-1.2.3-linux.tar.gz" -C "$RUNNER_TEMP/maps-tools/banner"
+          unzip -q "$RUNNER_TEMP/maps-tools/rom/makerom-v0.18.4-ubuntu_x86_64.zip" -d "$RUNNER_TEMP/maps-tools/rom"
+          cp "$(find "$RUNNER_TEMP/maps-tools/banner" -type f -name bannertool -print -quit)" "$RUNNER_TEMP/maps-tools/bannertool"
+          cp "$(find "$RUNNER_TEMP/maps-tools/rom" -type f -name makerom -print -quit)" "$RUNNER_TEMP/maps-tools/makerom"
+          chmod +x "$RUNNER_TEMP/maps-tools/bannertool" "$RUNNER_TEMP/maps-tools/makerom"
+      - name: Fresh devkitARM build
+        run: |
+          docker run --rm -v "$PWD:/src" -v "$RUNNER_TEMP/maps-tools:/tools:ro" -w /src devkitpro/devkitarm:latest bash -ec '
+            dkp-pacman -Syu --noconfirm --needed 3ds-dev 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson
+            make clean
+            make -j2 cia BANNERTOOL=/tools/bannertool MAKEROM=/tools/makerom
+          '
+          mkdir -p dist
+          cp 3ds_google_maps.cia 3ds_google_maps.3dsx dist/
+          python3 tools/verify_build.py dist
+          git rev-parse HEAD > dist/SOURCE_COMMIT
+          (cd dist && sha256sum 3ds_google_maps.cia 3ds_google_maps.3dsx > SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+# Intentionally no publish job: hardware and provider review are release gates.

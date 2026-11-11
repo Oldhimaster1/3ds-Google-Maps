@@ -1,0 +1,72 @@
+{
+  "date_utc": "2026-11-11",
+  "environment": "Desktop host, not 3DS; host TLS trust store. Timing is not console performance.",
+  "checks": [
+    {
+      "sample": "NASA Blue Marble",
+      "host_seconds": 5.963,
+      "pass": true,
+      "bytes": 9647,
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "sample": "New York city",
+      "host_seconds": 4.309,
+      "pass": true,
+      "bytes": 72377,
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "sample": "Alps mountains",
+      "host_seconds": 3.905,
+      "pass": true,
+      "bytes": 137461,
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "sample": "Atlantic coastline",
+      "host_seconds": 4.264,
+      "pass": true,
+      "bytes": 68240,
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "sample": "Kansas flat land",
+      "host_seconds": 3.684,
+      "pass": true,
+      "bytes": 102612,
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "sample": "Tokyo city",
+      "host_seconds": 3.57,
+      "pass": true,
+      "bytes": 37418,
+      "dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "sample": "Panoramax exact STAC item",
+      "host_seconds": 7.318,
+      "pass": true,
+      "bytes": 8152
+    }
+  ]
+}

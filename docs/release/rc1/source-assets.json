@@ -1,0 +1,29 @@
+{
+  "icon.png": {
+    "sha256": "5edb37f8be6367df7a1b99bd051cab26c661466740763d45a31c914b866eba26",
+    "bytes": 5455,
+    "dimensions": [
+      48,
+      48
+    ]
+  },
+  "banner.png": {
+    "sha256": "b3ce7f94352e59f06322bcd6bce8092f6288fb4802371a6066cb4371b59c6498",
+    "bytes": 42667,
+    "dimensions": [
+      256,
+      128
+    ]
+  },
+  "banner.wav": {
+    "sha256": "78a288e30e5281d9f608538b80056fa943e43b3ee52e15fb0f2a29dc8eb4ff03",
+    "bytes": 84524,
+    "channels": 1,
+    "sample_rate": 32000,
+    "frames": 42240
+  },
+  "data/ca_bundle.bin": {
+    "sha256": "427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285",
+    "bytes": 200116
+  }
+}

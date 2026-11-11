@@ -2,8 +2,8 @@
  * gps_server.c  —  HTTPS GPS bridge for Nintendo 3DS
  *
  * Architecture overview:
- *   - gps_server_start() creates an mbedTLS ssl_config with an embedded
- *     self-signed cert (from include/gps_server_cert.h), opens a TCP
+ *   - gps_server_start() generates a fresh P-256 self-signed identity and
+ *     independent private pairing token, then opens a TCP
  *     listen socket on port 8443, and spawns a single libctru thread.
  *
  *   - The thread loops doing a non-blocking accept() (50 ms sleep when
@@ -11,7 +11,7 @@
  *     handshake (~200-500 ms on O3DS, <200 ms on N3DS), then dispatches
  *     the request:
  *       GET  /  or  /gps   →  serve the GPS capture HTML page
- *       POST /location      →  parse {"lat":...,"lon":...}, call gps_inject_fix()
+ *       POST /location      →  authenticate bearer token, parse and inject fix
  *     After the response the connection is closed.
  *
  *   - gps_server_stop() signals the thread via a flag, closes the listen
@@ -31,7 +31,10 @@
 #include <jansson.h>
 #include "gps_server.h"
 #include "gps.h"
-#include "gps_server_cert.h"   /* embedded cert + key as C arrays */
+#include "gps_pairing.h"
+#include <mbedtls/ecp.h>
+#include <mbedtls/x509.h>
+#include <mbedtls/sha256.h>
 #include "logging.h"
 
 #include <mbedtls/ssl.h>
@@ -70,19 +73,26 @@ static const char GPS_PAGE[] =
     "<h2>3DS GPS Bridge</h2>"
     "<div class='box' id='s'>Requesting location permission...</div>"
     "<div class='box'>Keep this page open in the foreground.<br>"
-    "Screen can lock but the browser tab must stay active.</div>"
+    "Your browser may pause updates when locked or in the background.</div>"
     "<script>\n"
-    "var n=0;\n"
+    "var token=location.hash.slice(1);history.replaceState(null,'','/');\n"
+    "var n=0, busy=false, lastSend=0;\n"
     "function send(p){\n"
-    "  var la=p.coords.latitude,lo=p.coords.longitude,ac=p.coords.accuracy;\n"
-    "  n++;\n"
-    "  fetch('/location',{method:'POST',\n"
-    "    headers:{'Content-Type':'application/json'},\n"
-    "    body:JSON.stringify({lat:la,lon:lo,acc:ac})}).catch(function(){});\n"
-    "  document.getElementById('s').innerHTML=\n"
-    "    '<span class=\\'ok\\'>Fix #'+n+'</span><br>'\n"
-    "    +la.toFixed(6)+', '+lo.toFixed(6)\n"
-    "    +'<br><small>\\xb1'+Math.round(ac)+'m accuracy</small>';\n"
+    "  var now=Date.now(),la=p.coords.latitude,lo=p.coords.longitude,ac=p.coords.accuracy;\n"
+    "  var speed=p.coords.speed,heading=p.coords.heading;\n"
+    "  if(busy || now-lastSend<1500)return;\n"
+    "  busy=true;lastSend=now;\n"
+    "  var status=document.getElementById('s');\n"
+    "  status.textContent='Sending GPS position to 3DS...';\n"
+    "  var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},6000);\n"
+    "  fetch('/location',{method:'POST',signal:controller.signal,\n"
+    "    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},\n"
+    "    body:JSON.stringify({lat:la,lon:lo,acc:ac,speed:speed,heading:heading})})\n"
+    "   .then(function(r){if(!r.ok)throw Error('3DS returned HTTP '+r.status);\n"
+    "     n++;status.textContent='Fix #'+n+' delivered'\n"
+    "       +' (accuracy '+Math.round(ac)+'m)';status.className='box ok';})\n"
+    "   .catch(function(e){status.textContent='GPS send failed: '+e.message;status.className='box err';})\n"
+    "   .then(function(){clearTimeout(timer);busy=false;});\n"
     "}\n"
     "function onerr(e){\n"
     "  document.getElementById('s').innerHTML=\n"
@@ -113,6 +123,7 @@ static int                       s_listen_fd     = -1;
 static Thread                    s_thread        = NULL;
 static _Atomic bool             s_thread_alive  = false;
 static _Atomic bool             s_stop_flag     = false;
+static char s_pair_token[33];
 static char                      s_local_ip[32]  = {0};
 static int                       s_port          = 0;
 static u32                      *s_soc_buf       = NULL;
@@ -220,13 +231,17 @@ static bool read_exact(mbedtls_ssl_context *ssl, char *buf, int len)
  * Minimal JSON parser for {"lat":<float>,"lon":<float>,...}.
  * Does NOT require a full JSON library.
  */
-static bool parse_location_json(const char *body, double *lat, double *lon, double *accuracy) {
+static bool parse_location_json(const char *body, double *lat, double *lon, double *accuracy,
+                                double *speed, double *heading) {
     json_t *root = json_loads(body, JSON_REJECT_DUPLICATES, NULL);
     json_t *y = json_object_get(root, "lat"), *x = json_object_get(root, "lon");
     json_t *acc = json_object_get(root, "acc");
+    json_t *spd = json_object_get(root, "speed"), *dir = json_object_get(root, "heading");
     *lat = json_number_value(y);
     *lon = json_number_value(x);
     *accuracy = json_is_number(acc) ? json_number_value(acc) : -1;
+    *speed = json_is_number(spd) ? json_number_value(spd) : NAN;
+    *heading = json_is_number(dir) ? json_number_value(dir) : NAN;
     bool ok = json_is_number(y) && json_is_number(x) &&
               isfinite(*lat) && isfinite(*lon) && fabs(*lat) <= 90 && fabs(*lon) <= 180;
     json_decref(root);
@@ -251,7 +266,12 @@ static void handle_client(mbedtls_ssl_context *ssl)
         strstr(hdr, "GET / ")    != NULL ||
         strstr(hdr, "GET /gps ") != NULL ||
         strstr(hdr, "GET /\r")   != NULL );
-    bool want_loc  = is_post && strstr(hdr, "POST /location") != NULL;
+    bool want_loc  = is_post && strncmp(hdr, "POST /location HTTP/1.", 21) == 0;
+    if (want_loc && !gps_pairing_authorized(hdr, s_pair_token)) {
+        static const char denied[]="HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        ssl_send_all(ssl,denied,sizeof(denied)-1);
+        return;
+    }
 
     /* --- Serve GPS capture page ----------------------------------------- */
     if (want_page) {
@@ -282,42 +302,55 @@ static void handle_client(mbedtls_ssl_context *ssl)
             body_len = atoi(cl_hdr);
         }
 
+        bool accepted=false;
         if (body_len > 0 && body_len < 256) {
             char body[257];
             if (read_exact(ssl, body, body_len)) {
                 body[body_len] = '\0';
-                double lat, lon, accuracy;
-                if (parse_location_json(body, &lat, &lon, &accuracy)) {
-                    gps_inject_fix_with_accuracy(lat, lon, accuracy);
+                double lat, lon, accuracy, speed, heading;
+                if (parse_location_json(body, &lat, &lon, &accuracy, &speed, &heading)) {
+                    gps_inject_fix_with_motion(lat, lon, accuracy, speed, heading);
                     s_fix_count++;
+                    accepted=true;
                 }
             }
         }
 
-        ssl_send_all(ssl,
+        static const char ok_response[] =
             "HTTP/1.1 204 No Content\r\n"
+            "Content-Length: 0\r\n"
             "Connection: close\r\n"
-            "\r\n", 38);
+            "\r\n";
+        static const char invalid_response[] =
+            "HTTP/1.1 400 Bad Request\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n"
+            "\r\n";
+        if (accepted)
+            ssl_send_all(ssl,ok_response,(int)sizeof(ok_response)-1);
+        else
+            ssl_send_all(ssl,invalid_response,(int)sizeof(invalid_response)-1);
         return;
     }
 
     /* --- CORS pre-flight (OPTIONS) --------------------------------------- */
     if (is_opt) {
-        ssl_send_all(ssl,
+        static const char options_response[] =
             "HTTP/1.1 204 No Content\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-            "Access-Control-Allow-Headers: Content-Type\r\n"
+            "Content-Length: 0\r\n"
             "Connection: close\r\n"
-            "\r\n", 130);
+            "\r\n";
+        ssl_send_all(ssl,options_response,(int)sizeof(options_response)-1);
         return;
     }
 
     /* --- Anything else → 404 -------------------------------------------- */
-    ssl_send_all(ssl,
+    static const char missing_response[] =
         "HTTP/1.1 404 Not Found\r\n"
+        "Content-Length: 0\r\n"
         "Connection: close\r\n"
-        "\r\n", 40);
+        "\r\n";
+    ssl_send_all(ssl,missing_response,(int)sizeof(missing_response)-1);
 }
 
 /* =========================================================================
@@ -434,26 +467,38 @@ bool gps_server_start(int port)
     }
     log_write("[GPS-SVR] DRBG seeded OK\n");
 
-    /* Parse embedded DER certificate */
-    ret_tls = mbedtls_x509_crt_parse_der(&s_cert,
-                                          gps_server_cert_der,
-                                          gps_server_cert_der_len);
-    if (ret_tls != 0) {
-        log_write("[GPS-SVR] cert parse FAILED: -0x%04X\n", -ret_tls);
+    /* A fresh P-256 identity per session replaces the public embedded key.
+     * Browser trust remains manual for this local self-signed certificate. */
+    unsigned char entropy[16], der[2048];
+    if (mbedtls_ctr_drbg_random(&s_ctr_drbg, entropy, sizeof(entropy)) != 0)
         goto fail_ssl;
-    }
-    log_write("[GPS-SVR] cert parsed OK (len=%zu)\n", gps_server_cert_der_len);
-
-    /* Parse embedded PKCS#1 DER private key */
-    ret_tls = mbedtls_pk_parse_key(&s_pkey,
-                                    gps_server_key_der,
-                                    gps_server_key_der_len,
-                                    NULL, 0);
-    if (ret_tls != 0) {
-        log_write("[GPS-SVR] pk_parse_key FAILED: -0x%04X\n", -ret_tls);
+    gps_pairing_token(entropy, s_pair_token);
+    /* Certificate serials are public: never reuse pairing-secret entropy. */
+    if (mbedtls_ctr_drbg_random(&s_ctr_drbg, entropy, sizeof(entropy)) != 0)
         goto fail_ssl;
-    }
-    log_write("[GPS-SVR] private key parsed OK\n");
+    entropy[0]&=0x7f;entropy[15]|=1;
+    if (mbedtls_pk_setup(&s_pkey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) != 0 ||
+        mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(s_pkey),
+                           mbedtls_ctr_drbg_random, &s_ctr_drbg) != 0) goto fail_ssl;
+    mbedtls_x509write_cert writer;
+    mbedtls_mpi serial;
+    mbedtls_x509write_crt_init(&writer);
+    mbedtls_mpi_init(&serial);
+    mbedtls_mpi_read_binary(&serial, entropy, sizeof(entropy));
+    mbedtls_x509write_crt_set_version(&writer, MBEDTLS_X509_CRT_VERSION_3);
+    mbedtls_x509write_crt_set_md_alg(&writer, MBEDTLS_MD_SHA256);
+    mbedtls_x509write_crt_set_subject_key(&writer, &s_pkey);
+    mbedtls_x509write_crt_set_issuer_key(&writer, &s_pkey);
+    int cert_ok = mbedtls_x509write_crt_set_serial(&writer, &serial) == 0 &&
+        mbedtls_x509write_crt_set_subject_name(&writer, "CN=3DS GPS local pairing") == 0 &&
+        mbedtls_x509write_crt_set_issuer_name(&writer, "CN=3DS GPS local pairing") == 0 &&
+        mbedtls_x509write_crt_set_validity(&writer, "20260101000000", "20360101000000") == 0;
+    int der_len = cert_ok ? mbedtls_x509write_crt_der(&writer, der, sizeof(der),
+                              mbedtls_ctr_drbg_random, &s_ctr_drbg) : -1;
+    mbedtls_x509write_crt_free(&writer);
+    mbedtls_mpi_free(&serial);
+    if (der_len <= 0 || mbedtls_x509_crt_parse_der(&s_cert,
+                    der + sizeof(der) - der_len, der_len) != 0) goto fail_ssl;
 
     /* Configure as TLS server */
     ret_tls = mbedtls_ssl_config_defaults(&s_ssl_conf,
@@ -585,6 +630,7 @@ void gps_server_stop(void)
         s_soc_buf = NULL;
     }
 
+    memset(s_pair_token, 0, sizeof(s_pair_token));
     s_local_ip[0] = '\0';
     s_fix_count   = 0;
 }
@@ -607,7 +653,7 @@ void gps_server_get_url(char *buf, size_t len)
         buf[0] = '\0';
         return;
     }
-    snprintf(buf, len, "https://%s:%d", s_local_ip, s_port);
+    snprintf(buf, len, "https://%s:%d/#%s", s_local_ip, s_port, s_pair_token);
 }
 
 unsigned int gps_server_get_fix_count(void)

@@ -2,11 +2,14 @@
 
 [Back to the project README](../README.md)
 
+Open **R → Explore** for the world globe, selected-location 3D terrain,
+nearby buildings, Street View Explorer and StreetGuess. See [Explore controls and data credits](explore.md).
+
 ## Map and settings
 
-The top screen displays the map. The touch panel opens **Search**, **Favorites**, **Recents**, **Route**, **Identify**, **GPS**, **Track**, and **Menu**. Use the D-Pad or Circle Pad to pan, **X/Y** to change zoom, and **Start** to exit. You can drag in the upper area of the touch panel to pan. The app saves the view, layer, night mode, GPS mode, and related settings when it exits normally.
+The top screen displays the map. The touch panel opens **Search**, **Favorites**, **Recents**, **Route**, **Identify**, **GPS**, **Track**, and **Menu**. Zoom out with **Y** from Z1 to Z0; another deliberate **Y** press at Z0 opens the 3D globe at the same coordinates. Zoom into the globe with **X** until the normal map returns. Use the D-Pad or Circle Pad to pan, **X/Y** to change zoom, and **Start** to exit. You can drag in the upper area of the touch panel to pan. The app saves the view, layer, night mode, GPS mode, and related settings when it exits normally.
 
-In **Menu → View**, choose **Street** or **Sat** and adjust night mode or the debug overlay. Press **Select** in that tab for per-tile SD, network, decode, and GPU upload timings. In **Menu → Data**, manage the optional LAN proxy, browsing cache, and offline packs. Clearing the browsing cache preserves saved packs.
+In **Menu → Explore**, drag the **Fly-in** slider to set the Street View entry animation from Off to 1600 ms. Imagery searches begin as the transition starts; no unrelated offline demo image appears. In **Menu → View**, choose **Street** or **Sat** and adjust night mode or the debug overlay. Press **Select** in that tab for per-tile SD, network, decode, and GPU upload timings. In **Menu → Data**, manage the optional LAN proxy, browsing cache, and offline packs. Clearing the browsing cache preserves saved packs.
 
 When using the default search service, choose **A** to prefer places near the map center or **X** to search everywhere.
 
@@ -14,22 +17,16 @@ When using the default search service, choose **A** to prefer places near the ma
 
 Live browsing and the named offline download source are configured separately. The default Street layer uses OpenStreetMap’s standard raster tile service. Its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) prohibits offline bulk downloads. The default [Esri World Imagery service](https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer?f=pjson) reports export disabled. Use a source that permits offline downloads.
 
-For a small imagery region in the contiguous United States, select **Sat**, then enter this template with **Menu → Data → Offline regions → L**:
+Offline packs use USGS The National Map by default. **Street** uses USGS Topo and **Sat** uses USGS Imagery Only. Start with a small area in the contiguous United States. Outside supported coverage, use **Menu → Data → Offline regions → L** to enter a provider that permits offline downloads in your area. **L** shows the active endpoint before you edit it. A saved layer URL takes precedence, followed by the enabled LAN proxy, then the built-in preset.
 
-```text
-https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}
-```
-
-[USGS service metadata](https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer?f=pjson) reports tile export enabled and credits USDA and USGS The National Map. It also distinguishes publicly downloadable imagery in the contiguous United States from imagery with additional restrictions in other areas. Check provider coverage and permissions for the area and zooms you intend to save. The candidate demo uses a controlled endpoint backed by this service. The direct request could not resolve the hostname in the test emulator. A physical console test is pending.
-
-Each URL template must include `{z}`, `{x}`, and `{y}` in the order the service expects. Use 256 × 256 PNG or JPEG tiles. An extensionless base URL works for services that accept `/z/x/y`. An existing compatible LAN proxy is a fallback when no offline source is set. The region must be resumed with the same endpoint. Named packs support up to 4,096 tiles each and up to 12 installed packs, in addition to the two legacy packs.
+Each URL template must include `{z}`, `{x}`, and `{y}` in the order the service expects. Use 256 × 256 PNG or JPEG tiles. An extensionless base URL works for services that accept `/z/x/y`. The region must be resumed with the same endpoint. Named packs support up to 4,096 tiles each and up to 12 installed packs, in addition to the two legacy packs.
 
 ### Manage saved regions
 
 | In Offline regions | Action |
 | --- | --- |
 | **Y** | Plan a new pack |
-| **L** | Set the download source for the current layer |
+| **L** | View or change the download source for the current layer |
 | **R** | Toggle coverage. Green means an exact tile is saved at the current zoom. Amber means no pack tile exists at that zoom. |
 | **A** | Preview a completed pack or resume a paused one |
 | **Select** | Check the selected completed pack’s tile images |
@@ -37,6 +34,8 @@ Each URL template must include `{z}`, `{x}`, and `{y}` in the order the service 
 | **B** | Back, or pause when downloading |
 
 In **New offline pack**, Left/Right changes the minimum zoom and Up/Down changes the maximum. **X** switches between the visible area and a corridor if a route is active. Download narrow ranges first, especially at high zoom. Live search and calculating new routes require internet access. The route corridor contains image tiles, so reopening the pack does not restore the route line.
+
+The downloader uses two persistent connections and writes completed tiles into the partial pack one at a time. The transfer screen reports tiles per second, payload MB downloaded in the current session, estimated time remaining, and current free SD-card space. Temporary failures are retried with exponential backoff; HTTP 429 and 503 responses honor `Retry-After`. Pausing remains responsive during a provider cooldown, and resuming skips tiles already saved.
 
 ## Phone GPS
 

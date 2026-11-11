@@ -5,6 +5,36 @@
 #include <string.h>
 #include <unistd.h>
 
+RegionProgressMetrics region_progress_metrics(unsigned initial_saved, unsigned saved,
+                                               unsigned total, uint64_t elapsed_ms) {
+    RegionProgressMetrics metrics = {0};
+    if (saved > total) saved = total;
+    if (initial_saved > saved) initial_saved = saved;
+    unsigned session_saved = saved - initial_saved;
+    unsigned remaining = total - saved;
+    if (session_saved && elapsed_ms) {
+        metrics.tiles_per_second = session_saved * 1000.0 / elapsed_ms;
+        metrics.eta_known = true;
+        metrics.eta_seconds = remaining ?
+            (uint64_t)ceil(remaining / metrics.tiles_per_second) : 0;
+    } else if (!remaining) {
+        metrics.eta_known = true;
+    }
+    return metrics;
+}
+
+unsigned region_retry_delay_ms(unsigned attempt, long http_status,
+                               unsigned retry_after_ms, bool invalid_payload) {
+    if (attempt >= 2) return 0;
+    if (http_status == 429 || http_status == 503) {
+        if (retry_after_ms) return retry_after_ms;
+        return 500u << attempt;
+    }
+    if (invalid_payload || http_status == 0 || http_status >= 500)
+        return 250u << attempt;
+    return 0;
+}
+
 static int compare_tiles(const void *left, const void *right);
 
 static bool same_tile(const TilePackEntry *a, const TilePackEntry *b) {
