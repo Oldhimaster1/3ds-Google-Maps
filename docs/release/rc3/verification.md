@@ -41,3 +41,50 @@ The focused UI/game regression was rerun after recovery and passed with
 `ASAN_OPTIONS=detect_leaks=0` because this container cannot run LeakSanitizer
 under ptrace. AddressSanitizer and UBSan remained enabled. See
 [country-streak-recheck.txt](country-streak-recheck.txt).
+
+## Feature scope and known limits
+
+These details accompany the preview download. They describe implemented scope,
+not proof that each feature has been tested on hardware.
+
+| Experience | Included behavior | Important limit |
+| --- | --- | --- |
+| Maps and offline regions | Pan, search, favorites, named packs, pause/resume and integrity checks | Download only from sources permitting offline use. |
+| Street View | Multi-provider explorer, gyro controls, navigation and fly-in | Physical gyro/navigation unverified; Google/Bing remain experimental. |
+| Panorama detail | View-selected Google zoom 2–4 curved detail overlay | **One central tile**, with low-resolution fallback; provider authorization unresolved. |
+| Globe | Rotatable Blue Marble globe with on-demand NASA GIBS detail and optional stereo | Historical composite, **not real-time satellite photography**; one detail patch. |
+| Terrain and buildings | Selected-location Terrarium elevation; optional real OSM building footprints | Single terrain tile; simple buildings only; no fabricated fallback structures. |
+| Classic StreetGuess | World / US / Europe; Moving / No Move / NMPZ; timers and records | Google-only random mode depends on experimental access and coverage. |
+| Daily and friend challenges | Exact versioned locations, five rounds, three difficulties, UTC records/history | **32 locations in 21 countries**, still Europe-heavy. Correct console UTC clock required. |
+| Pass and play | Two to four players, identical rounds, handoff screens and final scores | Local trust-based play; no accounts or online leaderboard. |
+| Discovery modes | Surprise Me, five-stop Mystery Expeditions and Country Streak with saved personal bests | Curated locations, not an unlimited worldwide library. Streaks continue beyond five answers. |
+| Custom controls | Four profiles, eleven digital buttons, conflict-free swaps and saved settings | START is fixed. StreetGuess captions follow your selected bindings; some older screens retain default captions. |
+| Routing | Route overlay, remaining distance, estimated ETA and off-route reroute logic | No verified full turn-by-turn guidance. |
+
+
+## Controls, network and provider checks
+
+Settings → More → page 3 contains four remap profiles, action selection, physical
+binding and restore-defaults. Assigning an occupied button swaps its old action.
+Touchscreen and Circle Pad access remain available. Text size, weight, contrast,
+stick sensitivity and gyro options are retained. Some old captions still show
+logical/default buttons; see the verification report before relying on remapping.
+
+## Phone GPS
+
+Use the same trusted local Wi-Fi network. Start the GPS server and scan its
+**private session QR** with the phone. The browser must accept the local
+self-signed certificate and allow location access; some phones may block this
+flow. This candidate generates a fresh certificate and secret each session,
+requires authenticated submissions, and removes exact positions from phone status
+text and request URLs from network logs. Physical pairing remains unverified.
+
+Keep the browser in the foreground. A locked screen may pause updates. Rescan after
+restarting the server or reloading a tab that has lost its pairing token. Do not
+include the pairing QR, private coordinates or addresses in shared screenshots.
+[Security and provider review](../rc1/provider-review.md)
+
+
+For troubleshooting, see the [usage guide](../../usage.md#troubleshoot).
+For incomplete integration checks, see the [source audit](../../integration-audit-2026-11-11.md)
+and [provider review](../rc1/provider-review.md).
