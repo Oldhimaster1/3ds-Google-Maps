@@ -23,8 +23,8 @@ verified game release until those are complete.
 4. When the first usable panorama loads, the timer begins. The secret start
    coordinate is not shared with the guessing map. There is no fly-down
    showing the hidden location.
-5. On the bottom touchscreen, drag the map and tap to place a guess. Press A
-   or tap GUESS to submit. The result screen shows the actual location,
+5. Press A to focus the bottom guessing map, then drag and tap to place a
+   guess. Press A again or tap GUESS to submit. The result screen shows the actual location,
    distance and points. Press A to advance.
 6. After five rounds see the result summary. Local best scores are saved to
    `sdmc:/3ds_google_maps/streetguess_records.txt`.
@@ -40,9 +40,12 @@ verified game release until those are complete.
 - **D-Pad Up:** panorama zoom in outside NMPZ.
 - **X / Y:** zoom the bottom guess map.
 - **Touchscreen:** drag to pan the guessing map, tap to place a pin.
-- **A:** submit when a pin is placed, or advance from a result screen.
-- **B / Start:** pause; B from pause returns to the StreetGuess menu. B again
-  from menu exits to the unchanged normal Maps view.
+- **A:** focus the guessing map. When a pin is selected, A submits the guess;
+  on a result screen A advances. The top-screen dialog explains these steps.
+- **B:** closes the focused guess map; otherwise pauses. From pause, B
+  returns to the StreetGuess menu. From menu, B exits to normal Maps.
+- **Start:** pauses the game regardless of map focus.
+- **Y on game menu:** toggles the short first-time tutorial.
 
 The current game renderer uses the shared Google preview and progressive
 higher-quality imagery routines. No Google image cache or persistent panorama
