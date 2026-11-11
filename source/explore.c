@@ -1,5 +1,6 @@
 #include "explore.h"
 #include "terrain_math.h"
+#include "building_mesh.h"
 #include "explore_shbin.h"
 #include "earth_rgb_bin.h"
 /* The Canyon demo assets are no longer silently substituted for live terrain. */
@@ -20,6 +21,13 @@ static Vertex *vertices;
 static u16 *indices;
 static int index_count;
 static C3D_Tex texture;
+/* Optional real-world building meshes share the same shader and per-eye
+ * projection as terrain. No fake/parallax-only 3D is drawn. */
+static BuildingMeshVertex *building_vertices;
+static u16 *building_indices;
+static unsigned building_index_count;
+static C3D_Tex building_texture;
+static bool building_texture_ready;
 static ExploreMode loaded;
 
 static bool load_texture(C3D_Tex *tex, Asset asset, bool wrap) {
@@ -231,9 +239,48 @@ bool explore_apply_terrain(const TerrainGrid *grid,float span_m,float exaggerati
     return true;
 }
 
+bool explore_apply_buildings(const BuildingMesh *mesh){
+    if(loaded!=EXPLORE_TERRAIN || !mesh || !mesh->vertex_count ||
+       !mesh->index_count || mesh->vertex_count>BUILDING_MESH_VERT_MAX ||
+       mesh->index_count>BUILDING_MESH_IDX_MAX) return false;
+    C3D_FrameSync();
+    BuildingMeshVertex *next_vertices=
+        linearAlloc(mesh->vertex_count*sizeof(BuildingMeshVertex));
+    u16 *next_indices=linearAlloc(mesh->index_count*sizeof(u16));
+    if(!next_vertices || !next_indices){
+        if(next_vertices)linearFree(next_vertices);
+        if(next_indices)linearFree(next_indices);
+        return false;
+    }
+    memcpy(next_vertices,mesh->verts,mesh->vertex_count*sizeof(BuildingMeshVertex));
+    memcpy(next_indices,mesh->indices,mesh->index_count*sizeof(u16));
+    GSPGPU_FlushDataCache(next_vertices,mesh->vertex_count*sizeof(BuildingMeshVertex));
+    GSPGPU_FlushDataCache(next_indices,mesh->index_count*sizeof(u16));
+    if(!building_texture_ready){
+        if(!C3D_TexInit(&building_texture,8,8,GPU_RGB565)){
+            linearFree(next_vertices);linearFree(next_indices);return false;
+        }
+        u16 *white=(u16*)building_texture.data;
+        for(unsigned i=0;i<64;i++)white[i]=0xBDF7;
+        C3D_TexFlush(&building_texture);
+        C3D_TexSetFilter(&building_texture,GPU_LINEAR,GPU_LINEAR);
+        building_texture_ready=true;
+    }
+    if(building_vertices)linearFree(building_vertices);
+    if(building_indices)linearFree(building_indices);
+    building_vertices=next_vertices;
+    building_indices=next_indices;
+    building_index_count=mesh->index_count;
+    return true;
+}
 void explore_unload(void) {
     if (!loaded) return;
     C3D_FrameSync();
+    if(building_vertices)linearFree(building_vertices);
+    if(building_indices)linearFree(building_indices);
+    building_vertices=NULL;building_indices=NULL;building_index_count=0;
+    if(building_texture_ready)C3D_TexDelete(&building_texture);
+    building_texture_ready=false;
     C3D_TexDelete(&texture);
     linearFree(vertices);
     linearFree(indices);
@@ -280,4 +327,13 @@ void explore_draw(C3D_RenderTarget *target, float yaw, float pitch,
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, projection_uniform, &projection);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, view_uniform, &view);
     C3D_DrawElements(GPU_TRIANGLES, index_count, C3D_UNSIGNED_SHORT, indices);
+    if(loaded==EXPLORE_TERRAIN && building_vertices && building_indices &&
+       building_index_count && building_texture_ready){
+        /* Same left/right projection as terrain gives genuine stereo disparity. */
+        BufInfo_Init(buffers);
+        BufInfo_Add(buffers,building_vertices,sizeof(BuildingMeshVertex),2,0x10);
+        C3D_TexBind(0,&building_texture);
+        C3D_DrawElements(GPU_TRIANGLES,building_index_count,
+                         C3D_UNSIGNED_SHORT,building_indices);
+    }
 }
