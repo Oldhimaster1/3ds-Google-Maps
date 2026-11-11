@@ -17,10 +17,12 @@
 #define R_FAILED(x) ((x)<0)
 typedef struct {int16_t dx,dy;} circlePosition;
 typedef struct {uint16_t px,py;} touchPosition;
-typedef struct {int16_t y,z;} angularRate;
+typedef struct {int16_t x,y,z;} angularRate;
+typedef struct {int16_t x,y,z;} accelVector;
 u64 svcGetSystemTick(void);u64 osGetTime(void);
 void gfxSet3D(bool);
 void hidScanInput(void);u32 hidKeysDown(void);u32 hidKeysHeld(void);
-void hidTouchRead(touchPosition*);void hidCircleRead(circlePosition*);void hidGyroRead(angularRate*);
+void hidTouchRead(touchPosition*);void hidCircleRead(circlePosition*);void hidGyroRead(angularRate*);void hidAccelRead(accelVector*);
 int HIDUSER_DisableGyroscope(void);int HIDUSER_EnableGyroscope(void);int HIDUSER_GetGyroscopeRawToDpsCoefficient(float*);
+int HIDUSER_EnableAccelerometer(void);int HIDUSER_DisableAccelerometer(void);
 #endif
