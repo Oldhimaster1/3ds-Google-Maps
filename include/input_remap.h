@@ -15,6 +15,9 @@ bool input_remap_save(const InputRemap *m,const char *path);
 bool input_remap_bind(InputRemap *m,unsigned profile,unsigned action,unsigned physical);
 uint32_t input_remap_keys(const InputRemap *m,unsigned profile,uint32_t raw_keys);
 int input_remap_pressed(uint32_t raw_down);
+/* Shared read-only mapping used by Maps, StreetGuess and modal screens. */
+void input_remap_set_active(const InputRemap *m);
+uint32_t input_remap_apply(unsigned profile,uint32_t raw_keys);
 const char *input_remap_button_name(unsigned button);
 const char *input_remap_profile_name(unsigned profile);
 #endif
