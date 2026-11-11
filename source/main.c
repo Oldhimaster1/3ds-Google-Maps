@@ -146,6 +146,7 @@ static RecentPlace g_recents[MAX_RECENTS];
 static int g_recent_count = 0;
 /* Native keyboard resumes the last user-entered address instead of starting over. */
 static char g_last_address_query[128];
+static u64 g_last_geocoder_request_ms;
 static RecentPlace g_favorites[MAX_FAVORITES];
 static int g_favorite_count = 0;
 static char g_last_place_name[96] = {0};
@@ -228,6 +229,14 @@ typedef struct {
     double lon;
     char name[96];
 } GeocodeResult;
+/* The most recent successful lookup is reused for a few minutes. This both
+ * speeds repeated searches and reduces load on the donated Nominatim API. */
+static struct {
+    char url[512];
+    GeocodeResult results[5];
+    int count;
+    u64 when_ms;
+} g_search_cache;
 
 static bool json_coord(json_t *value, double limit, double *out);
 static int parse_geocode_results_json(const char* json, u32 json_size, GeocodeResult* out_results, int max_results);
@@ -2596,6 +2605,28 @@ static void request_worker(void *arg) {
 }
 
 static bool wait_for_request(const char *url, const char *label, u8 **buffer, u32 *size) {
+    /* The public geocoder prohibits autocomplete and requires <=1 query/s.
+     * Wait without freezing the map render or suppressing GPS updates. */
+    if (strstr(url,"nominatim.openstreetmap.org/")) {
+        while (g_last_geocoder_request_ms &&
+               osGetTime()-g_last_geocoder_request_ms < 1100) {
+            g_request_label="Waiting for search cooldown (B cancels)";
+            hidScanInput();
+            u32 keys=hidKeysDown();
+            if(keys&KEY_START)g_should_exit=true;
+            if(keys&(KEY_B|KEY_START)){
+                g_request_label=NULL;
+                set_status_message("Search cancelled");
+                return false;
+            }
+            gps_update();
+            map_tiles_process_downloads();
+            render_map();
+            gspWaitForVBlank();
+        }
+        g_request_label=NULL;
+        g_last_geocoder_request_ms=osGetTime();
+    }
     MapRequest request = { .url = url };
     Thread thread = threadCreate(request_worker, &request, 64 * 1024, 0x31, -2, false);
     if (!thread) return false;
@@ -3811,15 +3842,30 @@ static void open_address_search(void) {
     do {
         char url[512];
         build_search_url(url,sizeof(url),encoded,near);
-        u8 *buf=NULL;
-        u32 size=0;
-        if (!wait_for_request(url, near?"Searching near map":"Searching worldwide",&buf,&size)) {
+        u64 now=osGetTime();
+        if(g_search_cache.count>0 && strcmp(url,g_search_cache.url)==0 &&
+           now>=g_search_cache.when_ms &&
+           now-g_search_cache.when_ms<300000){
+            count=g_search_cache.count;
+            memcpy(results,g_search_cache.results,sizeof(results));
+            set_status_message("Results loaded from local cache");
+        }else{
+            u8 *buf=NULL;
+            u32 size=0;
+            if (!wait_for_request(url,near?"Searching near map":"Searching worldwide",&buf,&size)) {
+                free(buf);
+                return;
+            }
+            memset(results,0,sizeof(results));
+            count=parse_geocode_results_json((const char*)buf,size,results,5);
             free(buf);
-            return;
+            if(count>0){
+                snprintf(g_search_cache.url,sizeof(g_search_cache.url),"%s",url);
+                memcpy(g_search_cache.results,results,sizeof(results));
+                g_search_cache.count=count;
+                g_search_cache.when_ms=osGetTime();
+            }
         }
-        memset(results,0,sizeof(results));
-        count=parse_geocode_results_json((const char*)buf,size,results,5);
-        free(buf);
         if(count<=0){
             set_status_message(near?"No results. Try a broader city or ZIP":"No results for this search");
             return;
@@ -3829,9 +3875,8 @@ static void open_address_search(void) {
         place_allow_worldwide=false;
         if(selected==-2 && near){
             near=false;
-            /* A second request requires an explicit X press; don't query as
-             * the user types. Honor the public geocoder's 1 req/s limit. */
-            svcSleepThread(1100000000LL);
+            /* An explicitly requested follow-up is rate-limited by
+             * wait_for_request(), keeping the bottom screen responsive. */
         }
     }while(selected==-2 && !near);
     if(selected<0){
