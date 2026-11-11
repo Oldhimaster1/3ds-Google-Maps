@@ -1,4 +1,5 @@
 #include "gps.h"
+#include "gps_motion.h"
 #include "gps_server.h"
 #include "network.h"
 
@@ -43,6 +44,7 @@ static double current_lon = 0.0;
 static bool has_fix = false;
 static u64 fix_time;
 static double fix_accuracy = -1;
+static GpsMotion gps_motion;
 static bool discard_sentence;
 
 /* LightLock protects current_lat / current_lon / has_fix so the HTTPS server
@@ -123,7 +125,7 @@ GpsSourceMode gps_get_source_mode(void) {
     return g_source_mode;
 }
 
-void gps_inject_fix_with_accuracy(double lat, double lon, double accuracy) {
+void gps_inject_fix_with_motion(double lat, double lon, double accuracy, double speed, double heading) {
     ensure_fix_lock();
     LightLock_Lock(&g_fix_lock);
     if (!isfinite(lat) || !isfinite(lon) || fabs(lat) > 90 || fabs(lon) > 180) {
@@ -134,10 +136,15 @@ void gps_inject_fix_with_accuracy(double lat, double lon, double accuracy) {
     fix_accuracy = isfinite(accuracy) && accuracy >= 0 ? accuracy : -1;
     current_lat = lat;
     current_lon = lon;
+    gps_motion_update(&gps_motion,lat,lon,
+         fix_accuracy>=0?fix_accuracy:8.0,speed,heading,fix_time);
     has_fix     = true;
     LightLock_Unlock(&g_fix_lock);
 }
 
+void gps_inject_fix_with_accuracy(double lat, double lon, double accuracy) {
+    gps_inject_fix_with_motion(lat,lon,accuracy,NAN,NAN);
+}
 void gps_inject_fix(double lat, double lon) {
     gps_inject_fix_with_accuracy(lat, lon, -1);
 }
@@ -146,6 +153,7 @@ void gps_clear_fix(void) {
     ensure_fix_lock();
     LightLock_Lock(&g_fix_lock);
     has_fix = false;
+    gps_motion_reset(&gps_motion);
     LightLock_Unlock(&g_fix_lock);
 }
 
@@ -355,7 +363,9 @@ bool gps_get_fix(GpsFix *fix) {
     u64 age = osGetTime() - fix_time;
     bool valid = has_fix && age <= 10000;
     if (valid && fix) {
-        *fix = (GpsFix){ current_lat, current_lon, fix_accuracy, (unsigned)age };
+        *fix = (GpsFix){ current_lat, current_lon, fix_accuracy, (unsigned)age,
+               gps_motion.speed_mps, gps_motion.heading_deg,
+               gps_motion.has_speed,gps_motion.has_heading };
     }
     LightLock_Unlock(&g_fix_lock);
     return valid;
