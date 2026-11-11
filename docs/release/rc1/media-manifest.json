@@ -1,0 +1,82 @@
+[
+  {
+    "path": "docs/media/rc1-archive-hero.gif",
+    "bytes": 789682,
+    "sha256": "b7908974fd7ce55b2cc9bf94df90961d75cbeeccca593f4742a60d3f5c032632",
+    "source": "archived older Azahar maps-for-nintendo-3ds-intro.mp4",
+    "current_rc1_gameplay": false,
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 360,
+          "height": 480
+        }
+      ],
+      "format": {
+        "duration": "8.010000"
+      }
+    }
+  },
+  {
+    "path": "docs/media/rc1-archive-teaser.mp4",
+    "bytes": 1089340,
+    "sha256": "02b5177977c7c55b61d176e661c31cf2d10a83b431383c18148d510a4993359c",
+    "source": "archived older Azahar maps-for-nintendo-3ds-intro.mp4",
+    "current_rc1_gameplay": false,
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 864,
+          "height": 1152
+        }
+      ],
+      "format": {
+        "duration": "24.958333"
+      }
+    }
+  },
+  {
+    "path": "docs/media/rc1-offline-archive.gif",
+    "bytes": 181223,
+    "sha256": "18a4d44b3060adf691a01eb0608aa76788958679d401b02fd0000ee019c22a21",
+    "source": "archived older Azahar maps-for-nintendo-3ds-intro.mp4",
+    "current_rc1_gameplay": false,
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 360,
+          "height": 480
+        }
+      ],
+      "format": {
+        "duration": "5.000000"
+      }
+    }
+  },
+  {
+    "path": "docs/media/rc1-route-archive.gif",
+    "bytes": 554256,
+    "sha256": "15583a20e14d1975958383a8d6d26154668ddd013a3674213cbe37614c224950",
+    "source": "archived older Azahar maps-for-nintendo-3ds-intro.mp4",
+    "current_rc1_gameplay": false,
+    "probe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "width": 360,
+          "height": 480
+        }
+      ],
+      "format": {
+        "duration": "5.000000"
+      }
+    }
+  }
+]

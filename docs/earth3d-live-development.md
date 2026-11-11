@@ -1,3 +1,5 @@
+> Historical handoff. For current RC1 build/test results and unresolved blockers, see [RC1 acceptance](release/rc1/acceptance.md).
+
 # 3D Earth + Street View integrated development status
 
 This is a **source-only experimental development branch**, starting from

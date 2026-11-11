@@ -1,0 +1,18 @@
+{
+  "name": "Maps for Nintendo 3DS",
+  "version": "2.2.0-rc1",
+  "release_channel": "experimental candidate",
+  "title_id": "000400000FD34B00",
+  "license": "MIT (application source; provider data licenses separate)",
+  "intended_devices": [
+    "original Nintendo 3DS",
+    "New Nintendo 3DS / XL"
+  ],
+  "physical_acceptance_performed": false,
+  "emulator_rc1_launch_verified": false,
+  "stable_publication_approved": false,
+  "homepage": "https://github.com/Oldhimaster1/3ds-Google-Maps",
+  "challenge_dataset_version": 1,
+  "challenge_dataset_id": "aaaf03cb",
+  "challenge_locations": 8
+}

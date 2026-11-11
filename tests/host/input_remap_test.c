@@ -26,12 +26,20 @@ int main(void){
  InputRemap loaded;input_remap_default(&loaded);
  assert(input_remap_load(&loaded,path));
  assert(memcmp(&m,&loaded,sizeof(m))==0);
+ FILE *tail=fopen(path,"ab");assert(tail);fputs("corrupt trailing bytes",tail);fclose(tail);
+ assert(!input_remap_load(&loaded,path));assert(memcmp(&m,&loaded,sizeof(m))==0);
  FILE *f=fopen(path,"wb");assert(f);
  fputs("1\n0 0 0 0 0 0 0 0 0 0 0\n",f);fclose(f);
  assert(!input_remap_load(&loaded,path));
  assert(memcmp(&m,&loaded,sizeof(m))==0);
  remove(path);
  assert(!input_remap_save(&m,"/this/does/not/exist/path.cfg"));
+ input_remap_default(&m);input_remap_bind(&m,REMAP_STREET,0,1);input_remap_set_active(&m);
+ char hint[80];input_remap_hint(REMAP_STREET,"A Map B Back L/R Move",hint,sizeof(hint));
+ assert(!strcmp(hint,"B Map A Back L/R Move"));
+ input_remap_hint(REMAP_MAP,"A Map B Back",hint,sizeof(hint));assert(!strcmp(hint,"A Map B Back"));
+ input_remap_hint(REMAP_STREET,"A Map",hint,2);assert(hint[1]==0);
+ input_remap_set_active(NULL);
  puts("input remap: PASS");
  return 0;
 }

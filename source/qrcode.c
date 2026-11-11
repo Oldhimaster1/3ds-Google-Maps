@@ -38,6 +38,7 @@ static void rs_compute_ec(const uint8_t *data, int dlen, int eclen, uint8_t *ec)
 {
     /* Build generator polynomial g[0..eclen-1] (coeff of x^0..x^(eclen-1)).
      * Leading x^eclen coefficient = 1 (implicit). */
+    if (eclen <= 0 || eclen > 32 || dlen < 0) return;
     uint8_t g[32];
     memset(g, 0, sizeof(g));
     g[0] = 1;

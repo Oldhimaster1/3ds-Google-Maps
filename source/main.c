@@ -319,6 +319,7 @@ static TouchAction get_touch_action(const touchPosition* touch);
 static bool handle_touch_button_action(TouchAction action);
 static int circle_pad_axis_to_pan(int axis);
 static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 color, u32 flags, const char* text);
+static void draw_control_text(float x,float y,float sx,float sy,u32 color,u32 flags,const char *text);
 static void render_bottom_panel(void);
 static void render_settings_panel(void);
 static void render_qr_top_screen(void);
@@ -1662,16 +1663,16 @@ static void render_explore(void) {
     }
     C2D_DrawRectSolid(0, 184, .1f, 320, 56, C2D_Color32(23, 32, 45, 255));
     if (g_explore_mode==EXPLORE_STREET) {
-        draw_ui_text(12,190,.34f,.34f,dim,0,
+        draw_control_text(12,190,.34f,.34f,dim,0,
             live && !live->is_pano ? "Flat photo  (gyro only for 360)" :
             g_explore_gyro && !g_explore_gyro_filter.ready ? "Gyro: HOLD STILL to calibrate" :
             g_explore_gyro ? "X Gyro ON  Select Recenter" : "X Gyro OFF  Select Recenter");
         char zoomlabel[80];
         snprintf(zoomlabel,sizeof(zoomlabel),"D-Up/Down Zoom  (%d deg)",(int)g_explore_fov);
         draw_ui_text(12,205,.39f,.39f,white,0,zoomlabel);
-        draw_ui_text(12,224,.33f,.33f,dim,0,
+        draw_control_text(12,224,.33f,.33f,dim,0,
             "L/R Move   L+Down Retry   A Map   B Back");
-    } else draw_ui_text(14, 196, .44f, .44f, dim, 0, "A  Open map     B  Back");
+    } else draw_control_text(14, 196, .44f, .44f, dim, 0, "A  Open map     B  Back");
     if (g_debug_overlay) {
         char fps[24];
         snprintf(fps, sizeof(fps), "%lu FPS", (unsigned long)g_fps);
@@ -1858,6 +1859,13 @@ static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 col
         C2D_DrawText(&ui_text,flags|C2D_WithColor,x+spread,y,.985f,
                      scale_x,scale_y,color);
     }
+}
+static void draw_control_text(float x,float y,float sx,float sy,u32 color,u32 flags,const char *text){
+ char hint[256];
+ unsigned profile=g_explore_mode==EXPLORE_STREET?REMAP_STREET:
+                  g_explore_mode!=EXPLORE_NONE?REMAP_EARTH:REMAP_MAP;
+ input_remap_hint(profile,text,hint,sizeof(hint));
+ draw_ui_text(x,y,sx,sy,color,flags,hint);
 }
 /* Measure text instead of compressing it horizontally. UTF-8 is always
  * trimmed at complete codepoint boundaries, with an optional ellipsis. */
@@ -2224,17 +2232,17 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             log_write("[SETTINGS] Calling gps_init() for HTTPS server...\n");
             if (gps_init()) {
                 log_write("[SETTINGS] gps_init() succeeded\n");
-                char svr_url[64];
+                char svr_url[128];
                 gps_get_server_url(svr_url, sizeof(svr_url));
-                log_write("[SETTINGS] server URL = '%s'\n", svr_url);
+                log_write("[SETTINGS] pairing URL prepared (private)\n");
                 if (svr_url[0] && qr_encode(svr_url, strlen(svr_url),
                                              g_qr_modules, &g_qr_size)) {
                     g_qr_valid = true;
                     log_write("[SETTINGS] QR code generated, size=%d\n", g_qr_size);
                 } else {
-                    log_write("[SETTINGS] QR encode FAILED (url='%s', len=%d)\n", svr_url, (int)strlen(svr_url));
+                    log_write("[SETTINGS] QR encode FAILED\n");
                 }
-                set_status_message(svr_url[0] ? svr_url : "GPS server started");
+                set_status_message("GPS server started; scan the private QR");
             } else {
                 log_write("[SETTINGS] gps_init() FAILED\n");
                 set_status_message("GPS server failed to start");
@@ -2253,9 +2261,9 @@ static void apply_settings_hit(SettingsHitTarget hit) {
                     log_write("[SETTINGS] Starting GPS server via start/stop card\n");
                     if (gps_init()) {
                         log_write("[SETTINGS] gps_init() succeeded (start/stop)\n");
-                        char svr_url[64];
+                        char svr_url[128];
                         gps_get_server_url(svr_url, sizeof(svr_url));
-                        log_write("[SETTINGS] server URL = '%s'\n", svr_url);
+                        log_write("[SETTINGS] pairing URL prepared (private)\n");
                         if (svr_url[0] && qr_encode(svr_url, strlen(svr_url),
                                                      g_qr_modules, &g_qr_size)) {
                             g_qr_valid = true;
@@ -2263,7 +2271,7 @@ static void apply_settings_hit(SettingsHitTarget hit) {
                         } else {
                             log_write("[SETTINGS] QR encode FAILED\n");
                         }
-                        set_status_message(svr_url[0] ? svr_url : "GPS server started");
+                        set_status_message("GPS server started; scan the private QR");
                     } else {
                         log_write("[SETTINGS] gps_init() FAILED (start/stop)\n");
                         set_status_message("GPS server failed to start");
@@ -2537,7 +2545,7 @@ static void render_settings_panel(void) {
            running but we don't have a valid QR yet (covers start from main
            panel GPS button, mode switch, etc.) */
         if (server_mode && svr_running && !g_qr_valid) {
-            char svr_url[64];
+            char svr_url[128];
             gps_get_server_url(svr_url, sizeof(svr_url));
             if (svr_url[0] && qr_encode(svr_url, strlen(svr_url),
                                          g_qr_modules, &g_qr_size)) {
@@ -2587,8 +2595,9 @@ static void render_settings_panel(void) {
         } else {
             if (svr_running) {
                 draw_ui_text(24.0f, 162.0f, 0.42f, 0.42f, C2D_Color32f(0.55f, 0.96f, 0.72f, 1.0f), 0, "Server running  [tap to stop]");
-                char svr_url[64];
+                char svr_url[128];
                 gps_get_server_url(svr_url, sizeof(svr_url));
+                char *fragment=strchr(svr_url,'#');if(fragment)*fragment=0;
                 draw_ui_text(24.0f, 180.0f, 0.34f, 0.34f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, svr_url);
                 GpsFix fix;
                 if(gps_get_fix(&fix) && gps_get_server_fix_count()>0) {
@@ -2626,7 +2635,7 @@ static void render_settings_panel(void) {
         draw_ui_fit_line(12,222,.35f,C2D_Color32(193,215,230,255),
                          "Scan TOP QR | Same WiFi | Allow phone location",296);
     else
-        draw_ui_text(160.0f, 222.0f, 0.32f, 0.32f, C2D_Color32f(0.66f, 0.76f, 0.86f, 1.0f), C2D_AlignCenter,
+        draw_control_text(160.0f, 222.0f, 0.32f, 0.32f, C2D_Color32f(0.66f, 0.76f, 0.86f, 1.0f), C2D_AlignCenter,
                      g_settings_tab == SETTINGS_TAB_VIEW ? "SELECT: tile timings   B: close" :
                      "Touch cards to change settings   B to close");
 }
@@ -2968,7 +2977,7 @@ static void render_place_panel(void) {
         }
     }
     C2D_DrawRectSolid(0, 194, .2f, 320, 46, C2D_Color32(23, 32, 45, 255));
-    draw_ui_text(12, 205, .41f, .41f, dim, 0,
+    draw_control_text(12, 205, .41f, .41f, dim, 0,
         place_identify ? "B  Back" :
         place_allow_worldwide ? "Tap/A  Go   X  Worldwide   B  Cancel" :
                                 "Tap/A  Go   B  Cancel");

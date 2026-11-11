@@ -52,8 +52,10 @@ static void fetch_terrain(void *arg) {
                                         &terrain.cancel,&buffer,&size);
         if(downloaded && size>=32 && !atomic_load(&terrain.cancel)){
             int w=0,h=0,components=0;
-            unsigned char *rgb=stbi_load_from_memory(
-                buffer,(int)size,&w,&h,&components,3);
+            /* Reject decompression bombs before allocating decoded image RAM. */
+            bool dimensions=stbi_info_from_memory(buffer,(int)size,&w,&h,&components) && w==256 && h==256;
+            unsigned char *rgb=dimensions?stbi_load_from_memory(
+                buffer,(int)size,&w,&h,&components,3):NULL;
             if(rgb && w==256 && h==256 && !atomic_load(&terrain.cancel)){
                 TerrainGrid decoded;
                 if(terrain_decode_grid(rgb,w,h,3,&decoded)){

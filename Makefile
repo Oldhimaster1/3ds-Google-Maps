@@ -39,9 +39,9 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 NO_SMDH		:=	1
 
-APP_TITLE	:= 3DS Google Maps
-APP_DESCRIPTION := Interactive Google Maps for Nintendo 3DS
-APP_AUTHOR	:= Homebrew Developer
+APP_TITLE	:= 3DS Maps 2.2 RC1
+APP_DESCRIPTION := Maps and StreetGuess - 2.2.0 RC1
+APP_AUTHOR	:= Oldhimaster1
 BANNERTOOL	?= bannertool
 MAKEROM		?= makerom
 
@@ -160,10 +160,10 @@ all: $(BUILD)
 
 cia: all
 	@"$(MAKEROM)" -help | grep -q '^CTR MAKEROM v0\.18\.4 ' || { echo "CIA packaging requires makerom v0.18.4"; exit 1; }
-	"$(BANNERTOOL)" makesmdh -s "$(APP_TITLE)" -l "Maps for Nintendo 3DS" -p "Oldhimaster1" -i icon.png -r regionfree -f visible -o "$(BUILD)/cia-icon.bin"
+	"$(BANNERTOOL)" makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "Oldhimaster1" -i icon.png -r regionfree -f visible -o "$(BUILD)/cia-icon.bin"
 	"$(BANNERTOOL)" makebanner -i banner.png -a banner.wav -o "$(BUILD)/cia-banner.bin"
 	"$(MAKEROM)" -f ncch -target t -rsf tools/cia.rsf -elf "$(TARGET).elf" -icon "$(BUILD)/cia-icon.bin" -banner "$(BUILD)/cia-banner.bin" -o "$(BUILD)/$(TARGET).cxi"
-	"$(MAKEROM)" -f cia -target t -content "$(BUILD)/$(TARGET).cxi:0:0" -major 2 -minor 1 -micro 3 -o "$(BUILD)/$(TARGET).cia"
+	"$(MAKEROM)" -f cia -target t -content "$(BUILD)/$(TARGET).cxi:0:0" -major 2 -minor 2 -micro 0 -o "$(BUILD)/$(TARGET).cia"
 	mv "$(BUILD)/$(TARGET).cia" "$(TARGET).cia"
 
 $(BUILD):

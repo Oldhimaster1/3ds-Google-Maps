@@ -304,3 +304,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ```
+
+## CA roots and StreetGuess challenge metadata (RC1)
+
+`data/ca_bundle.bin` is the Mozilla CA root list distributed by
+https://curl.se/ca/cacert.pem. Its embedded Mozilla source and MPL 2.0 notices
+remain intact; it is a PEM text bundle despite the `.bin` build-resource suffix.
+
+`docs/datasets/streetguess-v1.json` records the Panoramax image creators, exact
+STAC item links and per-image license identifiers. All eight selected items
+reported Etalab Open Licence 2.0 when checked on 11 November 2026. The generated
+C table carries those credits into the application. The images are fetched at
+play time and are not distributed in this repository or saved to an SD imagery
+cache. See the manifest and `docs/release/rc1/provider-review.md` for source links,
+verification limits and separate provider-access obligations.

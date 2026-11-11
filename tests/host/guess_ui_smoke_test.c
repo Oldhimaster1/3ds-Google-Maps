@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "guess_ui.h"
 #include "guess_core.h"
+#include "guess_challenge.h"
 #include <citro2d.h>
 #include <3ds.h>
 #include "panorama_live.h"
@@ -16,6 +17,8 @@ static u64 milliseconds=100000;
 static u32 down,held;
 static touchPosition touch;
 static PanoLiveImage current;
+static bool curated,network_busy;
+static char curated_id[48];
 static bool live,rendered,mock_denied,mock_no_coverage;
 static int search_count,moves_count,finish_count,scene_count,return_count;
 static double query_lat,query_lon,last_map_lat,last_map_lon;
@@ -71,23 +74,38 @@ void explore_draw(C3D_RenderTarget *p,float yaw,float pitch,float d,float f,floa
     (void)p;(void)yaw;(void)pitch;(void)d;(void)f;(void)e;rendered=true;
 }
 bool pano_runtime_start_game_google(double lat,double lon){
-    query_lat=lat;query_lon=lon;live=false;
+    curated=false;query_lat=lat;query_lon=lon;live=false;
     search_count++;return true;
 }
+bool pano_runtime_start_curated(const char *id,const char *url){
+ (void)url;curated=true;strcpy(curated_id,id);live=false;
+ for(unsigned i=0;i<guess_location_count;i++)if(!strcmp(guess_locations[i].id,id)){
+  query_lat=guess_locations[i].lat;query_lon=guess_locations[i].lon;return true;
+ }return false;
+}
+void swkbdInit(SwkbdState *s,int a,int b,int c){(void)s;(void)a;(void)b;(void)c;}
+void swkbdSetHintText(SwkbdState *s,const char *h){(void)s;(void)h;}
+static char keyboard_answer[24];
+int swkbdInputText(SwkbdState *s,char *c,size_t n){(void)s;if(!keyboard_answer[0])return 0;snprintf(c,n,"%s",keyboard_answer);return SWKBD_BUTTON_CONFIRM;}
 void pano_runtime_end_game_google(void){finish_count++;live=false;}
 void pano_runtime_stop(void){live=false;}
 void pano_runtime_poll(void){
     if(mock_denied||mock_no_coverage)return;
-    if(!live){memset(&current,0,sizeof(current));current.provider=STREET_PROVIDER_GOOGLE;
+    if(!live){memset(&current,0,sizeof(current));current.provider=curated?STREET_PROVIDER_PANORAMAX:STREET_PROVIDER_GOOGLE;
         current.lat=query_lat;current.lon=query_lon;current.is_pano=true;
-        strcpy(current.id,"1234567890123456789012");current.azimuth=0;live=true;}
+        strcpy(current.id,curated?curated_id:"1234567890123456789012");current.azimuth=0;live=true;}
 }
 bool pano_runtime_has_live(void){return live;}
-bool pano_runtime_network_active(void){return false;}
+bool pano_runtime_network_active(void){return network_busy;}
 const char *pano_runtime_status(void){return mock_denied?"Imagery provider denied access (HTTP 403)":"No matching photos";}
 const PanoLiveImage *pano_runtime_current(void){return live?&current:NULL;}
 bool pano_runtime_step_at(int direction,float yaw){(void)direction;(void)yaw;moves_count++;return true;}
 bool pano_runtime_jump_game_google(const char *id,double lat,double lon){(void)id;(void)lat;(void)lon;return_count++;return true;}
+void input_remap_hint(unsigned p,const char *s,char *o,size_t n){(void)p;snprintf(o,n,"%s",s);}
+uint32_t input_remap_apply(unsigned p,uint32_t k){(void)p;return k;}
+void detail_runtime_stop(void){}
+const char *detail_runtime_status(void){return "";}
+void detail_runtime_update_panorama(const PanoLiveImage *p,float y,float t,float f,unsigned q){(void)p;(void)y;(void)t;(void)f;(void)q;}
 #include "../../source/guess_ui.c"
 #define TEST(x) do{if(!(x)){fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x);exit(1);}}while(0)
 static void press(u32 k){down=k;held=k;milliseconds+=16;guess_ui_update();down=held=0;}
@@ -194,6 +212,9 @@ int main(void){
     ui.game.rules=GUESS_MOVING;
     press(KEY_A);frame();TEST(ui.game.phase==GUESS_PLAYING);
     press(KEY_R);TEST(moves_count>0);
+    uint32_t before_wait=ui.game.remaining_ms;network_busy=true;milliseconds+=5000;frame();
+    TEST(ui.game.remaining_ms==before_wait);network_busy=false;frame();
+    TEST(ui.game.remaining_ms+100>=before_wait);
     /* Return to Start is a distinct lower-screen action; D-Down must still
      * zoom the panorama out in Moving mode. */
     down=held=KEY_TOUCH;touch=(touchPosition){.px=45,.py=224};frame();
@@ -219,10 +240,42 @@ int main(void){
     TEST(ui.game.attempt==GUESS_MAX_CANDIDATE_TRIES);
     guess_ui_leave();
     mock_no_coverage=false;
+    /* Exact curated daily rounds ignore random-game replay avoidance. */
+    TEST(guess_ui_enter());ui.mode=1;ui.difficulty=1;new_game();
+    char daily_code[40];strcpy(daily_code,ui.challenge_code);
+    for(unsigned r=0;r<5;r++){
+        frame();frame();TEST(ui.game.phase==GUESS_PLAYING);
+        TEST(!strcmp(current.id,guess_locations[ui.challenge.location[r]].id));
+        guess_set_pin(&ui.game,ui.game.start);ui.map_focused=true;
+        press(KEY_A);TEST(ui.game.phase==GUESS_RESULT);press(KEY_A);
+    }
+    TEST(ui.game.phase==GUESS_COMPLETE&&ui.game.total==25000&&ui.daily_best==25000);
+    new_game();TEST(!strcmp(daily_code,ui.challenge_code));
+    mock_no_coverage=true;frame();TEST(ui.game.phase==GUESS_ERROR&&ui.game.round==0&&ui.game.total==0);
+    mock_no_coverage=false;press(KEY_A);frame();TEST(ui.game.phase==GUESS_PLAYING);
+    guess_ui_leave();
+    TEST(guess_ui_enter());ui.mode=3;ui.players=2;new_game();
+    char party_code[40];strcpy(party_code,ui.challenge_code);
+    for(unsigned r=0;r<5;r++){
+        frame();frame();TEST(ui.game.phase==GUESS_PLAYING);
+        guess_set_pin(&ui.game,ui.game.start);ui.map_focused=true;press(KEY_A);press(KEY_A);
+    }
+    TEST(ui.player_scores[0]==25000);press(KEY_A);
+    TEST(ui.handoff&&ui.player==1);press(KEY_A);frame();
+    TEST(ui.game.phase==GUESS_PLAYING&&!strcmp(party_code,ui.challenge_code));
+    TEST(!strcmp(current.id,guess_locations[ui.challenge.location[0]].id));
+    guess_ui_leave();
+    TEST(guess_ui_enter());ui.mode=6;new_game();frame();frame();TEST(ui.game.phase==GUESS_PLAYING);
+    strcpy(keyboard_answer,guess_locations[ui.challenge.location[0]].country);
+    press(KEY_A);TEST(ui.game.phase==GUESS_RESULT&&ui.game.total==1);press(KEY_A);frame();
+    strcpy(keyboard_answer,!strcmp(guess_locations[ui.challenge.location[1]].country,"FR")?"US":"FR");
+    press(KEY_A);TEST(ui.game.phase==GUESS_RESULT&&ui.game.total==1);press(KEY_A);
+    TEST(ui.game.phase==GUESS_COMPLETE);keyboard_answer[0]=0;guess_ui_leave();
+    remove(DAILY_FILE);
     remove("sdmc:/3ds_google_maps/streetguess_records.txt");
     remove("sdmc:/3ds_google_maps/streetguess_records.txt.tmp");
     (void)rmdir("sdmc:/3ds_google_maps");
     (void)rmdir("sdmc:");
-    puts("StreetGuess UI simulated five-round / road pack / restrictions / error / records tests passed");
+    puts("StreetGuess UI: classic, daily five rounds, retry without penalty, daily records, identical pass-and-play rounds passed");
     return 0;
 }

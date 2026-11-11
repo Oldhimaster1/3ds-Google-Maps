@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "selection": "Curated Panoramax city sample; coverage is Europe-heavy, not worldwide representative. IDs are immutable in this dataset; missing images fail the round without substituting a location.",
+  "locations": [
+    {
+      "id": "53b951d0-3999-434c-9a21-fdb3c2321e96",
+      "lat": 48.581866372,
+      "lon": 7.746025568,
+      "country": "FR",
+      "name": "Strasbourg",
+      "hint": "Look at road markings, signs and architecture. Country code: FR",
+      "license": "etalab-2.0",
+      "credit": "eurom\u00e9tropole de strasbourg",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/871b93cb-d67e-4ac8-9f54-c5da27c5884e/items/53b951d0-3999-434c-9a21-fdb3c2321e96",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "fdb8f3dd9ce0d835a592eeb1f9817a1f848ae941b71c4ed838e587c54612a0b8"
+    },
+    {
+      "id": "f5cf671a-4391-4c72-ace0-5c3f9df2e3ef",
+      "lat": 45.760054,
+      "lon": 4.8399049,
+      "country": "FR",
+      "name": "Lyon",
+      "hint": "Look at road markings, signs and architecture. Country code: FR",
+      "license": "etalab-2.0",
+      "credit": "ecartip",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/7a223f59-06ea-429b-bb94-fb9b09f84568/items/f5cf671a-4391-4c72-ace0-5c3f9df2e3ef",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "7f4c9d3a7175bfef471460aa2eca915deea9d00861df2e8882ba330114b75ff2"
+    },
+    {
+      "id": "27975fbc-7420-4fb7-b585-817f914dde3f",
+      "lat": 43.2960555,
+      "lon": 5.3699869,
+      "country": "FR",
+      "name": "Marseille",
+      "hint": "Look at road markings, signs and architecture. Country code: FR",
+      "license": "etalab-2.0",
+      "credit": "r\u00e9gion sud / R\u00e9gion Provence-Alpes-C\u00f4te d'Azur - Immergis",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/cd0b48d7-d718-4ed2-b704-ae8bc73a8487/items/27975fbc-7420-4fb7-b585-817f914dde3f",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "9ca4847cc98f74d6e98cd21dbceba4db3bdc523633f1837bfab0aa83c7c31eb8"
+    },
+    {
+      "id": "326590b8-e958-41f5-838c-5020aaa213f1",
+      "lat": 44.840022222,
+      "lon": -0.579930556,
+      "country": "FR",
+      "name": "Bordeaux",
+      "hint": "Look at road markings, signs and architecture. Country code: FR",
+      "license": "etalab-2.0",
+      "credit": "bordeaux m\u00e9tropole",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/9f440dc1-54cd-4571-8808-bcfdd7fa9b7a/items/326590b8-e958-41f5-838c-5020aaa213f1",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "baf33b08d1d3fcaefdd767a2841509a44b085524ea788151fb39d811e597449e"
+    },
+    {
+      "id": "ef3686df-bbe1-4558-9e26-93cce0aaaafb",
+      "lat": 40.7132831,
+      "lon": -74.0130796,
+      "country": "US",
+      "name": "New York",
+      "hint": "Look at road markings, signs and architecture. Country code: US",
+      "license": "etalab-2.0",
+      "credit": "jg13",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/abb75b44-dcf2-49f0-98ae-831d5791b640/items/ef3686df-bbe1-4558-9e26-93cce0aaaafb",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        987
+      ],
+      "image_sha256": "d29926e0856009d646f7c1c46c65156704a0aff66a02ca089c1a057f0b7e940e"
+    },
+    {
+      "id": "d6c9341c-758c-42eb-9056-397893859460",
+      "lat": 47.217649596,
+      "lon": -1.550096907,
+      "country": "FR",
+      "name": "Nantes",
+      "hint": "Look at road markings, signs and architecture. Country code: FR",
+      "license": "etalab-2.0",
+      "credit": "immergis",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/b1cc49ad-6d1c-4308-ae6e-d3d87c8b5ab6/items/d6c9341c-758c-42eb-9056-397893859460",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "c489035ea938520d0c9ba30d6acec7264163d0eee721734efcd541d2272a538d"
+    },
+    {
+      "id": "37e5ab2d-ba53-4484-a42b-50a564b98fe4",
+      "lat": 43.6000101,
+      "lon": 1.4400313,
+      "country": "FR",
+      "name": "Toulouse",
+      "hint": "Look at road markings, signs and architecture. Country code: FR",
+      "license": "etalab-2.0",
+      "credit": "sc_vigicrues",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/42971917-0fa2-4515-941b-dbb2472606a3/items/37e5ab2d-ba53-4484-a42b-50a564b98fe4",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "c38c06c7a01972edc5fb5d0023a0bc12547719e4185ad91a18de9ea564ed2243"
+    },
+    {
+      "id": "a45a1263-4ea5-45e4-94eb-b64ecf376d04",
+      "lat": 45.187775,
+      "lon": 5.724,
+      "country": "FR",
+      "name": "Grenoble",
+      "hint": "Look at road markings, signs and architecture. Country code: FR",
+      "license": "etalab-2.0",
+      "credit": "zach@rando360.com",
+      "metadata_url": "https://api.panoramax.xyz/api/collections/d1b7548f-80cc-476d-9db8-55c037c86cb0/items/a45a1263-4ea5-45e4-94eb-b64ecf376d04",
+      "verified_utc": "2026-11-11",
+      "image_size": [
+        2048,
+        1024
+      ],
+      "image_sha256": "fb52ebb8faee45ae5cd5af4c5bb7fee026f668f0261419bd3078f42a8d96bf34"
+    }
+  ]
+}

@@ -28,9 +28,11 @@ bool network_request(void *h,const char *url,size_t limit,atomic_bool *cancel,
     *buffer=malloc(32);assert(*buffer);
     memset(*buffer,0xAA,32);*size=32;return true;
 }
+static unsigned decode_calls;
+int stbi_info_from_memory(const unsigned char *p,int n,int *w,int *h,int *c){assert(p&&n==32);*w=bad_size?1000000:256;*h=256;*c=3;return image_ok;}
 unsigned char *stbi_load_from_memory(const unsigned char *bytes,int len,
                                     int *width,int *height,int *comp,int desired){
-    assert(bytes&&len==32&&desired==3);
+    assert(bytes&&len==32&&desired==3);decode_calls++;
     if(!image_ok)return NULL;
     *width=bad_size?255:256;*height=256;*comp=3;
     unsigned char *p=malloc(256*256*3);assert(p);
@@ -71,9 +73,10 @@ int main(void){
     request_ok=0;assert(terrain_runtime_start(40,-73,12));
     assert(!terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
     assert(strstr(terrain_runtime_status(),"unavailable"));
-    request_ok=1;bad_size=1;
+    request_ok=1;bad_size=1;unsigned before=decode_calls;
     assert(terrain_runtime_start(40,-73,12));
     assert(!terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
+    assert(decode_calls==before); /* hostile dimensions never reach the decoder */
     bad_size=0;image_ok=0;
     assert(terrain_runtime_start(40,-73,12));
     assert(!terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));

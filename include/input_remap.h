@@ -2,6 +2,7 @@
 #define INPUT_REMAP_H
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #define INPUT_REMAP_FILE "sdmc:/3ds_google_maps/control_map.cfg"
 #define INPUT_REMAP_PROFILES 4u
 #define INPUT_REMAP_BUTTONS 11u
@@ -20,4 +21,6 @@ void input_remap_set_active(const InputRemap *m);
 uint32_t input_remap_apply(unsigned profile,uint32_t raw_keys);
 const char *input_remap_button_name(unsigned button);
 const char *input_remap_profile_name(unsigned profile);
+/* Translate standalone button tokens in an explicitly identified control hint. */
+void input_remap_hint(unsigned profile,const char *text,char *out,size_t capacity);
 #endif

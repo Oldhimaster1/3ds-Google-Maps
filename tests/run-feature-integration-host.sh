@@ -4,6 +4,8 @@
 set -eu
 cd "$(dirname "$0")/.."
 python3 tests/host/feature_wiring_test.py
+sh tests/run-gps-pairing-host.sh
+sh tests/run-guess-challenge-host.sh
 sh tests/run-input-remap-host.sh
 sh tests/run-detail-plan-host.sh
 sh tests/run-detail-mesh-host.sh

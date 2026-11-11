@@ -1,3 +1,5 @@
+> Historical handoff. For current RC1 build/test results and unresolved blockers, see [RC1 acceptance](release/rc1/acceptance.md).
+
 # Progressive globe, view-dependent panorama detail, and control remapping
 
 **Branch:** `feature-live-detail-and-remap-20261111`  

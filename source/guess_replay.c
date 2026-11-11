@@ -1,5 +1,6 @@
 #include "guess_replay.h"
 #include <math.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,7 +38,7 @@ bool guess_replay_save(const GuessReplay *h,const char *path){
  char temp[320];int n=snprintf(temp,sizeof(temp),"%s.tmp",path);
  if(n<=0||n>=(int)sizeof(temp))return false;
  FILE *f=fopen(temp,"wb");if(!f)return false;
- int ok=fprintf(f,"SGH2 %u %u\n",h->count,h->cursor)>0;
+ int ok=fprintf(f,"SGH2 %" PRIu32 " %" PRIu32 "\n",h->count,h->cursor)>0;
  for(uint32_t i=0;i<h->count;i++)
   if(fprintf(f,"%d %d\n",h->cells[i].lat_q,h->cells[i].lon_q)<=0)ok=0;
  if(fclose(f)!=0)ok=0;
@@ -47,7 +48,7 @@ bool guess_replay_load(GuessReplay *h,const char *path){
  if(!h||!path)return false;
  FILE *f=fopen(path,"rb");if(!f)return false;
  GuessReplay t={0};char magic[6]={0};
- int ok=fscanf(f,"%5s %u %u",magic,&t.count,&t.cursor)==3&&
+ int ok=fscanf(f,"%5s %" SCNu32 " %" SCNu32,magic,&t.count,&t.cursor)==3&&
         strcmp(magic,"SGH2")==0&&t.count<=GUESS_REPLAY_MAX&&t.cursor<GUESS_REPLAY_MAX;
  for(uint32_t i=0;ok&&i<t.count;i++){
   int a,b;ok=fscanf(f,"%d %d",&a,&b)==2 && a>=0 && a<720 && b>=0 && b<1440;

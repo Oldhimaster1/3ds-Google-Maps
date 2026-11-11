@@ -1,0 +1,477 @@
+[
+  {
+    "path": "include/building_mesh.h",
+    "bytes": 874,
+    "sha256": "080908a59d57fa8a9bf36b79753aa685e4b9aa2672bac1d2cf6f89288c86c982"
+  },
+  {
+    "path": "include/building_runtime.h",
+    "bytes": 564,
+    "sha256": "852f975d72d414d9a3e76042a5bf7238559993da2aba1a4cca509b4f01f7f790"
+  },
+  {
+    "path": "include/detail_mesh.h",
+    "bytes": 373,
+    "sha256": "1f1c639bce24d2773ae356ec7a3160e1bd8e7a17eee3ecb520fcb83ada39aa22"
+  },
+  {
+    "path": "include/detail_plan.h",
+    "bytes": 552,
+    "sha256": "aeb7dc563088ff5f3af903a29920f4af7ee40efb1602d02ed80b2f23ddb0d67a"
+  },
+  {
+    "path": "include/detail_runtime.h",
+    "bytes": 538,
+    "sha256": "337058c75c0fb599ed673e9a8b25af53c9b00ff5e4a54efd232c6fe08ac4cda2"
+  },
+  {
+    "path": "include/earth_options.h",
+    "bytes": 988,
+    "sha256": "b604c11f8a310b6d62145b1530e375f53b59f9df4a693a23ef7f2440fae5ed94"
+  },
+  {
+    "path": "include/explore.h",
+    "bytes": 1343,
+    "sha256": "f5cde4bd7337dd7292a2da74d3c028d9972a03152a4c15343e752c0e7208008c"
+  },
+  {
+    "path": "include/geo_formats.h",
+    "bytes": 239,
+    "sha256": "c4c6bc9ab68101e08253400bf34732536f94bb0f23860bf47cc6457b7a14074b"
+  },
+  {
+    "path": "include/globe_detail.h",
+    "bytes": 393,
+    "sha256": "fc14ad3b83956fc27b6a6640b1aaa60701b8f2a89480f7dbe446ea97d000c90b"
+  },
+  {
+    "path": "include/gps.h",
+    "bytes": 2541,
+    "sha256": "e3f7db7b4d17e6e86d210fef9fa56136e19d38fb1e3142c4b2db25432dc3ffce"
+  },
+  {
+    "path": "include/gps_follow_gate.h",
+    "bytes": 1210,
+    "sha256": "8b4c73ad276397b5a518fa9918ad9c32fb3b8c3bbb1ff825adc06ac848c3a8fe"
+  },
+  {
+    "path": "include/gps_motion.h",
+    "bytes": 427,
+    "sha256": "e8f7f1239bc86dc89c1a3f58ec368fef89b822eb54bb8ff1a3817b6ad84f3acf"
+  },
+  {
+    "path": "include/gps_pairing.h",
+    "bytes": 297,
+    "sha256": "ccaa41dcc2dece1d36a9ac887724cb9a1b6b31e87fa2ba54142477bd9636ac3c"
+  },
+  {
+    "path": "include/gps_server.h",
+    "bytes": 2026,
+    "sha256": "1fe987e9265da37839a87f8b67232dd9ba6aafad47ddd73d198e58359327db13"
+  },
+  {
+    "path": "include/gps_server_cert.h",
+    "bytes": 13358,
+    "sha256": "6fb62d08ce547194427e4fb2d46a2259ca4876a0e5e1e8ac9d96740fffb13e21"
+  },
+  {
+    "path": "include/guess_challenge.h",
+    "bytes": 844,
+    "sha256": "071b6b7280e407dc3e652d9596322dfb0e6c407937e214608bd757be4679f937"
+  },
+  {
+    "path": "include/guess_core.h",
+    "bytes": 2148,
+    "sha256": "2e5491c57ec06180fb49633bad3d67b38da1a131b3baa98901ae35499132cb0c"
+  },
+  {
+    "path": "include/guess_replay.h",
+    "bytes": 677,
+    "sha256": "1d3a33b2b6e5743009048fba4f41c96cd319c16f8bda13c52dc0572faaeffd5b"
+  },
+  {
+    "path": "include/guess_roads.h",
+    "bytes": 600,
+    "sha256": "149efb460762a394b402cdbebd5abe58330c2e275e629bcc475dc0b1ca3da419"
+  },
+  {
+    "path": "include/guess_ui.h",
+    "bytes": 358,
+    "sha256": "21b261ca14dfb37f2d7794c5965ee7a0eb4fd10589b3b7d506c4149145018ee6"
+  },
+  {
+    "path": "include/input_remap.h",
+    "bytes": 1383,
+    "sha256": "d608ddf8deb841e00e73fe273975668805b9dea12c21f455a1c6557730d29bf8"
+  },
+  {
+    "path": "include/logging.h",
+    "bytes": 134,
+    "sha256": "644f391db9e1450c9ebfbd8251a6c68a121a31d96e83e3b0eac51f64ac0beae9"
+  },
+  {
+    "path": "include/map_tiles.h",
+    "bytes": 2063,
+    "sha256": "61522065cbe13d221f8bf1e3f15b14f5ea2e4501c5ec2c6ac0ec56b1b2c45ba5"
+  },
+  {
+    "path": "include/network.h",
+    "bytes": 3755,
+    "sha256": "d5fe880b19b632d8b1c9aa4d21d28161ab55b0352a96c7a201d78e9fdbf4069e"
+  },
+  {
+    "path": "include/pano_detail.h",
+    "bytes": 456,
+    "sha256": "6a27845a3fc93358f7565f2bde62ee314a7378026a3f0bb215c76f00fb6a93ae"
+  },
+  {
+    "path": "include/pano_gyro.h",
+    "bytes": 696,
+    "sha256": "78a3d294ab702a22a677736756cfb66a2bfad1fa50cc300784f66893b3b69c7a"
+  },
+  {
+    "path": "include/pano_motion.h",
+    "bytes": 686,
+    "sha256": "3c36952500ad2485649fb476723095a616b89181847b6c11fad1b7b2f1dcce33"
+  },
+  {
+    "path": "include/pano_runtime.h",
+    "bytes": 1678,
+    "sha256": "1b1f8cae1a15ea929cd35f92b999d33804825aaba3b9f32cf80654b617648f91"
+  },
+  {
+    "path": "include/panorama_live.h",
+    "bytes": 1946,
+    "sha256": "cb1586be93c955bdfe02a95e04f5c690ae54a33f320076333c699fa5fd08bf42"
+  },
+  {
+    "path": "include/qrcode.h",
+    "bytes": 582,
+    "sha256": "d29f5e49b44fb4678ae728c9f1926d2175a7fb0d00e583249135f7ccb0cd5808"
+  },
+  {
+    "path": "include/region.h",
+    "bytes": 1331,
+    "sha256": "92b7954b8aa93c0dd03d7e5d927886377402830b524bfc7698472f2801cf5b1f"
+  },
+  {
+    "path": "include/route_follow.h",
+    "bytes": 866,
+    "sha256": "fd51d05aec591a56980f5b8de0421fdefcfc3724569d50dd73f6f242024e9b90"
+  },
+  {
+    "path": "include/search_input.h",
+    "bytes": 638,
+    "sha256": "d8d0e451b76bf090ca09f0cb6d84073815236223346d2cba810544a4b7bdc053"
+  },
+  {
+    "path": "include/simple_png.h",
+    "bytes": 349,
+    "sha256": "914aa45c11226ce170f14a3c8ef34e54cbe554429c752b29c57695dddf2f68da"
+  },
+  {
+    "path": "include/stb_image.h",
+    "bytes": 564,
+    "sha256": "8713f567175d523bbf3dcfb6aed80dc4815900cd5f2ce1efde73a7e62a881de2"
+  },
+  {
+    "path": "include/stb_image_all.h",
+    "bytes": 283010,
+    "sha256": "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3"
+  },
+  {
+    "path": "include/stb_image_impl.h",
+    "bytes": 7623,
+    "sha256": "95e6a62e03bff8f6dca086732ee2e9af4b46c00409844f45322e37bb247ff244"
+  },
+  {
+    "path": "include/street_fly_logic.h",
+    "bytes": 296,
+    "sha256": "92d9ec50d68b7c1a7d9f3cde8a7a2b501800cce8200904a3c774f2e976c49475"
+  },
+  {
+    "path": "include/street_heading.h",
+    "bytes": 375,
+    "sha256": "7981c7e3d2fb5c8b63aa538e79f4713c5b748d3b89bc9830e2e96dc0f75ae4c1"
+  },
+  {
+    "path": "include/street_image.h",
+    "bytes": 487,
+    "sha256": "2561cd2e079ecbca0f52a612f45d0c41a8be948af17865a1dbfa1cd783e6822b"
+  },
+  {
+    "path": "include/street_look_input.h",
+    "bytes": 285,
+    "sha256": "3b5b4c184a507f28853c23d70b2984ee299fa299258e183bbb965be6594f67a8"
+  },
+  {
+    "path": "include/street_nav.h",
+    "bytes": 650,
+    "sha256": "102e160d5a75352f48ba8d30157cd7293942fc2f62eedf617a46b2bfe5524aa3"
+  },
+  {
+    "path": "include/street_recent.h",
+    "bytes": 695,
+    "sha256": "debc1f140bd7ea5c2f570b540574570f51b3c36e5538a484d23a58bb9f3342b8"
+  },
+  {
+    "path": "include/street_sources.h",
+    "bytes": 1024,
+    "sha256": "f191ac2aa59c295c5c0e1fb47755986339fd874aa0d9c14a9357f05ca31e1049"
+  },
+  {
+    "path": "include/terrain_math.h",
+    "bytes": 858,
+    "sha256": "ffc3e52c97a35fd9714d044190c1859e290a7a8bd3a7c3069a3fb9525a2e0ccb"
+  },
+  {
+    "path": "include/terrain_runtime.h",
+    "bytes": 629,
+    "sha256": "6bb5e76ff55edcd16c4c5f95186ee0d6c32c398d8c5641317e7f6a601ecd4d63"
+  },
+  {
+    "path": "include/tile_priority.h",
+    "bytes": 2134,
+    "sha256": "9e297ad02fe670baeafbe02f9250fdfae6048471870956af904af1f22e6900e0"
+  },
+  {
+    "path": "include/tilepack.h",
+    "bytes": 2908,
+    "sha256": "a9d7630d29a4860c22737546a92194871699b336f9ced44fa5a2519ffb6c5db5"
+  },
+  {
+    "path": "include/ui_accessibility.h",
+    "bytes": 650,
+    "sha256": "29c36f3feba92f7e74c6f0a65cd12ac47f7d18fc5c99af01f305dc2be59be291"
+  },
+  {
+    "path": "source/building_mesh.c",
+    "bytes": 4849,
+    "sha256": "4d1e6d28747ce64fece1ed87da75c132d905f9315031aab282a7defae1492b98"
+  },
+  {
+    "path": "source/building_runtime.c",
+    "bytes": 6655,
+    "sha256": "550c7503391fe16b9bd88cbe6033bc959d684bf855dbdd2a225e1b79c2c973e3"
+  },
+  {
+    "path": "source/detail_mesh.c",
+    "bytes": 960,
+    "sha256": "d0fbb5609e5c0a180adccc5a04d815c95c3f03711b9a5db369f0b589e2622109"
+  },
+  {
+    "path": "source/detail_plan.c",
+    "bytes": 2508,
+    "sha256": "32b216a9abcc360adba44104cbbce8c1efa1a4ac478521cb0a4564b64d275987"
+  },
+  {
+    "path": "source/detail_runtime.c",
+    "bytes": 7784,
+    "sha256": "667cbb5e21ff6edb109c2ba42009f2223c2408782f6076716b62133adffcc818"
+  },
+  {
+    "path": "source/earth_options.c",
+    "bytes": 1953,
+    "sha256": "87fbdcf12d883e73278d8a98a6e5d56a0c8f7599ade163fb3e229b880d4cdd91"
+  },
+  {
+    "path": "source/explore.c",
+    "bytes": 18423,
+    "sha256": "45e1532c7433330c841ecf1a4c07af49ec8785071d8fc0e204818e77be40b62e"
+  },
+  {
+    "path": "source/explore.v.pica",
+    "bytes": 477,
+    "sha256": "bbae52cede06d4215bd051f5aaa2b25c01dd97ed0ab4d29a32077fe7c2422270"
+  },
+  {
+    "path": "source/geo_formats.c",
+    "bytes": 3720,
+    "sha256": "946730e24ecbae236534a0739e41d48f34e633072b88444f180d75a6c0f21218"
+  },
+  {
+    "path": "source/globe_detail.c",
+    "bytes": 1096,
+    "sha256": "af2d5d1a289ce9f73b91d991a47c1bcdb8bf84f258b9807fa43978810d9c4062"
+  },
+  {
+    "path": "source/gps.c",
+    "bytes": 12335,
+    "sha256": "6a349a0fc11f408fd89e6c82d20db12429a89ae8c975fd9ff07f90980787cc04"
+  },
+  {
+    "path": "source/gps_motion.c",
+    "bytes": 2257,
+    "sha256": "5cc81eb7a3a0b066e1844a2e3f34ad15ce1b14705357f96b567a28922d64320c"
+  },
+  {
+    "path": "source/gps_pairing.c",
+    "bytes": 1233,
+    "sha256": "3e9178048848454b3c17a4f9fda10e99f21d6fbfbf20461c7ca7a5a619a835af"
+  },
+  {
+    "path": "source/gps_server.c",
+    "bytes": 25047,
+    "sha256": "c95f4ab557c774b124b2284396bef54e6d499b5c41ca67faa5c8ee8f5de526a2"
+  },
+  {
+    "path": "source/guess_challenge.c",
+    "bytes": 1959,
+    "sha256": "e88b9e3a03c38a42c82e7e25ca3d0169f17cd06555a16452794858f9c50ec700"
+  },
+  {
+    "path": "source/guess_core.c",
+    "bytes": 11843,
+    "sha256": "7d8d803afad12535a3896849b6c74044a9decf7ea1e132fdafffc5c56220929a"
+  },
+  {
+    "path": "source/guess_locations.c",
+    "bytes": 2783,
+    "sha256": "7702d4fe118702a0736d77659a3387d31c20a6e169158a43bca7e05e630ab914"
+  },
+  {
+    "path": "source/guess_replay.c",
+    "bytes": 2415,
+    "sha256": "a0a5f2694afa2bca093f5352d4d5f166b22772eef4cdd20e8200bf5377d1e40e"
+  },
+  {
+    "path": "source/guess_roads.c",
+    "bytes": 3069,
+    "sha256": "a56249b98efc9b05ce69df4b81496d8b5a26f27b032b2b66f4170ed9d2824963"
+  },
+  {
+    "path": "source/guess_ui.c",
+    "bytes": 38270,
+    "sha256": "3694248b57bc36847a53e52d39eca71b0b79ca89a2a5e043685db5e91a87d5fb"
+  },
+  {
+    "path": "source/input_remap.c",
+    "bytes": 4871,
+    "sha256": "798af9eb4cfdf11908ec6112240ce2832fc72c9d4ff96f5301fe00cbe01565b3"
+  },
+  {
+    "path": "source/logging.c",
+    "bytes": 811,
+    "sha256": "75e3676e0756cd0b3b93ae1e4f6f4efc53d2c63ab2457bf57cb3aa134cda2cd0"
+  },
+  {
+    "path": "source/main.c",
+    "bytes": 185056,
+    "sha256": "d55cceb5c3ddf9cd6fac5a0510eaa0dd909e2b8c032f511d847f8bfaa79cefe6"
+  },
+  {
+    "path": "source/map_tiles.c",
+    "bytes": 35573,
+    "sha256": "d5940f0aff1b5f0545db6b868ea2e69787a642e7faabefa1a261f4e195def7ea"
+  },
+  {
+    "path": "source/network.c",
+    "bytes": 37418,
+    "sha256": "73d68366ad4dcb9284eec12b31aba9f187b5ce79d69a64bbbd685c34900018fe"
+  },
+  {
+    "path": "source/pano_detail.c",
+    "bytes": 1221,
+    "sha256": "13b2de69981f8308ce83028fc340251a9222b20963465df1d2e123d450a1d341"
+  },
+  {
+    "path": "source/pano_gyro.c",
+    "bytes": 3433,
+    "sha256": "2a7501c615252e722e1746956313eac79c365165cd652035f776292703007fd4"
+  },
+  {
+    "path": "source/pano_motion.c",
+    "bytes": 1908,
+    "sha256": "d248ba9148edb4e999716bf511281fe61c1ed98a98be71c701d55f913ee502c2"
+  },
+  {
+    "path": "source/pano_runtime.c",
+    "bytes": 41185,
+    "sha256": "9ba4776136b4685911b48cf23b163711acc9c19e4a5bab666d12751afb9263d0"
+  },
+  {
+    "path": "source/panorama_live.c",
+    "bytes": 9072,
+    "sha256": "b4e7ea364cd1e5801f25f081723bcaffbfba1eecdf8a0afd417eb4142200d23e"
+  },
+  {
+    "path": "source/qrcode.c",
+    "bytes": 12767,
+    "sha256": "eba72db3dba29cfcba0377fcc44fd7682ff7a84caa404a0f53067dddfa5fa48f"
+  },
+  {
+    "path": "source/region.c",
+    "bytes": 8137,
+    "sha256": "df9d488e28e2d62c0d32215a246fd5502031390af72ac2361b726a74ab755fa9"
+  },
+  {
+    "path": "source/route_follow.c",
+    "bytes": 3963,
+    "sha256": "3eef8d23a9c018680138d44ce89cd175f71344451a09c1f46a0585819b7e30ce"
+  },
+  {
+    "path": "source/simple_png.c",
+    "bytes": 5393,
+    "sha256": "a27afb64bdff759a5411dcdb45f7dcfa703e775f5d9f6648e36faece3bd4ffa2"
+  },
+  {
+    "path": "source/stb_image.c",
+    "bytes": 85,
+    "sha256": "fcba6e0dffa85d61e2872da1a25dc6f0d405e92613c67851a8583d7dcb85488e"
+  },
+  {
+    "path": "source/street_fly_logic.c",
+    "bytes": 715,
+    "sha256": "3efc92f1baca37c96184a19ddf73f07edc4595796cee92b7c88eeec5beb6e4af"
+  },
+  {
+    "path": "source/street_heading.c",
+    "bytes": 340,
+    "sha256": "0f2636f396c17c9aa31752a13778449df17906ccaeec5200d74a46f7dd96affa"
+  },
+  {
+    "path": "source/street_image.c",
+    "bytes": 716,
+    "sha256": "9ce2b69d3b4f74142f193dcbcfab929fdca7064870ddb59481ff97456743369d"
+  },
+  {
+    "path": "source/street_look_input.c",
+    "bytes": 951,
+    "sha256": "d72d1450bad6b4f421e7c82dde09cbb092694b1f9d3e8ae86a25ae24a212bcc0"
+  },
+  {
+    "path": "source/street_nav.c",
+    "bytes": 2988,
+    "sha256": "451f2fc3071c0909a55a9ab8edf1a82ec2875484b0a544b425cc702cc043d511"
+  },
+  {
+    "path": "source/street_recent.c",
+    "bytes": 1769,
+    "sha256": "e7dd672d23ca938841332be6f54af5de2bcf7304f629edad1b9872b980dce2b4"
+  },
+  {
+    "path": "source/street_sources.c",
+    "bytes": 20456,
+    "sha256": "2d52487936be72b44305257ee9c2f07f0f47ed3d4234422ceb4e3a8574c6aec8"
+  },
+  {
+    "path": "source/terrain_math.c",
+    "bytes": 2016,
+    "sha256": "02ac8c35460a88664425989ab2f08c1cf1d3a2dd6af5202a9997b1ab42998f22"
+  },
+  {
+    "path": "source/terrain_runtime.c",
+    "bytes": 5106,
+    "sha256": "d3c66af4b313220b7569ae055e43190a043c433ff78682314a42591d40b5282a"
+  },
+  {
+    "path": "source/tilepack.c",
+    "bytes": 6014,
+    "sha256": "cf734102027ab52a9d60daf770337eb6b04fe5551e79b2fffc469364c0424df6"
+  },
+  {
+    "path": "source/ui_accessibility.c",
+    "bytes": 1416,
+    "sha256": "c9c120fe6b991904937ccb7ef35e9151a60c2fa84bf5f17c927e4a2888242cfb"
+  }
+]

@@ -26,4 +26,10 @@ void hidScanInput(void);u32 hidKeysDown(void);u32 hidKeysHeld(void);
 void hidTouchRead(touchPosition*);void hidCircleRead(circlePosition*);void hidGyroRead(angularRate*);void hidAccelRead(accelVector*);
 int HIDUSER_DisableGyroscope(void);int HIDUSER_EnableGyroscope(void);int HIDUSER_GetGyroscopeRawToDpsCoefficient(float*);
 int HIDUSER_EnableAccelerometer(void);int HIDUSER_DisableAccelerometer(void);
+typedef struct {int unused;} SwkbdState;
+#define SWKBD_TYPE_NORMAL 0
+#define SWKBD_BUTTON_CONFIRM 1
+void swkbdInit(SwkbdState *,int,int,int);
+void swkbdSetHintText(SwkbdState *,const char *);
+int swkbdInputText(SwkbdState *,char *,size_t);
 #endif

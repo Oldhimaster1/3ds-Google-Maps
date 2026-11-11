@@ -8,6 +8,7 @@ import numpy as np
 import cv2
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 URLS=[
+    "https://192.168.100.100:8443/#0123456789abcdef0123456789abcdef",
     "https://192.168.1.118:8443",
     "https://10.0.0.5:8443",
     "https://172.20.10.2:8443",

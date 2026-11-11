@@ -1,6 +1,7 @@
 #include "input_remap.h"
 #include <3ds.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <string.h>
 /* Keep START as an untouchable hardware escape; touch and analog are unmodified.
  * Within each context, the 11 mapped digital keys form a bijection. */
@@ -83,6 +84,9 @@ bool input_remap_load(InputRemap *m,const char *path){
    if(!ok||fscanf(f,"%u",&v)!=1||v>=INPUT_REMAP_BUTTONS){ok=false;break;}
    next.physical[p][i]=(uint8_t)v;
   }
+ int extra;
+ while((extra=fgetc(f))!=EOF)if(!isspace((unsigned char)extra))ok=false;
+ if(ferror(f))ok=false;
  fclose(f);
  if(!ok||!input_remap_valid(&next))return false;
  *m=next;return true;
@@ -102,4 +106,26 @@ bool input_remap_save(const InputRemap *m,const char *path){
  if(fclose(f)!=0)ok=false;
  if(!ok||rename(temp,path)!=0){remove(temp);return false;}
  return true;
+}
+
+void input_remap_hint(unsigned profile,const char *text,char *out,size_t capacity){
+ if(!out||capacity==0)return;
+ size_t used=0;
+ if(!text){out[0]=0;return;}
+ while(*text&&used+1<capacity){
+  const char *replacement=NULL;size_t consumed=1;
+  bool left=text[0] && (used==0 || text[-1]==' ' || text[-1]=='/' || text[-1]=='+' || text[-1]=='[');
+  if(left && active_map && profile<INPUT_REMAP_PROFILES && input_remap_valid(active_map)){
+   for(unsigned i=0;i<INPUT_REMAP_BUTTONS;i++){
+    size_t n=strlen(names[i]);
+    if(!strncmp(text,names[i],n) && (!text[n] || text[n]==' ' || text[n]=='/' || text[n]=='+' || text[n]==':' || text[n]==']')){
+     replacement=names[active_map->physical[profile][i]];consumed=n;break;
+    }
+   }
+  }
+  if(replacement){size_t n=strlen(replacement);if(n>=capacity-used)break;memcpy(out+used,replacement,n);used+=n;}
+  else out[used++]=*text;
+  text+=consumed;
+ }
+ out[used]=0;
 }

@@ -5,6 +5,8 @@
 
 /* HTTP / image decode run on a worker; GPU swap runs in poll on the UI thread. */
 bool pano_runtime_start(double lat, double lon);
+/* Exact licensed dataset item; no coordinate search or provider substitution. */
+bool pano_runtime_start_curated(const char *id,const char *metadata_url);
 /* Google-only game lookup; never modifies normal user provider preference. */
 bool pano_runtime_start_game_google(double lat,double lon);
 void pano_runtime_end_game_google(void);

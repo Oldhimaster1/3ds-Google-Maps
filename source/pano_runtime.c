@@ -23,7 +23,7 @@
 #define PANO_COVER_PATH "sdmc:/3ds_google_maps/street_coverage.cfg"
 #define PANO_TOKEN_PATH "sdmc:/3ds_google_maps/mapillary.token"
 
-typedef enum { JOB_NONE, JOB_SEARCH, JOB_NEXT, JOB_UPGRADE } Job;
+typedef enum { JOB_NONE, JOB_SEARCH, JOB_NEXT, JOB_UPGRADE, JOB_CURATED } Job;
 typedef enum { OK, NO_COVERAGE, NETWORK_ERROR, INVALID_IMAGE,
                OUT_OF_MEMORY, TOKEN_MISSING, ACCESS_DENIED, RATE_LIMITED, NO_LINK } PanoResult;
 
@@ -31,6 +31,7 @@ static struct {
     Thread thread;
     atomic_bool cancelled, done;
     Job job;
+    char curated_id[48],curated_url[256];
     PanoResult outcome;
     bool initialized, live, has_preview, upgrade_pending;
     bool coverage_enabled;
@@ -190,8 +191,8 @@ static bool query_source(void *handle, StreetProvider provider,
     /* Search requests are latency-sensitive and must never block the UI. */
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, provider==STREET_PROVIDER_KARTAVIEW ? 9L : 6L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, (long)CURLPROTO_HTTPS);
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)CURLPROTO_HTTPS);
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     if (provider==STREET_PROVIDER_MAPILLARY) {
         /* Never send a token over an unverified TLS connection, and don't
          * automatically follow a redirect containing the token. */
@@ -204,10 +205,9 @@ static bool query_source(void *handle, StreetProvider provider,
             curl_easy_setopt(curl, CURLOPT_CAINFO, "sdmc:/3ds_google_maps/cacert.pem");
         }
     } else {
-        /* Existing unauthenticated public-image fallback. A production
-         * release must migrate all requests to verified certificates. */
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        /* Every provider uses the bundled CA store and hostname validation. */
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     }
     u8 *response=NULL;
@@ -531,8 +531,8 @@ static void worker(void *unused) {
     if(!curl)goto end;
     curl_easy_setopt((CURL*)curl, CURLOPT_TIMEOUT, 6L);
     curl_easy_setopt((CURL*)curl, CURLOPT_CONNECTTIMEOUT, 3L);
-    curl_easy_setopt((CURL*)curl, CURLOPT_PROTOCOLS, (long)CURLPROTO_HTTPS);
-    curl_easy_setopt((CURL*)curl, CURLOPT_REDIR_PROTOCOLS, (long)CURLPROTO_HTTPS);
+    curl_easy_setopt((CURL*)curl, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt((CURL*)curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     if (state.job==JOB_SEARCH) {
         char token[256]={0};
         StreetProvider selected=state.game_google_override ? STREET_PROVIDER_GOOGLE : state.pref;
@@ -640,6 +640,14 @@ static void worker(void *unused) {
                 p.provider==STREET_PROVIDER_PANORAMAX)
                 decode_candidate(curl,&p,false);
         }
+    } else if (state.job==JOB_CURATED) {
+        u8 *data=NULL;u32 size=0;PanoLiveImage p={0};
+        if(get(curl,state.curated_url,PANO_JSON_MAX,&data,&size) &&
+           pano_parse_image((const char *)data,size,&p) && p.is_pano &&
+           !strcmp(p.id,state.curated_id)) {
+            if(!decode_candidate(curl,&p,true))decode_candidate(curl,&p,false);
+        }
+        free(data);
     } else if (state.job==JOB_UPGRADE) {
         state.outcome=NETWORK_ERROR;
         if (state.selected.provider==STREET_PROVIDER_GOOGLE)
@@ -688,6 +696,18 @@ bool pano_runtime_start(double lat,double lon) {
     if (launch(JOB_SEARCH))return true;
     snprintf(state.status,sizeof(state.status),"Could not start street image search");
     return false;
+}
+bool pano_runtime_start_curated(const char *id,const char *metadata_url) {
+    initialize();
+    if(!id||strlen(id)!=36||!metadata_url||
+       strncmp(metadata_url,"https://api.panoramax.xyz/api/collections/",sizeof("https://api.panoramax.xyz/api/collections/")-1)||
+       strlen(metadata_url)>=sizeof(state.curated_url))return false;
+    pano_runtime_stop();
+    if(!is_connected())return false;
+    snprintf(state.curated_id,sizeof(state.curated_id),"%s",id);
+    snprintf(state.curated_url,sizeof(state.curated_url),"%s",metadata_url);
+    snprintf(state.status,sizeof(state.status),"Loading exact challenge panorama...");
+    return launch(JOB_CURATED);
 }
 /* Game-only Google search. Does not write the user's provider.cfg or alter
  * normal Street View preferences. Every new round starts a fresh session. */

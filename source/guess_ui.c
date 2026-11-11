@@ -1,5 +1,7 @@
 #include "guess_ui.h"
 #include "guess_core.h"
+#include "guess_challenge.h"
+#include <time.h>
 #include "guess_roads.h"
 #include "guess_replay.h"
 #include "street_heading.h"
@@ -19,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #define PI 3.14159265358979323846f
 #define GUESS_SAVES "sdmc:/3ds_google_maps/streetguess_records.txt"
@@ -44,9 +47,61 @@ typedef struct {
     uint64_t road_rng;
     unsigned best[GUESS_MAP_COUNT][GUESS_RULE_COUNT], games;
     C2D_TextBuf text;
-    bool record_screen;
+    bool record_screen, challenge_menu, handoff, history_screen;
+    unsigned mode, difficulty, players, player;
+    unsigned player_scores[4];
+    GuessChallenge challenge;
+    char challenge_code[40];
+    uint32_t challenge_day;
+    unsigned daily_best, weekly_total, weekly_best, streak;
+    char daily_history[7][48];
+
 } GuessUi;
 static GuessUi ui;
+static const char *modes[]={"Classic random", "Daily challenge", "Friend challenge", "Pass and play", "Surprise me", "City expedition", "Country streak"};
+#define DAILY_FILE "sdmc:/3ds_google_maps/streetguess_daily_v1.dat"
+static void challenge_records(bool save){
+    uint32_t days[180]={0};unsigned levels[180]={0},scores[180]={0},count=0;
+    FILE *f=fopen(DAILY_FILE,"r");
+    if(f){unsigned version=0;if(fscanf(f,"SGD %u",&version)==1&&version==1){
+        unsigned long day;unsigned level,score;
+        while(count<180&&fscanf(f,"%lu %u %u",&day,&level,&score)==3){
+            if(day>UINT32_MAX||level>2||score>25000){count=0;break;}
+            days[count]=(uint32_t)day;levels[count]=level;scores[count++]=score;
+        }
+    }fclose(f);}
+    if(save){
+        unsigned i=0;for(;i<count;i++)if(days[i]==ui.challenge_day&&levels[i]==ui.difficulty)break;
+        if(i==count){if(count==180){memmove(days,days+1,179*sizeof(*days));memmove(levels,levels+1,179*sizeof(*levels));memmove(scores,scores+1,179*sizeof(*scores));count=179;}i=count++;days[i]=ui.challenge_day;levels[i]=ui.difficulty;scores[i]=0;}
+        if(ui.game.total>scores[i])scores[i]=ui.game.total;
+        f=fopen(DAILY_FILE ".tmp","w");
+        if(f){bool ok=fprintf(f,"SGD 1\n")>0;
+            for(unsigned j=0;j<count;j++)if(fprintf(f,"%lu %u %u\n",(unsigned long)days[j],levels[j],scores[j])<=0)ok=false;
+            if(fclose(f)!=0)ok=false;
+            if(ok)rename(DAILY_FILE ".tmp",DAILY_FILE);else remove(DAILY_FILE ".tmp");
+        }
+    }
+    ui.daily_best=ui.weekly_total=ui.weekly_best=ui.streak=0;
+    for(unsigned back=0;back<7;back++){
+        uint32_t target=ui.challenge_day>=back?ui.challenge_day-back:0;unsigned best=0;bool played=false;
+        for(unsigned i=0;i<count;i++)if(days[i]==target&&levels[i]==ui.difficulty){played=true;if(scores[i]>best)best=scores[i];}
+        time_t stamp=(time_t)((uint64_t)target*86400u);struct tm *date=gmtime(&stamp);
+        if(date)snprintf(ui.daily_history[back],48,"%04d-%02d-%02d  %s%u",date->tm_year+1900,date->tm_mon+1,date->tm_mday,played?"":"unplayed / ",best);
+    }
+    for(unsigned i=0;i<count;i++)if(levels[i]==ui.difficulty){unsigned total=0;
+        for(unsigned j=0;j<count;j++)if(levels[j]==ui.difficulty&&(days[j]+3)/7==(days[i]+3)/7)total+=scores[j];
+        if(total>ui.weekly_best)ui.weekly_best=total;
+    }
+    for(unsigned i=0;i<count;i++)if(levels[i]==ui.difficulty){
+        if(days[i]==ui.challenge_day)ui.daily_best=scores[i];
+        if((days[i]+3)/7==(ui.challenge_day+3)/7)ui.weekly_total+=scores[i];
+    }
+    uint32_t day=ui.challenge_day;
+    for(unsigned step=0;step<60&&day>0;step++,day--){bool found=false;
+        for(unsigned i=0;i<count;i++)if(days[i]==day&&levels[i]==ui.difficulty)found=true;
+        if(!found){if(step==0)continue;break;}ui.streak++;
+    }
+}
 static const unsigned times[]={0,30,60,120,180,300};
 static const char *region_names[]={"World","United States","Europe"};
 static const char *rule_names[]={"Moving","No Move","NMPZ"};
@@ -69,11 +124,14 @@ static void print(float x,float y,float scale,u32 color,const char *s) {
         C2D_DrawText(&t,C2D_WithColor,x+(cfg->weight==2?.7f:.35f),y,.991f,
                      scale,scale,color);
 }
+static void print_hint(float x,float y,float scale,u32 color,const char *s){
+ char hint[256];input_remap_hint(REMAP_GUESS,s,hint,sizeof(hint));print(x,y,scale,color,hint);
+}
 static void card(float y,const char *heading,const char *detail){
     C2D_DrawRectSolid(10,y,.25f,300,35,C2D_Color32(25,40,58,255));
     C2D_DrawRectSolid(10,y,.26f,3,35,C2D_Color32(80,202,227,255));
     print(19,y+3,.48f,C2D_Color32(242,247,253,255),heading);
-    if(detail)print(19,y+19,.36f,C2D_Color32(209,232,247,255),detail);
+    if(detail)print_hint(19,y+19,.36f,C2D_Color32(209,232,247,255),detail);
 }
 static void load_records(void){
     FILE *f=fopen(GUESS_SAVES,"r");
@@ -126,6 +184,7 @@ bool guess_ui_enter(void){
     if(ui.active)return true;
     memset(&ui,0,sizeof(ui));
     guess_init(&ui.game,(u64)svcGetSystemTick()^((u64)osGetTime()<<23));
+    ui.players=2;
     ui.time_choice=3;
     ui.fov=55;
     ui.text=C2D_TextBufNew(4096);
@@ -160,7 +219,26 @@ static void reset_guess_map(void){
 static void new_game(void){
     drop_scene();
     ui.game.sampler=ui.options.sampler;
-    guess_begin(&ui.game,ui.game.region,ui.game.rules,times[ui.time_choice]);
+    if(ui.mode){
+        if(!ui.challenge_code[0] || ui.mode==1 || ui.mode==4 || ui.mode==5 || ui.mode==6){
+            uint32_t seed=ui.mode==1?guess_challenge_day((int64_t)time(NULL)):
+                (uint32_t)ui.game.rng^(uint32_t)svcGetSystemTick()^(uint32_t)osGetTime();
+            if(ui.mode!=1)ui.game.rng+=UINT64_C(0x9e3779b97f4a7c15);
+            if(ui.mode==5)seed=0x45585031u; /* fixed discovery expedition v1 */
+            ui.challenge_day=guess_challenge_day((int64_t)time(NULL));
+            if(!guess_challenge_make(&ui.challenge,seed,ui.difficulty)){
+                snprintf(ui.note,sizeof(ui.note),"Challenge dataset unavailable");guess_error(&ui.game);return;
+            }
+            guess_challenge_code(&ui.challenge,ui.challenge_code,sizeof(ui.challenge_code));
+        }
+        ui.difficulty=ui.challenge.difficulty;
+        GuessRules rules=ui.difficulty==2?GUESS_NMPZ:GUESS_NO_MOVE;
+        guess_begin(&ui.game,GUESS_WORLD,rules,ui.difficulty==0||ui.mode==6?0:ui.difficulty==1?120:60);
+        /* Exact daily/friend rounds deliberately replay the same locations.
+         * The random game's history persists across ordinary games only. */
+        ui.game.history_size=ui.game.history_pos=0;
+        challenge_records(false);
+    }else guess_begin(&ui.game,ui.game.region,ui.game.rules,times[ui.time_choice]);
     reset_guess_map();
     ui.yaw=0;ui.pitch=0;ui.fov=55;
     ui.start_id[0]=0;
@@ -191,6 +269,14 @@ static void find_round(u64 now){
     if(!ui.scene_loaded||ui.game.phase!=GUESS_FINDING)return;
     if(!ui.fetching){
         if(now<ui.next_search_ms)return;
+        if(ui.mode){
+            const GuessLocation *location=&guess_locations[ui.challenge.location[ui.game.round]];
+            ui.candidate=(GuessPoint){location->lat,location->lon};
+            if(!pano_runtime_start_curated(location->id,location->metadata_url)){
+                snprintf(ui.note,sizeof(ui.note),"Exact challenge image unavailable; retry");guess_error(&ui.game);return;
+            }
+            ui.fetching=true;
+        }else{
         if(!guess_random_candidate(&ui.game,&ui.candidate)){
             snprintf(ui.note,sizeof(ui.note),"No playable Google panorama found. Retry or exit.");
             guess_error(&ui.game);return;
@@ -217,6 +303,7 @@ static void find_round(u64 now){
             guess_error(&ui.game);return;
         }
         ui.fetching=true;
+        }
     }
     pano_runtime_poll();
     if(pano_runtime_has_live()){
@@ -224,9 +311,12 @@ static void find_round(u64 now){
         GuessPoint actual={p->lat,p->lon};
         /* Avoid surprising cross-region images when a request snaps to a road
          * far from the sampled point. The true panorama position is scored. */
-        bool good=p->provider==STREET_PROVIDER_GOOGLE&&p->is_pano&&
+        bool identity=ui.mode ? p->provider==STREET_PROVIDER_PANORAMAX &&
+            !strcmp(p->id,guess_locations[ui.challenge.location[ui.game.round]].id) :
+            p->provider==STREET_PROVIDER_GOOGLE;
+        bool good=identity&&p->is_pano&&
                   guess_distance_km(ui.candidate,actual)<40.0&&
-                  guess_replay_can_play(&ui.replay,actual.lat,actual.lon,1)&&
+                  (ui.mode||guess_replay_can_play(&ui.replay,actual.lat,actual.lon,1))&&
                   guess_accept_start(&ui.game,actual,now);
         if(good){
             guess_replay_add(&ui.replay,actual.lat,actual.lon);
@@ -242,12 +332,16 @@ static void find_round(u64 now){
         }
         pano_runtime_stop();
         ui.fetching=false;
+        if(ui.mode){snprintf(ui.note,sizeof(ui.note),"Challenge image identity changed; retry");guess_error(&ui.game);return;}
         ui.next_search_ms=now+150;
     }else if(!pano_runtime_network_active()){
         const char *reason=pano_runtime_status();
         if(strstr(reason,"rate limited")||strstr(reason,"denied access")){
             snprintf(ui.note,sizeof(ui.note),"Google declined requests; try again later");
             guess_error(&ui.game);
+        }else if(ui.mode){
+            snprintf(ui.note,sizeof(ui.note),"Exact image unavailable; no round lost");
+            guess_error(&ui.game);ui.fetching=false;
         }else{
             ui.fetching=false;
             ui.next_search_ms=now+180;
@@ -272,6 +366,11 @@ static void result_center(void){
     if(ui.map_zoom>14)ui.map_zoom=14;
 }
 static void completed(void){
+    if(ui.mode){
+        ui.player_scores[ui.player]=ui.game.total;
+        if(ui.mode==1)challenge_records(true);
+        return;
+    }
     ui.games++;
     unsigned *best=&ui.best[ui.game.region][ui.game.rules];
     if(ui.game.total>*best)*best=ui.game.total;
@@ -279,6 +378,26 @@ static void completed(void){
 }
 static void handle_menu(u32 keys,touchPosition touch){
     if(keys&KEY_B){guess_ui_leave();return;}
+    if(keys&KEY_SELECT){if(ui.history_screen){ui.history_screen=false;return;}ui.challenge_menu=!ui.challenge_menu;return;}
+    if(ui.challenge_menu){
+        int row=(keys&KEY_TOUCH)?(touch.py-40)/40:-1;
+        if(keys&KEY_X || row==0){ui.mode=(ui.mode+1)%7;ui.challenge_code[0]=0;}
+        else if(keys&KEY_Y || row==1){ui.difficulty=(ui.difficulty+1)%3;ui.challenge_code[0]=0;}
+        else if(row==2)ui.players=2+(ui.players-1)%3;
+        else if(row==3){
+            SwkbdState keyboard;char code[40]={0};
+            swkbdInit(&keyboard,SWKBD_TYPE_NORMAL,2,39);
+            swkbdSetHintText(&keyboard,"SG1 challenge code (uppercase)");
+            if(swkbdInputText(&keyboard,code,sizeof(code))==SWKBD_BUTTON_CONFIRM){
+                if(guess_challenge_parse(&ui.challenge,code)){
+                    strcpy(ui.challenge_code,code);ui.mode=2;ui.difficulty=ui.challenge.difficulty;
+                    snprintf(ui.note,sizeof(ui.note),"Friend code accepted");
+                }else snprintf(ui.note,sizeof(ui.note),"Invalid code or different dataset");
+            }
+        }else if(row==4){ui.challenge_day=guess_challenge_day((int64_t)time(NULL));challenge_records(false);ui.history_screen=!ui.history_screen;}
+        if(keys&KEY_A){ui.player=0;memset(ui.player_scores,0,sizeof(ui.player_scores));new_game();}
+        return;
+    }
     if(keys&KEY_Y){ui.tutorial_open=!ui.tutorial_open;return;}
     if(keys&KEY_A){ui.record_screen=false;new_game();return;}
     if(!(keys&KEY_TOUCH))return;
@@ -314,6 +433,24 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
         return;
     }
     if(keys&KEY_B && ui.map_focused){ui.map_focused=false;return;}
+    if(ui.mode==6 && (keys&KEY_TOUCH) && touch.py>=199)keys|=KEY_A;
+    if(keys&KEY_A && ui.mode==6){
+        SwkbdState keyboard;char answer[24]={0};
+        swkbdInit(&keyboard,SWKBD_TYPE_NORMAL,2,23);
+        swkbdSetHintText(&keyboard,"Country: FR / France or US / USA");
+        if(swkbdInputText(&keyboard,answer,sizeof(answer))==SWKBD_BUTTON_CONFIRM){
+            bool french=!strcasecmp(answer,"FR")||!strcasecmp(answer,"France");
+            bool usa=!strcasecmp(answer,"US")||!strcasecmp(answer,"USA")||!strcasecmp(answer,"United States");
+            if(!french&&!usa){snprintf(ui.note,sizeof(ui.note),"Use FR or US for this starter dataset");return;}
+            const GuessLocation *location=&guess_locations[ui.challenge.location[ui.game.round]];
+            bool correct=!strcmp(location->country,french?"FR":"US");
+            unsigned previous=ui.game.total;
+            guess_set_pin(&ui.game,ui.game.start);guess_submit(&ui.game);
+            ui.game.score[ui.game.round]=correct?1:0;ui.game.total=previous+(correct?1:0);
+            result_center();
+        }
+        return;
+    }
     if(keys&KEY_A){
         if(!ui.map_focused){
             ui.map_focused=true;
@@ -324,8 +461,8 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
     }
     if(keys&KEY_X&&ui.map_zoom<17)ui.map_zoom++;
     if(keys&KEY_Y&&ui.map_zoom>0)ui.map_zoom--;
-    handle_map_touch(keys,held,touch);
-    if(keys&KEY_TOUCH&&touch.py>=199){
+    if(ui.mode!=6)handle_map_touch(keys,held,touch);
+    if(ui.mode!=6 && (keys&KEY_TOUCH)&&touch.py>=199){
         if(touch.px>=175){
             ui.map_focused=true;
             if(ui.game.has_pin){guess_submit(&ui.game);result_center();}
@@ -389,7 +526,9 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
         snprintf(ui.last_view_id,sizeof(ui.last_view_id),"%s",after->id);
         ui.last_azimuth=after->azimuth;
     }
-    guess_tick(&ui.game,now);
+    /* Provider latency must not consume a player's timed round. */
+    if(pano_runtime_network_active())ui.game.last_tick=now;
+    else guess_tick(&ui.game,now);
     if(ui.game.phase==GUESS_RESULT){ui.map_focused=false;result_center();}
     ui.last_ms=now;
 }
@@ -400,6 +539,7 @@ void guess_ui_update(void){
     u32 held=input_remap_apply(REMAP_GUESS,hidKeysHeld());
     touchPosition touch={0};hidTouchRead(&touch);
     u64 now=osGetTime();
+    if(ui.handoff){if(keys&KEY_A){ui.handoff=false;new_game();}else if(keys&KEY_B){ui.handoff=false;ui.game.phase=GUESS_MENU;}return;}
     switch(ui.game.phase){
       case GUESS_MENU:handle_menu(keys,touch);break;
       case GUESS_FINDING:
@@ -409,6 +549,7 @@ void guess_ui_update(void){
       case GUESS_PLAYING:handle_play(keys,held,touch,now);break;
       case GUESS_RESULT:
         if(keys&KEY_A||((keys&KEY_TOUCH)&&touch.py>196)){
+            if(ui.mode==6 && ui.game.score[ui.game.round]==0){ui.game.phase=GUESS_COMPLETE;drop_scene();completed();break;}
             if(guess_advance(&ui.game)){
                 if(ui.game.phase==GUESS_COMPLETE){drop_scene();completed();}
                 else reset_round_scene();
@@ -416,7 +557,10 @@ void guess_ui_update(void){
         }else if(keys&KEY_B){drop_scene();ui.game.phase=GUESS_MENU;}
         break;
       case GUESS_COMPLETE:
-        if(keys&KEY_A) new_game();
+        if(keys&KEY_A){
+            if(ui.mode==3 && ui.player+1<ui.players){ui.player++;ui.handoff=true;ui.game.phase=GUESS_MENU;}
+            else{ui.player=0;new_game();}
+        }
         else if(keys&KEY_B)ui.game.phase=GUESS_MENU;
         break;
       case GUESS_PAUSED:
@@ -446,7 +590,7 @@ static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
     if(!result){
         C2D_DrawRectSolid(0,0,.82f,320,27,C2D_Color32(10,23,39,224));
         print(10,5,.40f,C2D_Color32(248,253,255,255),
-              ui.game.has_pin?"PIN SET - PRESS A OR GUESS":"TAP MAP TO PLACE YOUR PIN");
+              ui.mode==6?"A: NAME THE COUNTRY (FR OR US)":ui.game.has_pin?"PIN SET - PRESS A OR GUESS":"TAP MAP TO PLACE YOUR PIN");
     }
     if(ui.game.has_pin){
         float x,y;guess_map_project(ui.map_center,ui.game.pin,ui.map_zoom,320,GUESS_MAP_HEIGHT,&x,&y);
@@ -465,18 +609,19 @@ static void draw_guess_map(C3D_RenderTarget *bottom,bool result){
         C2D_DrawCircleSolid(x,y,1,4,C2D_Color32(238,67,79,255));
     }
     C2D_DrawRectSolid(0,194,.70f,320,46,C2D_Color32(15,30,46,255));
-    print(12,199,.38f,C2D_Color32(226,242,252,255),
+    print_hint(12,199,.38f,C2D_Color32(226,242,252,255),
           ui.map_focused?"B close map   X/Y zoom":"A focus map   X/Y zoom");
     if(!result&&ui.game.rules==GUESS_MOVING&&ui.start_id[0])
         print(12,220,.35f,C2D_Color32(120,228,245,255),"RETURN TO START");
     if(result){
         char line[96];
-        snprintf(line,sizeof(line),"%.1f km  +%u pts",ui.game.distances_km[ui.game.round],ui.game.score[ui.game.round]);
+        if(ui.mode==6)snprintf(line,sizeof(line),"Country: %s | streak %u",guess_locations[ui.challenge.location[ui.game.round]].country,ui.game.total);
+        else snprintf(line,sizeof(line),"%.1f km  +%u pts",ui.game.distances_km[ui.game.round],ui.game.score[ui.game.round]);
         print(12,219,.43f,C2D_Color32(236,247,251,255),line);
-        print(244,219,.39f,C2D_Color32(95,226,174,255),"NEXT A");
+        print_hint(244,219,.39f,C2D_Color32(95,226,174,255),"NEXT A");
     }else{
         C2D_DrawRectSolid(194,218,.82f,115,20,C2D_Color32(ui.game.has_pin?31:57,ui.game.has_pin?135:71,ui.game.has_pin?86:82,255));
-        print(207,220,.40f,C2D_Color32(255,255,255,255),
+        print_hint(207,220,.40f,C2D_Color32(255,255,255,255),
               ui.game.has_pin?"GUESS / A":"TAP TO PIN");
     }
 }
@@ -503,8 +648,12 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
                      C2D_Color32(240,111,105,255),3,1);
         print(367,62,.27f,C2D_Color32(227,245,252,255),"N");
         const PanoLiveImage *credit=pano_runtime_current();
-        print(11,224,.29f,fg,
-              credit&&credit->credit[0]?credit->credit:"Imagery: Google Street View");
+        char attribution[160];
+        snprintf(attribution,sizeof(attribution),"%s | %s",credit&&credit->credit[0]?credit->credit:"Imagery provider",
+                 credit?credit->license:"");
+        print(11,224,.27f,fg,attribution);
+        if(ui.mode && ui.difficulty==0 && ui.game.phase==GUESS_PLAYING)
+            print(12,199,.30f,fg,guess_locations[ui.challenge.location[ui.game.round]].hint);
         if(ui.game.phase==GUESS_PLAYING&&ui.game.time_limit_ms){
             char time[25];unsigned left=(ui.game.remaining_ms+999)/1000;
             snprintf(time,sizeof(time),"%02u:%02u",left/60,left%60);
@@ -518,15 +667,16 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
         }
         if(ui.game.phase==GUESS_RESULT){
             C2D_DrawRectSolid(20,70,.94f,360,90,C2D_Color32(5,15,25,220));
-            char line[85];snprintf(line,sizeof(line),"+%u points",ui.game.score[ui.game.round]);
+            char line[85];snprintf(line,sizeof(line),ui.mode==6?"%u correct country":"+%u points",ui.game.score[ui.game.round]);
             print(95,87,.72f,C2D_Color32(96,224,170,255),line);
             snprintf(line,sizeof(line),"Actual: %.3f, %.3f",ui.game.start.lat,ui.game.start.lon);
             print(92,129,.35f,sub,line);
+            if(ui.mode)print(40,150,.35f,fg,guess_locations[ui.challenge.location[ui.game.round]].name);
         }
         if(ui.game.phase==GUESS_PAUSED){
             C2D_DrawRectSolid(30,60,.96f,340,120,C2D_Color32(6,17,29,240));
             print(135,81,.75f,fg,"PAUSED");
-            print(75,127,.43f,sub,"A resume   B quit to menu");
+            print_hint(75,127,.43f,sub,"A resume   B quit to menu");
         }
     }else{
         C2D_Prepare();C2D_TargetClear(top,C2D_Color32(12,24,40,255));
@@ -535,12 +685,12 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
         print(78,93,.44f,fg,"A geography game for 3DS");
         C2D_DrawLine(48,128,C2D_Color32(67,169,202,255),355,128,C2D_Color32(67,169,202,255),2,.6f);
         if(ui.game.phase==GUESS_FINDING){
-            char line[75];snprintf(line,sizeof(line),"Searching Google: %u/%u",ui.game.attempt,GUESS_MAX_CANDIDATE_TRIES);
+            char line[75];snprintf(line,sizeof(line),ui.mode?"Loading challenge round %u/%u":"Searching Google: %u/%u",ui.mode?ui.game.round+1:ui.game.attempt,ui.mode?GUESS_ROUNDS:GUESS_MAX_CANDIDATE_TRIES);
             print(92,159,.46f,fg,line);
         }else if(ui.game.phase==GUESS_ERROR){
             print(38,151,.38f,C2D_Color32(248,117,113,255),ui.note);
         }else if(ui.game.phase==GUESS_COMPLETE){
-            char line[80];snprintf(line,sizeof(line),"FINAL SCORE: %u / 25000",ui.game.total);
+            char line[80];snprintf(line,sizeof(line),"FINAL SCORE: %u / %u",ui.game.total,ui.mode==6?5u:25000u);
             print(79,155,.59f,C2D_Color32(120,245,183,255),line);
         }else if(ui.game.phase==GUESS_MENU && ui.tutorial_open){
             print(57,143,.48f,fg,"1. Look at mystery Street View");
@@ -564,6 +714,24 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
         char name[92];
         switch(ui.game.phase){
           case GUESS_MENU:
+            if(ui.handoff){
+                snprintf(name,sizeof(name),"PASS TO PLAYER %u",ui.player+1);
+                card(55,name,"A when ready. Other players look away.");break;
+            }
+            if(ui.challenge_menu && ui.history_screen){
+                print(16,8,.42f,fg,"UTC DAILY HISTORY | SELECT back");
+                for(unsigned i=0;i<7;i++)print(16,35+i*22,.38f,fg,ui.daily_history[i]);
+                snprintf(name,sizeof(name),"Week %u | Best week %u",ui.weekly_total,ui.weekly_best);
+                print(16,201,.38f,fg,name);break;
+            }
+            if(ui.challenge_menu){
+                snprintf(name,sizeof(name),"Mode: %s",modes[ui.mode]);card(40,name,"Tap / X change | A play | SELECT classic");
+                snprintf(name,sizeof(name),"Difficulty: %s",ui.difficulty==0?"Explorer (hints)":ui.difficulty==1?"Standard":"Expert NMPZ");card(80,name,"Tap / Y change. Codes include rules.");
+                snprintf(name,sizeof(name),"Players: %u",ui.players);card(120,name,"Tap: 2-4 players | Dataset: France + US");
+                card(160,"ENTER FRIEND CODE",ui.note[0]?ui.note:"Tap to enter an SG1 code");
+                snprintf(name,sizeof(name),"Today %u | Week %u | Streak %u",ui.daily_best,ui.weekly_total,ui.streak);
+                card(200,"UTC DAILY RECORDS",ui.history_screen?name:"Tap records. Console clock must be UTC.");break;
+            }
             card(40,"PLAY STREETGUESS","A to start  |  Y how to play");
             snprintf(name,sizeof(name),"Map: %s",region_names[ui.game.region]);
             card(83,name,"Tap to change region");
@@ -575,12 +743,12 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
             if(ui.record_screen){
                 snprintf(name,sizeof(name),"Games %u   Best %u",ui.games,ui.best[ui.game.region][ui.game.rules]);
                 card(203,"RECORDS",name);
-            }else card(203,"RECORDS","Tap to show personal best");
+            }else card(203,"RECORDS","Tap records | SELECT challenges");
             break;
           case GUESS_FINDING:
             snprintf(name,sizeof(name),"Round %u of %u",ui.game.round+1,GUESS_ROUNDS);
-            card(45,name,"Finding a playable Google panorama");
-            card(100,"Searching live imagery","No fixed list of panoramas");
+            card(45,name,ui.mode?"Loading exact licensed challenge image":"Finding a playable Google panorama");
+            card(100,ui.mode?"No substitutions":"Searching live imagery",ui.mode?"Missing image: retry, no score penalty":"No fixed list of panoramas");
             card(155,"Please remain connected","B cancels and returns to menu");
             break;
           case GUESS_ERROR:
@@ -592,7 +760,16 @@ void guess_ui_draw(C3D_RenderTarget *top,C3D_RenderTarget *bottom){
                 snprintf(name,sizeof(name),"Round %u: %u points",i+1,ui.game.score[i]);
                 print(18,29+i*32,.5f,fg,name);
             }
-            card(201,"A: Play again","B: Game menu");
+            if(ui.mode){
+                print(15,7,.29f,fg,ui.mode==6?"COUNTRY STREAK - STARTER DATASET":ui.challenge_code);
+                if(ui.mode==3){
+                    for(unsigned i=0;i<=ui.player;i++){
+                        snprintf(name,sizeof(name),"P%u: %u",i+1,ui.player_scores[i]);
+                        print(215,29+i*32,.40f,fg,name);
+                    }
+                }
+            }
+            card(201,ui.mode==3&&ui.player+1<ui.players?"A: Next player":"A: Play again","B: Game menu | Photograph score + code");
             break;
           default: break;
         }
