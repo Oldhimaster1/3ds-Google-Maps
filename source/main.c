@@ -142,6 +142,8 @@ static bool g_should_exit = false;
 static u64 g_last_interaction_ms = 0;
 static RecentPlace g_recents[MAX_RECENTS];
 static int g_recent_count = 0;
+/* Native keyboard resumes the last user-entered address instead of starting over. */
+static char g_last_address_query[128];
 static RecentPlace g_favorites[MAX_FAVORITES];
 static int g_favorite_count = 0;
 static char g_last_place_name[96] = {0};
@@ -2636,6 +2638,7 @@ static void build_search_url(char *url, size_t size, const char *encoded, bool n
 static const GeocodeResult *place_rows;
 static int place_count, place_selection;
 static bool place_identify;
+static bool place_allow_worldwide;
 
 static void render_place_panel(void) {
     u32 white = C2D_Color32(239, 247, 253, 255);
@@ -2662,7 +2665,10 @@ static void render_place_panel(void) {
         }
     }
     C2D_DrawRectSolid(0, 194, .2f, 320, 46, C2D_Color32(23, 32, 45, 255));
-    draw_ui_text(12, 205, .43f, .43f, dim, 0, place_identify ? "B  Back" : "Up/Down  Select     A  Choose     B  Cancel");
+    draw_ui_text(12, 205, .41f, .41f, dim, 0,
+        place_identify ? "B  Back" :
+        place_allow_worldwide ? "Tap/A  Go   X  Worldwide   B  Cancel" :
+                                "Tap/A  Go   B  Cancel");
 }
 
 static int show_places(const GeocodeResult *places, int count, bool identify) {
@@ -2679,6 +2685,17 @@ static int show_places(const GeocodeResult *places, int count, bool identify) {
         if (keys & KEY_START) g_should_exit = true;
         if (keys & (KEY_START | KEY_B)) break;
         if (!identify && (keys & KEY_A)) { result = place_selection; break; }
+        if (!identify && place_allow_worldwide && (keys & KEY_X)) {
+            result = -2; break;
+        }
+        if (!identify && (keys & KEY_TOUCH)) {
+            touchPosition touch; hidTouchRead(&touch);
+            int first=place_selection>2?place_selection-2:0;
+            if (touch.px>=9 && touch.px<311 && touch.py>=57 && touch.py<186) {
+                int index=first+(touch.py-57)/43;
+                if(index<count){place_selection=index;result=index;break;}
+            }
+        }
         if (keys & KEY_DUP && place_selection > 0) place_selection--;
         if (keys & KEY_DDOWN && place_selection + 1 < count) place_selection++;
         gps_update();
@@ -3720,8 +3737,10 @@ static void open_address_search(void) {
     char query[128] = {0};
     SwkbdState swkbd;
     swkbdInit(&swkbd, SWKBD_TYPE_NORMAL, 2, sizeof(query) - 1);
-    swkbdSetHintText(&swkbd, "Enter address");
+    swkbdSetHintText(&swkbd, "Place, address, ZIP or lat,lon");
     swkbdSetFeatures(&swkbd, SWKBD_PREDICTIVE_INPUT);
+    if (g_last_address_query[0])
+        swkbdSetInitialText(&swkbd,g_last_address_query);
 
     SwkbdButton btn = swkbdInputText(&swkbd, query, sizeof(query));
     if (btn != SWKBD_BUTTON_RIGHT) {
@@ -3730,10 +3749,19 @@ static void open_address_search(void) {
 
     if (g_should_exit) return;
 
-    if (query[0] == '\0') {
-        set_status_message("Empty search");
+    /* Keep the last query so changing one typo does not require retyping it. */
+    char *trimmed=query;
+    while (*trimmed==' '||*trimmed=='\t')trimmed++;
+    if (trimmed!=query)memmove(query,trimmed,strlen(trimmed)+1);
+    size_t trimmed_len=strlen(query);
+    while (trimmed_len && (query[trimmed_len-1]==' '||
+           query[trimmed_len-1]=='\t'||query[trimmed_len-1]=='\n'))
+        query[--trimmed_len]=0;
+    if (!query[0]) {
+        set_status_message("Type a place, address or coordinates");
         return;
     }
+    snprintf(g_last_address_query,sizeof(g_last_address_query),"%s",query);
 
     // Coordinate entry shortcut: "lat,lon" jumps instantly without geocoding.
     double in_lat = 0.0, in_lon = 0.0;
@@ -3759,48 +3787,38 @@ static void open_address_search(void) {
         return;
     }
 
+    /* One-step search: near-map bias first, X on results expands worldwide.
+     * Never send autocomplete or background queries to public Nominatim. */
     bool near = true;
-    if (!network_get_proxy_enabled()) {
-        begin_bottom_console_ui();
-        printf("Search area\n\nA  Prefer places near the map center\nX  Search everywhere\nB  Cancel\n");
-        bool chosen = false;
-        while (aptMainLoop()) {
-            hidScanInput();
-            u32 keys = hidKeysDown();
-            if (keys & KEY_START) g_should_exit = true;
-            if (keys & (KEY_START | KEY_B)) break;
-            if (keys & (KEY_A | KEY_X)) {
-                near = (keys & KEY_A) != 0;
-                chosen = true;
-                break;
-            }
-            gspWaitForVBlank();
-        }
-        end_bottom_console_ui(NULL);
-        if (!chosen) return;
-    }
-    char url[512];
-    build_search_url(url, sizeof(url), encoded, near);
-
-    u8* buf = NULL;
-    u32 size = 0;
-    if (!wait_for_request(url, "Searching places", &buf, &size)) {
-        if (buf) free(buf);
-        return;
-    }
-
     GeocodeResult results[5];
-    memset(results, 0, sizeof(results));
-    int count = parse_geocode_results_json((const char*)buf, size, results, 5);
-    free(buf);
-
-    if (count <= 0) {
-        set_status_message("No search results");
-        return;
-    }
-
-    int selected = count > 1 ? show_places(results, count, false) : 0;
-    if (selected < 0) {
+    int count=0,selected=-1;
+    do {
+        char url[512];
+        build_search_url(url,sizeof(url),encoded,near);
+        u8 *buf=NULL;
+        u32 size=0;
+        if (!wait_for_request(url, near?"Searching near map":"Searching worldwide",&buf,&size)) {
+            free(buf);
+            return;
+        }
+        memset(results,0,sizeof(results));
+        count=parse_geocode_results_json((const char*)buf,size,results,5);
+        free(buf);
+        if(count<=0){
+            set_status_message(near?"No results. Try a broader city or ZIP":"No results for this search");
+            return;
+        }
+        place_allow_worldwide=near&&!network_get_proxy_enabled();
+        selected=count>1 ? show_places(results,count,false) : 0;
+        place_allow_worldwide=false;
+        if(selected==-2 && near){
+            near=false;
+            /* A second request requires an explicit X press; don't query as
+             * the user types. Honor the public geocoder's 1 req/s limit. */
+            svcSleepThread(1100000000LL);
+        }
+    }while(selected==-2 && !near);
+    if(selected<0){
         set_status_message("Search cancelled");
         return;
     }
