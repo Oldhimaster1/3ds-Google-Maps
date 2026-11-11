@@ -2,8 +2,8 @@
 
 [Back to the project README](../README.md)
 
-Open **R → Explore** to browse the world globe, stereoscopic Grand Canyon
-terrain, or live Street View near the current map center. See [Explore controls and data credits](explore.md).
+Open **R → Explore** for the world globe, selected-location 3D terrain,
+nearby buildings, Street View Explorer and StreetGuess. See [Explore controls and data credits](explore.md).
 
 ## Map and settings
 
