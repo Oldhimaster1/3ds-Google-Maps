@@ -1,63 +1,44 @@
-# RC3 promotional media — review draft
+# RC3 promotional media and capture evidence
 
-## Current edit
+The current README uses a fast-paced **9.4-second hero GIF**, **20.3-second teaser**, and **32-second showcase**, plus genuine screenshots and separately linked gameplay captures.
 
-- **Hero:** roughly 9 seconds, five shots, looping. Globe rotation, a closer Manhattan map view, StreetGuess pass-and-play menu, map zoom and globe movement.
-- **Teaser:** 20.3 seconds, ten shots. Direct opening, short cuts, enlarged main display with the corresponding touchscreen alongside it, and a brief preview-download invitation.
-- **Showcase:** 32 seconds, ten shots. Longer views of map exploration and globe movement, plus daily/friend, local-play and Mystery Expedition menus. It remains a preview showcase, not a complete gameplay demonstration.
-- **Gallery:** lower Manhattan close-up, globe with Africa/Europe, daily challenge menu and two-player setup menu. The last two are explicitly menu captures.
+## Existing finished edits
 
-All application imagery is genuine RC3 rendering. Cuts are at normal speed;
-there are no invented app screens, generated panoramas, interpolated frames or
-fabricated guesses/scores. The two screen crops in each video come from the
-same source frame. Videos are silent. Hero frames retain the original stacked
-screens with short editorial captions outside the capture.
+- [Hero GIF](../../media/rc3/hero.gif): quick globe, Manhattan and StreetGuess-menu highlights.
+- [Teaser](../../media/rc3/teaser.mp4): 20 seconds, short cuts and larger main-screen views.
+- [Showcase](../../media/rc3/review-walkthrough.mp4): 32 seconds, maps, globe movement and game menus.
+- [Screenshot gallery](../../media/rc3/): real panorama, globe, StreetGuess gameplay and result, terrain, and city maps.
 
-Source: `9e09e27a12d88dee8de5aca5983f5d4a245b5999`; unchanged preview packages:
-`9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb`.
+These edited videos were finished before the later online gameplay captures and **do not yet include** panorama viewing, the actual StreetGuess guess/result sequence or live terrain. Do not describe them as a full end-to-end gameplay trailer.
 
-[Edit decisions, source hashes and timings](promo-edit.json) ·
-[Output sizes and SHA-256 hashes](media-manifest.json) ·
-[Editing script](../../../tools/edit_rc3_promo.py)
+## Newly preserved authentic gameplay
 
-## Capture provenance
+The following **unrepeated source clips are available to watch now**, even without producing another promotional video:
 
-The recovered original recordings supplied globe movement, a wider map view
-and StreetGuess menu selection. A new capture launched the exact public RC3
-3DSX (SHA-256 `8e64eeb6980bb86f80e24ae37f8a0378ffc17d070ec63f1209b9710ba3de9a72`)
-and recorded closer Manhattan pan/zoom. Genuine Esri image tiles were prepared
-in the emulator's normal browsing cache from their original tile URLs before
-recording. This is cached rendering, not a demonstration of live downloading or
-offline-region installation. Incomplete-tile shots were removed from the edit.
+| Clip | What it really shows |
+| --- | --- |
+| [360° panorama look](../../media/rc3/capture-sources/panorama-look.mp4) | Real Strasbourg Panoramax scene with in-app look controls |
+| [Panorama movement](../../media/rc3/capture-sources/panorama-move.mp4) | A verified connected viewpoint and changing scene/minimap |
+| [Daily StreetGuess guess](../../media/rc3/capture-sources/daily-guess.mp4) | A real guess, placed pin, distance line and zero-point result |
+| [3D terrain](../../media/rc3/capture-sources/terrain.mp4) | Live Grand Canyon Terrarium elevation, orbit and zoom |
 
-The original captures and new city capture use Azahar/Xvfb, software OpenGL,
-and a 400 × 480 dual-screen region. The source recordings run at 30 fps;
-the GIF samples them at 12 fps. No archive build footage is mixed in.
+Accompanying stills: [panorama](../../media/rc3/panorama.png), [guess](../../media/rc3/streetguess-round.png), [result](../../media/rc3/streetguess-result.png), [terrain](../../media/rc3/terrain-live.png).
 
-Credits: NASA Blue Marble for the globe; Esri and contributors for satellite
-imagery. These credits also appear in the videos and hero. StreetGuess screens
-are menus; no third-party panorama appears in this edit.
+These scenes use RC3 application code in Azahar at normal speed. The capture environment required a local proxy CA trusted **only by a diagnostic recording build**, corrected UTC clock, longer network deadlines and temporary request-error logging. HTTPS certificate verification remained on. The actual public RC3 CIA/3DSX files **have not been modified** to add these adjustments. No diagnostic executable or private CA is distributed. See [source capture provenance](../../media/rc3/capture-sources/README.md).
 
-## Recording environment and unsuccessful attempts
+## What remains unavailable
 
-The unchanged candidate again failed direct DNS lookup in this environment.
-An existing diagnostic build differs only by adding the local recording
-proxy CA to its trust bundle. A host resolver/CONNECT shim was tried with it,
-keeping TLS validation enabled. The challenge attempt still ended at the exact
-image retry screen. Neither diagnostic footage nor error screens are included
-in any delivered promotional asset. No diagnostic binary, CA or networking
-change is shipped in this commit. This work does not establish real-console
-network connectivity, gyro, stereo or performance.
+- A verified before/after demonstration of the experimental higher-resolution Google panorama central tile.
+- Real 3D buildings; Overpass timed out in the capture environment, and the host request returned HTTP 406.
+- Original/New 3DS hardware footage confirming the gyro, stereoscopic effect, Wi-Fi and frame rate.
+- A final combined 2–4-minute demonstration containing all headline features. The existing edits are short previews, not that longer video.
 
-## Still needed for the final release showcase
+These are genuine remaining evidence gaps, not reasons to discard the existing footage. Do not invent buildings, sharpened imagery, scores or additional street views to fill them.
 
-- Enter Street View and look around a real, identifiable panorama.
-- Move to another available viewpoint.
-- Show the same scene before and after supported panorama detail.
-- Place a StreetGuess pin and reveal the genuine score/result.
-- Capture daily/challenge-code gameplay beyond the menus.
-- Show live terrain and buildings clearly.
-- Record original/New 3DS controls, gyro, stereo and performance on hardware.
+## Media integrity and source notes
 
-These remain capture gaps; the current assets do not imply they were completed.
-No stable publication, tag, main merge or announcement has been made.
+The earlier [media manifest](media-manifest.json) records the current hero, teaser and showcase sizes and SHA-256 hashes. The current [editing script](../../../tools/edit_rc3_promo.py) reproduces the existing edits from available source recordings; [edit timing metadata](promo-edit.json) explains the shot selection. The raw clips above are preserved separately.
+
+Credits belong to the original imagery authors: NASA Blue Marble/GIBS, Esri and contributors, Strasbourg Panoramax imagery by Eurométropole de Strasbourg (Etalab 2.0), Sydney Panoramax imagery credited to Leif Metcalf (CC BY-SA 4.0), and Terrarium elevation. The [curated image manifest](../../datasets/streetguess-v2.json) lists individual panorama licenses.
+
+The stable v2.0 release has not been replaced, and no final v2.2.0 GitHub Release has been published.
