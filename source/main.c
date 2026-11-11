@@ -24,6 +24,7 @@
 #include "qrcode.h"
 #include "region.h"
 #include "explore.h"
+#include "terrain_runtime.h"
 #include "pano_runtime.h"
 #include "pano_gyro.h"
 #include "street_look_input.h"
@@ -188,6 +189,9 @@ static int g_qr_size = 0;
 static bool g_qr_valid = false;
 
 static ExploreMode g_explore_mode;
+static double g_terrain_origin_lat,g_terrain_origin_lon;
+static int g_terrain_origin_zoom;
+static bool g_terrain_live;
 static C3D_RenderTarget *g_explore_right;
 static bool g_explore_gyro;
 static bool g_explore_gyro_inverted = true;
@@ -1100,6 +1104,7 @@ static void close_explore(void) {
     g_street_reveal_ms=0;
     g_street_swap_start_ms=g_street_swap_end_ms=0;
     g_globe_from_zoom0=false;
+    terrain_runtime_stop();
     pano_runtime_stop();
     if (g_explore_gyro) HIDUSER_DisableGyroscope();
     if (g_explore_accel) HIDUSER_DisableAccelerometer();
@@ -1116,6 +1121,12 @@ static void close_explore(void) {
 }
 
 static void open_explore(ExploreMode mode) {
+    if (mode==EXPLORE_TERRAIN) {
+        g_terrain_origin_lat=map_state.lat;
+        g_terrain_origin_lon=map_state.lon;
+        g_terrain_origin_zoom=map_state.zoom;
+        g_terrain_live=false;
+    }
     /* Start the real imagery request BEFORE creating the scene or flying in. */
     if (mode == EXPLORE_STREET) {
         g_street_last_image_id[0]=0;
@@ -1139,6 +1150,11 @@ static void open_explore(ExploreMode mode) {
         return;
     }
     g_explore_mode = mode;
+    if (mode==EXPLORE_TERRAIN) {
+        if(!terrain_runtime_start(g_terrain_origin_lat,g_terrain_origin_lon,
+                                  g_terrain_origin_zoom))
+            set_status_message(terrain_runtime_status());
+    }
     g_provider_picker=false;
     g_explore_yaw = mode == EXPLORE_GLOBE ? C3D_AngleFromDegrees((float)map_state.lon) :
                     mode == EXPLORE_TERRAIN ? .58f : 0;
@@ -1165,9 +1181,9 @@ static void explore_show_map(void) {
         lon = g_explore_yaw * (180.0 / M_PI);
         zoom = g_globe_from_zoom0 ? 0 : 2;
     } else if (g_explore_mode == EXPLORE_TERRAIN) {
-        lat=explore_terrain_place.lat;
-        lon=explore_terrain_place.lon;
-        zoom=11;
+        lat=g_terrain_origin_lat;
+        lon=g_terrain_origin_lon;
+        zoom=g_terrain_origin_zoom;
     } else {
         const PanoLiveImage *live=pano_runtime_current();
         lat=live ? live->lat : g_street_origin_lat;
@@ -1195,6 +1211,16 @@ static float explore_axis(int value) {
 }
 
 static void update_explore(void) {
+    if(g_explore_mode==EXPLORE_TERRAIN){
+        TerrainGrid grid;
+        float span_m=0;
+        if(terrain_runtime_poll(&grid,&span_m)) {
+            g_terrain_live=explore_apply_terrain(&grid,span_m,
+                        earth_options_terrain_scale(&g_earth_options));
+            set_status_message(g_terrain_live?"Live elevation loaded":
+                                               "Could not apply elevation data");
+        }
+    }
     /* Fade a decoded NEXT image in only after briefly dimming the previous
      * view. This avoids an extra 1 MiB GPU texture for crossfading. */
     u64 poll_now=osGetTime();
@@ -1470,9 +1496,12 @@ static void render_explore(void) {
     if (live) snprintf(live_label, sizeof(live_label), "%s %s",
                        street_provider_name(live->provider),
                        live->is_pano ? "360 panorama" : "street photo");
+    char terrain_label[90];
+    snprintf(terrain_label,sizeof(terrain_label),"%.4f, %.4f",
+             g_terrain_origin_lat,g_terrain_origin_lon);
     const char *place = g_explore_mode == EXPLORE_STREET ?
         (live ? live_label : "Loading selected map location") :
-        g_explore_mode == EXPLORE_TERRAIN ? explore_terrain_place.name : coordinates;
+        g_explore_mode == EXPLORE_TERRAIN ? terrain_label : coordinates;
     C2D_DrawRectSolid(0, 0, .1f, 320, 55, C2D_Color32(25, 37, 53, 255));
     C2D_DrawRectSolid(0, 53, .2f, 320, 2, accent);
     draw_ui_text(12, 9, .58f, .58f, white, 0, title);
@@ -1544,7 +1573,9 @@ static void render_explore(void) {
                      g_explore_mode == EXPLORE_GLOBE ? "Zoom in fully to enter the map" :
                      stereo ? "3D slider  Stereo active" : "Raise 3D slider on supported systems");
         draw_ui_text(14, 162, .36f, .36f, dim, 0,
-                     g_explore_mode == EXPLORE_GLOBE ? "NASA / GSFC Blue Marble" : "USGS 3DEP  |  2.2x vertical exaggeration");
+                     g_explore_mode == EXPLORE_GLOBE ? "NASA / GSFC Blue Marble" :
+                      g_terrain_live ? "Terrain Tiles / Mapzen  |  Live elevation" :
+                      terrain_runtime_status());
     }
     C2D_DrawRectSolid(0, 184, .1f, 320, 56, C2D_Color32(23, 32, 45, 255));
     if (g_explore_mode==EXPLORE_STREET) {
