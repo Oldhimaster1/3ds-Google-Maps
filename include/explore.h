@@ -15,7 +15,8 @@ bool explore_load(ExploreMode mode, unsigned street_stop);
 /* Accept already Morton-tiled 1024x512 RGB565 bytes; preserve old image on failure. */
 bool explore_load_street_pixels(const void *tiled_rgb565, bool is_pano);
 /* Apply one decoded live Terrarium tile to the terrain scene on render thread. */
-bool explore_apply_terrain(const TerrainGrid *grid,float span_m,float exaggeration);
+bool explore_apply_terrain(const TerrainGrid *grid,float span_m,float exaggeration,
+                           float focus_x,float focus_z);
 /* Add actual building extrusions into the same stereo geographic scene. */
 bool explore_apply_buildings(const BuildingMesh *mesh);
 void explore_unload(void);

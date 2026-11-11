@@ -12,3 +12,6 @@ done
 
 echo "Testing asynchronous live terrain worker"
 sh tests/run-live-terrain-host.sh
+
+echo "Testing on-demand live building worker"
+sh tests/run-live-building-host.sh

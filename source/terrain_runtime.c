@@ -15,40 +15,59 @@ static struct {
     bool ready,ok;
     TerrainGrid grid;
     float span_m;
+    float focus_x,focus_z;
     double lat,lon;
     int z,x,y;
     char status[96];
 } terrain;
 
+static void terrain_select_zoom(int zoom){
+    terrain.z=zoom;
+    terrain_web_tile(terrain.lat,terrain.lon,zoom,&terrain.x,&terrain.y);
+    /* Mercator offset makes the user-selected point the local mesh origin. */
+    double lon=terrain.lon==180.0?-180.0:terrain.lon;
+    double ntiles=(double)(1<<zoom);
+    double fx=(lon+180.0)/360.0*ntiles-terrain.x;
+    double fy=(1.0-asinh(tan(terrain.lat*.017453292519943295))/
+                  3.141592653589793)*.5*ntiles-terrain.y;
+    terrain.focus_x=(float)((fx-.5)*2.0);
+    terrain.focus_z=(float)((fy-.5)*2.0);
+    terrain.span_m=(float)(40075016.686*
+        cos(terrain.lat*.017453292519943295)/ntiles);
+    if(!isfinite(terrain.span_m)||terrain.span_m<100)terrain.span_m=100;
+}
 static void fetch_terrain(void *arg) {
     (void)arg;
     bool ok=false;
-    void *handle=NULL;
-    u8 *buffer=NULL;
-    u32 size=0;
-    char url[192];
-    int n=snprintf(url,sizeof(url),
-        "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/%d/%d/%d.png",
-        terrain.z,terrain.x,terrain.y);
-    if(n>0 && n<(int)sizeof(url) && !atomic_load(&terrain.cancel)) {
-        handle=network_alloc_tile_curl();
-        if(handle && network_request(handle,url,TERRAIN_DOWNLOAD_LIMIT,
-                                   &terrain.cancel,&buffer,&size) &&
-           size>=32 && !atomic_load(&terrain.cancel)) {
+    void *handle=network_alloc_tile_curl();
+    for(unsigned attempt=0;handle && attempt<2 &&
+        !atomic_load(&terrain.cancel);attempt++){
+        u8 *buffer=NULL;u32 size=0;
+        char url[192];
+        int n=snprintf(url,sizeof(url),
+            "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/%d/%d/%d.png",
+            terrain.z,terrain.x,terrain.y);
+        if(n<=0 || n>=(int)sizeof(url))break;
+        bool downloaded=network_request(handle,url,TERRAIN_DOWNLOAD_LIMIT,
+                                        &terrain.cancel,&buffer,&size);
+        if(downloaded && size>=32 && !atomic_load(&terrain.cancel)){
             int w=0,h=0,components=0;
             unsigned char *rgb=stbi_load_from_memory(
-                  buffer,(int)size,&w,&h,&components,3);
-            if(rgb && w==256 && h==256 && !atomic_load(&terrain.cancel)) {
+                buffer,(int)size,&w,&h,&components,3);
+            if(rgb && w==256 && h==256 && !atomic_load(&terrain.cancel)){
                 TerrainGrid decoded;
-                if(terrain_decode_grid(rgb,w,h,3,&decoded)) {
-                    terrain.grid=decoded;
-                    ok=true;
+                if(terrain_decode_grid(rgb,w,h,3,&decoded)){
+                    terrain.grid=decoded;ok=true;
                 }
             }
             stbi_image_free(rgb);
         }
+        free(buffer);
+        if(ok || downloaded || terrain.z<14)break;
+        /* Some fine-grained geographic tiles do not exist. Try one parent
+         * tile before reporting unavailable; never substitute demo terrain. */
+        terrain_select_zoom(terrain.z-1);
     }
-    free(buffer);
     if(handle)network_free_tile_curl(handle);
     terrain.ok=ok && !atomic_load(&terrain.cancel);
     atomic_store(&terrain.done,true);
@@ -73,12 +92,9 @@ bool terrain_runtime_start(double lat,double lon,int zoom) {
         return false;
     }
     if(zoom<8)zoom=8;
-    if(zoom>12)zoom=12;
-    terrain.lat=lat;terrain.lon=lon;terrain.z=zoom;
-    terrain_web_tile(lat,lon,zoom,&terrain.x,&terrain.y);
-    terrain.span_m=(float)(40075016.686*cos(lat*0.017453292519943295)/
-                            (double)(1<<zoom));
-    if(!isfinite(terrain.span_m)||terrain.span_m<100)terrain.span_m=100;
+    if(zoom>15)zoom=15;
+    terrain.lat=lat;terrain.lon=lon;
+    terrain_select_zoom(zoom);
     terrain.ok=false;
     atomic_store(&terrain.cancel,false);
     atomic_store(&terrain.done,false);
@@ -92,20 +108,24 @@ bool terrain_runtime_start(double lat,double lon,int zoom) {
              "Loading elevation for selected map position...");
     return true;
 }
-bool terrain_runtime_poll(TerrainGrid *out,float *span_m) {
+bool terrain_runtime_poll(TerrainGrid *out,float *span_m,
+                          float *focus_x,float *focus_z) {
     if(!terrain.thread||!atomic_load(&terrain.done))return false;
     threadJoin(terrain.thread,U64_MAX);
     threadFree(terrain.thread);
     terrain.thread=NULL;
     terrain.ready=terrain.ok;
     if(terrain.ok)snprintf(terrain.status,sizeof(terrain.status),
-                           "Live terrain loaded");
+                           "Live terrain loaded (z%d)",terrain.z);
     else snprintf(terrain.status,sizeof(terrain.status),
                   "Elevation unavailable here; no demo location substituted");
-    if(!terrain.ready||!out||!span_m)return false;
+    if(!terrain.ready||!out||!span_m||!focus_x||!focus_z)return false;
     *out=terrain.grid;
     *span_m=terrain.span_m;
+    *focus_x=terrain.focus_x;
+    *focus_z=terrain.focus_z;
     terrain.ready=false;
     return true;
 }
+int terrain_runtime_source_zoom(void){return terrain.z;}
 const char *terrain_runtime_status(void){return terrain.status;}

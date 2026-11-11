@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 struct MockThread{int value;};
-static int network_on=1,request_ok=1,image_ok=1,bad_size=0,opened,closed,requests;
+static int network_on=1,request_ok=1,image_ok=1,bad_size=0,opened,closed,requests,missing_z15;
 static char requested[192];
 Thread threadCreate(void (*func)(void *),void *arg,uint32_t stack,int priority,int core,bool detached){
     (void)stack;(void)priority;(void)core;(void)detached;
@@ -24,7 +24,7 @@ bool network_request(void *h,const char *url,size_t limit,atomic_bool *cancel,
     assert(h && url && limit>=32 && cancel && buffer && size);
     requests++;
     snprintf(requested,sizeof(requested),"%s",url);
-    if(!request_ok)return false;
+    if(!request_ok || (missing_z15 && strstr(url,"/terrarium/15/")))return false;
     *buffer=malloc(32);assert(*buffer);
     memset(*buffer,0xAA,32);*size=32;return true;
 }
@@ -39,29 +39,44 @@ unsigned char *stbi_load_from_memory(const unsigned char *bytes,int len,
 }
 void stbi_image_free(void *p){free(p);}
 int main(void){
-    TerrainGrid grid;float meters;
+    TerrainGrid grid;float meters,focus_x,focus_z;
     assert(!terrain_runtime_start(91.0,0.0,10));
     assert(!terrain_runtime_start(NAN,0,10));
     network_on=0;assert(!terrain_runtime_start(40,-74,12));
     network_on=1;assert(terrain_runtime_start(36.09,-112.13,11));
     assert(requests==1 && strstr(requested,"/terrarium/11/")!=NULL);
-    assert(terrain_runtime_poll(&grid,&meters));
+    assert(terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
     assert(grid.min_height==120 && grid.max_height==120);
     assert(meters>100 && meters<40000);
-    assert(!terrain_runtime_poll(&grid,&meters));
+    /* The selected coordinate is usually not at the Mercator tile's center,
+     * and selected-point focus is required for correct camera placement. */
+    assert(isfinite(focus_x)&&isfinite(focus_z));
+    assert(fabsf(focus_x)<=1.01f && fabsf(focus_z)<=1.01f);
+    assert(terrain_runtime_start(40.7128,-74.0060,15));
+    assert(strstr(requested,"/terrarium/15/")!=NULL);
+    assert(terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
+    assert(meters>300 && meters<3000);
+    missing_z15=1;
+    assert(terrain_runtime_start(40.7128,-74.0060,15));
+    assert(terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
+    assert(terrain_runtime_source_zoom()==14);
+    assert(strstr(requested,"/terrarium/14/")!=NULL);
+    assert(meters>600 && meters<6000);
+    missing_z15=0;
+    assert(!terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
     assert(opened==closed);
     assert(terrain_runtime_start(0,179.99,10));
     assert(strstr(requested,"/terrarium/10/1023/")!=NULL);
     terrain_runtime_stop();
     request_ok=0;assert(terrain_runtime_start(40,-73,12));
-    assert(!terrain_runtime_poll(&grid,&meters));
+    assert(!terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
     assert(strstr(terrain_runtime_status(),"unavailable"));
     request_ok=1;bad_size=1;
     assert(terrain_runtime_start(40,-73,12));
-    assert(!terrain_runtime_poll(&grid,&meters));
+    assert(!terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
     bad_size=0;image_ok=0;
     assert(terrain_runtime_start(40,-73,12));
-    assert(!terrain_runtime_poll(&grid,&meters));
+    assert(!terrain_runtime_poll(&grid,&meters,&focus_x,&focus_z));
     terrain_runtime_stop();
     assert(opened==closed);
     puts("Live terrain worker: location, URL, decoding, failures, cleanup passed");
