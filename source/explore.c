@@ -1,6 +1,7 @@
 #include "explore.h"
 #include "terrain_math.h"
 #include "building_mesh.h"
+#include "detail_plan.h"
 #include "explore_shbin.h"
 #include "earth_rgb_bin.h"
 /* The Canyon demo assets are no longer silently substituted for live terrain. */
@@ -30,6 +31,12 @@ static C3D_Tex building_texture;
 static bool building_texture_ready;
 static float terrain_focus_x,terrain_focus_z;
 static ExploreMode loaded;
+static Vertex *detail_vertices;
+static u16 *detail_indices;
+static unsigned detail_index_count;
+static C3D_Tex detail_texture;
+static bool detail_ready;
+static ExploreMode detail_mode;
 
 static bool load_texture(C3D_Tex *tex, Asset asset, bool wrap) {
     if (!C3D_TexInit(tex, asset.width, asset.height, GPU_RGB565)) return false;
@@ -287,7 +294,89 @@ bool explore_apply_buildings(const BuildingMesh *mesh){
     building_index_count=mesh->index_count;
     return true;
 }
+
+/* A single view-selected high-resolution patch, never a full high-resolution
+ * world texture. Keep the base panorama / Blue Marble image underneath.
+ * 16x16 tessellation (32x32 at global z0) conforms to the existing sphere. */
+bool explore_detail_upload(DetailKey key,const uint16_t *morton_pixels){
+ ExploreMode expected=key.kind==DETAIL_PANORAMA?EXPLORE_STREET:
+                      key.kind==DETAIL_GLOBE?EXPLORE_GLOBE:EXPLORE_NONE;
+ if(!morton_pixels || expected==EXPLORE_NONE || loaded!=expected ||
+    key.z>8 || key.x>=(1u<<key.z) || key.y>=(1u<<key.z))return false;
+ unsigned side=key.kind==DETAIL_PANORAMA?512:256;
+ unsigned subdivisions=(key.kind==DETAIL_GLOBE && key.z==0)?32:16;
+ unsigned verts=(subdivisions+1)*(subdivisions+1);
+ unsigned tris=subdivisions*subdivisions*6;
+ Vertex *v=linearAlloc(verts*sizeof(*v));
+ u16 *idx=linearAlloc(tris*sizeof(*idx));
+ if(!v||!idx){
+  if(v)linearFree(v);
+  if(idx)linearFree(idx);
+  return false;
+ }
+ const double pi=3.14159265358979323846;
+ const double ntiles=(double)(1u<<key.z);
+ for(unsigned iy=0;iy<=subdivisions;iy++){
+  float ty=(float)iy/(float)subdivisions;
+  for(unsigned ix=0;ix<=subdivisions;ix++){
+   float tx=(float)ix/(float)subdivisions;
+   double lon=((key.x+tx)/ntiles*2.-1.)*pi;
+   double lat;
+   if(key.kind==DETAIL_PANORAMA){
+    /* Google panorama has 2^(z-1) rows, not 2^z rows. */
+    lat=(.5-(key.y+ty)/(ntiles*.5))*pi;
+   }else{
+    double merc_y=(key.y+ty)/ntiles;
+    lat=atan(sinh(pi*(1.-2.*merc_y)));
+   }
+   float r=key.kind==DETAIL_PANORAMA?.985f:1.014f;
+   float flat=r*(float)cos(lat);
+   v[iy*(subdivisions+1)+ix]=(Vertex){
+    flat*(float)sin(lon),r*(float)sin(lat),
+    (key.kind==DETAIL_PANORAMA?-flat:flat)*(float)cos(lon),
+    tx,ty
+   };
+  }
+ }
+ unsigned k=0;
+ for(unsigned y=0;y<subdivisions;y++)for(unsigned x=0;x<subdivisions;x++){
+  u16 a=(u16)(y*(subdivisions+1)+x),b=a+1;
+  u16 c=a+(u16)subdivisions+1,d=c+1;
+  idx[k++]=a;idx[k++]=c;idx[k++]=b;
+  idx[k++]=b;idx[k++]=c;idx[k++]=d;
+ }
+ C3D_FrameSync();
+ C3D_Tex next;
+ if(!C3D_TexInit(&next,side,side,GPU_RGB565)){
+  linearFree(v);linearFree(idx);return false;
+ }
+ C3D_TexUpload(&next,morton_pixels);
+ C3D_TexFlush(&next);
+ C3D_TexSetFilter(&next,GPU_LINEAR,GPU_LINEAR);
+ C3D_TexSetWrap(&next,GPU_CLAMP_TO_EDGE,GPU_CLAMP_TO_EDGE);
+ GSPGPU_FlushDataCache(v,verts*sizeof(*v));
+ GSPGPU_FlushDataCache(idx,tris*sizeof(*idx));
+ if(detail_ready)C3D_TexDelete(&detail_texture);
+ if(detail_vertices)linearFree(detail_vertices);
+ if(detail_indices)linearFree(detail_indices);
+ detail_texture=next;
+ detail_vertices=v;detail_indices=idx;
+ detail_index_count=tris;
+ detail_mode=expected;detail_ready=true;
+ return true;
+}
+void explore_detail_clear(void){
+ if(!detail_ready&&!detail_vertices&&!detail_indices)return;
+ C3D_FrameSync();
+ if(detail_ready)C3D_TexDelete(&detail_texture);
+ if(detail_vertices)linearFree(detail_vertices);
+ if(detail_indices)linearFree(detail_indices);
+ detail_vertices=NULL;detail_indices=NULL;
+ detail_index_count=0;detail_ready=false;detail_mode=EXPLORE_NONE;
+}
+
 void explore_unload(void) {
+    explore_detail_clear();
     if (!loaded) return;
     C3D_FrameSync();
     if(building_vertices)linearFree(building_vertices);
@@ -341,6 +430,14 @@ void explore_draw(C3D_RenderTarget *target, float yaw, float pitch,
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, projection_uniform, &projection);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, view_uniform, &view);
     C3D_DrawElements(GPU_TRIANGLES, index_count, C3D_UNSIGNED_SHORT, indices);
+    if(detail_ready && detail_mode==loaded && detail_vertices &&
+       detail_indices && detail_index_count){
+        BufInfo_Init(buffers);
+        BufInfo_Add(buffers,detail_vertices,sizeof(Vertex),2,0x10);
+        C3D_TexBind(0,&detail_texture);
+        C3D_DrawElements(GPU_TRIANGLES,detail_index_count,
+                         C3D_UNSIGNED_SHORT,detail_indices);
+    }
     if(loaded==EXPLORE_TERRAIN && building_vertices && building_indices &&
        building_index_count && building_texture_ready){
         /* Same left/right projection as terrain gives genuine stereo disparity. */
