@@ -1737,6 +1737,9 @@ static void draw_ui_fit_line(float x,float y,float scale,u32 color,
         else hi=mid-1;
     }
     size_t take=lo;
+    /* Bound the ellipsis and keep complete UTF-8 code points. */
+    if(take>sizeof(line)-4)take=sizeof(line)-4;
+    while(take>0 && ((unsigned char)input[take]&0xc0)==0x80)take--;
     if(take<strlen(input)){
         while(take>0 && ((unsigned char)input[take]&0xc0)==0x80)take--;
         while(take>0 && (input[take-1]==' '||input[take-1]==','))take--;
@@ -1748,6 +1751,7 @@ static void draw_ui_fit_line(float x,float y,float scale,u32 color,
             while(take>0 && ((unsigned char)input[take]&0xc0)==0x80)take--;
         }
     }else{memcpy(line,input,take);line[take]=0;}
+    if(!take)strcpy(line,"...");
     draw_ui_text(x,y,scale,scale,color,0,line);
 }
 static void draw_ui_address_two_lines(const char *name,u32 color){
@@ -1763,6 +1767,7 @@ static void draw_ui_address_two_lines(const char *name,u32 color){
         if(cut<=16)cut=total>42?42:total;
     }
     if(cut>=sizeof(left))cut=sizeof(left)-1;
+    while(cut>0 && ((unsigned char)name[cut]&0xc0)==0x80)cut--;
     memcpy(left,name,cut);left[cut]=0;
     while(cut<total && (name[cut]==' '||name[cut]==','))cut++;
     snprintf(right,sizeof(right),"%s",name+cut);
