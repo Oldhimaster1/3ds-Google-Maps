@@ -37,9 +37,12 @@ bool gps_has_fix(void);
 typedef struct {
     double lat, lon, accuracy_m;
     unsigned age_ms;
+    double speed_mps, heading_deg;
+    bool has_speed, has_heading;
 } GpsFix;
 bool gps_get_fix(GpsFix *fix);
 void gps_inject_fix_with_accuracy(double lat, double lon, double accuracy);
+void gps_inject_fix_with_motion(double lat,double lon,double accuracy,double speed_mps,double heading_deg);
 
 bool gps_get_position(double *lat, double *lon);
 
