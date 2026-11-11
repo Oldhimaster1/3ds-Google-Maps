@@ -106,7 +106,7 @@ int main(void){
  assert(active);run_active();advance(1);
  detail_runtime_update_panorama(&pano,0,0,28,2);
  assert(uploads==3&&last_uploaded.z==4);
- unsigned old_requests=requests;
+ int old_requests=requests;
  detail_runtime_update_panorama(&pano,0,0,55,0);
  assert(!active);
  advance(1000);detail_runtime_update_panorama(&pano,0,0,55,0);
