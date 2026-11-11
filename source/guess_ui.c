@@ -319,17 +319,25 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
         if(keys&KEY_SELECT){
             if(ui.gyro)stop_gyro();
             else {
-                ui.gyro=true;
+                ui.gyro=R_SUCCEEDED(HIDUSER_EnableGyroscope());
+                ui.gyro_accel=ui.gyro &&
+                    R_SUCCEEDED(HIDUSER_EnableAccelerometer());
                 pano_gyro_reset(&ui.gyro_filter);
-                if(R_FAILED(HIDUSER_EnableGyroscope())||
-                   R_FAILED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&ui.gyro_coeff))||
-                   ui.gyro_coeff<=0)stop_gyro();
+                pano_motion_reset(&ui.motion);
+                if(ui.gyro &&
+                   (R_FAILED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&ui.gyro_coeff))||
+                    ui.gyro_coeff<=0))stop_gyro();
             }
         }
         if(ui.gyro){
             angularRate raw;hidGyroRead(&raw);
-            pano_gyro_step(&ui.gyro_filter,raw.y,raw.z,
-                           ui.gyro_coeff,dt,true,&ui.pitch,&ui.yaw);
+            accelVector acc={0};
+            if(ui.gyro_accel) hidAccelRead(&acc);
+            float pitch_raw=0,yaw_raw=0;
+            if(pano_motion_project(&ui.motion,raw.x,raw.y,raw.z,
+                                    acc.x,acc.y,acc.z,&pitch_raw,&yaw_raw))
+                pano_gyro_step(&ui.gyro_filter,pitch_raw,yaw_raw,
+                               ui.gyro_coeff,dt,true,&ui.pitch,&ui.yaw);
         }
     }
     if(ui.game.rules==GUESS_MOVING){
