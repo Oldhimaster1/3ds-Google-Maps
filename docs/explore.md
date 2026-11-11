@@ -6,8 +6,16 @@ Open **R → Explore** and tap a scene. Globe and Grand Canyon terrain work offl
 | --- | --- |
 | World globe | Circle Pad or D-Pad rotates across all longitudes and up to 89° latitude. **X / Y** zoom. Press **X** at the closest zoom or **A** for an animated dive into the existing map at the selected coordinates. The 2D map clamps to the Web Mercator latitude limit and loads details from its normal sources. |
 | Terrain in 3D | Orbit and zoom a roughly 32 × 29 km Grand Canyon relief model. Raise the 3D slider for distinct left and right views on a stereoscopic console. With the slider down or on 2DS, the same relief is visible in mono. Elevation is exaggerated 2.2× for readability. |
-| Street View Explorer | Searches imagery near the **current map center**. Tap the source row to choose **Automatic, Panoramax, Mapillary, KartaView, Google (experimental), or Bing (experimental)**; **Y** remains a cycling shortcut. **R** follows a verified forward link, **L** backtracks when history exists, and touchscreen arrows choose intersection branches. **Down** retries; **X** toggles gyro, **Up** recalibrates and **Select** reverses gyro motion. The bottom minimap tracks live panoramas; available higher-quality Google tiles replace the initial preview when valid. Ordinary street photos remain flat. The bundled demonstration panoramas no longer display or ship in the app. Entry starts a real provider search immediately; the overhead map flies down while imagery downloads. |
+| Street View Explorer | Searches imagery near the **current map center**. Tap the source row to choose **Automatic, Panoramax, Mapillary, KartaView, Google (experimental), or Bing (experimental)**; **Y** remains a cycling shortcut. **R** follows a verified forward link, **L** backtracks when history exists, and touchscreen arrows choose intersection branches. **D-pad Up/Down** zooms, **D-pad Left/Right** turns, **L+Down** retries; **X** toggles gyro and **Select** recenters/recalibrates. The bottom minimap tracks live panoramas; available higher-quality Google tiles replace the initial preview when valid. Ordinary street photos remain flat. The bundled demonstration panoramas no longer display or ship in the app. Entry starts a real provider search immediately; the overhead map flies down while imagery downloads. |
 
+
+## Readable text and appearance options
+
+Settings → **Text** includes Normal, Large and Extra Large lettering; Regular,
+Medium and Bold-style weights; and high-contrast labels. Preferences are saved
+to `sdmc:/3ds_google_maps/ui_access.cfg`. Long search/address results are now
+line-wrapped or truncated proportionally instead of horizontally compressed.
+Bold is currently a thicker system-font overprint, not a separate font file.
 
 ## StreetGuess development game
 
@@ -78,7 +86,7 @@ coefficient, not multiplied. Initial still-device calibration, low-pass
 velocity smoothing, a motion dead zone and spike rejection reduce the
 previously excessive sensitivity and jitter. No gyroscope-only solution can
 guarantee absolute compass heading without drift; **Up** recalibrates the
-zero bias and **Select** reverses both look directions. Physical gyro
+zero bias. **Select** now recenters calibration. Gravity-aware projection uses all three gyro axes plus the accelerometer to separate pitch from yaw. Physical gyro
 orientation needs hardware confirmation.
 
 ### Verification still required
