@@ -115,6 +115,9 @@ bool guess_ui_enter(void){
     if(!ui.text)return false;
     ui.active=true;
     ui.tutorial_open=true;
+    /* Clear queued ordinary-map prefetch jobs; the live Google round is
+     * more important than invisible speculative map tiles. Keep RAM cache. */
+    map_tiles_view_changed();
     ui.last_ms=osGetTime();
     ui.road_rng=ui.game.rng^UINT64_C(0x6a09e667f3bcc909);
     /* Optional road geometry lives on SD; if absent, the self-contained
