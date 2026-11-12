@@ -5,9 +5,10 @@
  * gps_server.h  —  HTTPS GPS bridge for Nintendo 3DS
  *
  * The 3DS hosts a tiny HTTPS server.  A phone browser navigates to
- * https://<3DS-IP>:8443, accepts the self-signed cert warning once, and the
- * page uses navigator.geolocation.watchPosition() to stream GPS fixes back via
- * POST /location.  No app, no PC, no Termux needed on the phone.
+ * https://<3DS-IP>:8443. The per-session self-signed certificate is NOT
+ * automatically trusted by Safari. Browser pairing remains experimental until
+ * the complete geolocation and delivery flow is verified on the target phone.
+ * The page uses navigator.geolocation.watchPosition() and POST /location.
  *
  * The server runs on a background libctru thread so the render loop is never
  * blocked.  GPS fixes are written atomically to the shared GPS state

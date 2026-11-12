@@ -77,6 +77,8 @@ static const char GPS_PAGE[] =
     "Your browser may pause updates when locked or in the background.</div>"
     "<script>\n"
     "var token=location.hash.slice(1);history.replaceState(null,'','/');\n"
+    "try{if(token)sessionStorage.setItem('gpsToken',token);\n"
+    "else token=sessionStorage.getItem('gpsToken')||'';}catch(e){}\n"
     "var n=0, busy=false, lastSend=0;\n"
     "function send(p){\n"
     "  var now=Date.now(),la=p.coords.latitude,lo=p.coords.longitude,ac=p.coords.accuracy;\n"
@@ -96,9 +98,13 @@ static const char GPS_PAGE[] =
     "   .then(function(){clearTimeout(timer);busy=false;});\n"
     "}\n"
     "function onerr(e){\n"
-    "  document.getElementById('s').innerHTML=\n"
-    "    '<span class=\\'err\\'>GPS error: '+e.message+'</span>';}\n"
-    "if(navigator.geolocation){\n"
+    "  var s=document.getElementById('s');s.className='box err';\n"
+    "  s.textContent='GPS error: '+e.message;}\n"
+    "if(!/^[0-9a-f]{32}$/.test(token)){\n"
+    "  onerr({message:'Pairing missing. Scan the QR on your 3DS again.'});\n"
+    "}else if(!window.isSecureContext){\n"
+    "  onerr({message:'This browser does not trust this GPS connection.'});\n"
+    "}else if(navigator.geolocation){\n"
     "  navigator.geolocation.watchPosition(send,onerr,\n"
     "    {enableHighAccuracy:true,maximumAge:2000,timeout:15000});\n"
     "}else{\n"
@@ -511,7 +517,7 @@ bool gps_server_start(int port)
      * users must not be promised no-warning pairing on stock iOS.
      */
     struct in_addr ip_addr;
-    if (!inet_aton(s_local_ip, &ip_addr)) goto fail_ssl;
+    if (!inet_aton(s_local_ip, &ip_addr) || ip_addr.s_addr == INADDR_ANY) goto fail_ssl;
     unsigned char san_der[] = {0x30, 0x06, 0x87, 0x04, 0, 0, 0, 0};
     memcpy(san_der + 4, &ip_addr.s_addr, 4);
     static const unsigned char server_eku_der[] = {
@@ -519,7 +525,7 @@ bool gps_server_start(int port)
         0x01, 0x05, 0x05, 0x07, 0x03, 0x01
     };
 
-    /* Keep certificate life under Apple's 825-day limit, and reject an
+    /* Bound the self-signed lifetime; this does not establish trust. Reject an
      * incorrect system clock instead of generating an invalid certificate. */
     time_t now = time(NULL);
     if (now < (time_t)1767225600) {
@@ -540,12 +546,12 @@ bool gps_server_start(int port)
     mbedtls_mpi serial;
     mbedtls_x509write_crt_init(&writer);
     mbedtls_mpi_init(&serial);
-    mbedtls_mpi_read_binary(&serial, entropy, sizeof(entropy));
     mbedtls_x509write_crt_set_version(&writer, MBEDTLS_X509_CRT_VERSION_3);
     mbedtls_x509write_crt_set_md_alg(&writer, MBEDTLS_MD_SHA256);
     mbedtls_x509write_crt_set_subject_key(&writer, &s_pkey);
     mbedtls_x509write_crt_set_issuer_key(&writer, &s_pkey);
     int cert_ok =
+        mbedtls_mpi_read_binary(&serial, entropy, sizeof(entropy)) == 0 &&
         mbedtls_x509write_crt_set_serial(&writer, &serial) == 0 &&
         mbedtls_x509write_crt_set_subject_name(&writer, "CN=3DS GPS local pairing") == 0 &&
         mbedtls_x509write_crt_set_issuer_name(&writer, "CN=3DS GPS local pairing") == 0 &&
@@ -574,7 +580,8 @@ bool gps_server_start(int port)
     }
 
     mbedtls_ssl_conf_rng(&s_ssl_conf, mbedtls_ctr_drbg_random, &s_ctr_drbg);
-    mbedtls_ssl_conf_own_cert(&s_ssl_conf, &s_cert, &s_pkey);
+    if (mbedtls_ssl_conf_own_cert(&s_ssl_conf, &s_cert, &s_pkey) != 0)
+        goto fail_ssl;
     mbedtls_ssl_conf_authmode(&s_ssl_conf, MBEDTLS_SSL_VERIFY_NONE);
     /* Require at least TLS 1.2 */
     mbedtls_ssl_conf_min_version(&s_ssl_conf,
