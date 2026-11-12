@@ -41,6 +41,13 @@ the user an explicit way to restart, which deliberately revokes prior pairing.
   a failed location POST. A stationary phone could remain disconnected
   indefinitely. The current page retains the latest fix, retries with
   bounded exponential backoff, and sends periodic acknowledgable updates.
+- The new private QR embeds the current pairing token in a short HTTPS
+  query parameter (`?pair=...`) instead of relying exclusively on the
+  URL fragment. Safari certificate-warning navigation is expected to retain
+  the query more reliably; the page clears it from browser history immediately
+  after saving the token. The server sets Referrer-Policy: no-referrer and
+  does not log the token. This is a plausible repair, not hardware confirmation.
+- Legacy fragment links remain accepted for compatibility.
 - A stale bearer token now stops automatic POSTs, clears same-tab storage,
   and visibly asks for the CURRENT private QR. It does not silently
   reuse a bad token or bypass authorization.
@@ -51,7 +58,7 @@ the user an explicit way to restart, which deliberately revokes prior pairing.
 
 - Executed the actual updated embedded webpage JavaScript in an isolated
   V8 environment with mocked browser, storage, location, fetch, and timers:
-  **12 checks passed**, including fresh scan, refresh, missing/insecure
+  **12 checks passed**, plus a later QR-query handoff regression pass, including fresh scan, refresh, missing/insecure
   pairing, authenticated POST, throttling, retry without motion, HTTP 403
   invalidation, and foreground recovery.
 - Copied the existing `gps_pairing.c` logic verbatim into a native host
