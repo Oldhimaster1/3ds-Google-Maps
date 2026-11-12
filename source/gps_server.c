@@ -55,6 +55,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 /* =========================================================================
  * HTML page served to the phone browser
@@ -397,9 +398,27 @@ static void server_thread_func(void *arg)
             continue;
         }
         mbedtls_ssl_set_bio(&ssl, &client, my_net_send, my_net_recv, NULL);
-        if (mbedtls_ssl_handshake(&ssl) == 0) {
+        /*
+         * Regression from v2.0: accepted sockets are now nonblocking, but
+         * TLS handshakes must still be resumed after WANT_READ/WANT_WRITE.
+         * Both the BIO callbacks and the enclosing deadline bound the wait.
+         */
+        int hs_result;
+        do {
+            hs_result = mbedtls_ssl_handshake(&ssl);
+            if (hs_result == MBEDTLS_ERR_SSL_WANT_READ ||
+                hs_result == MBEDTLS_ERR_SSL_WANT_WRITE)
+                svcSleepThread(1000000LL); /* yield 1 ms */
+        } while (!s_stop_flag && osGetTime() < client.deadline &&
+                 (hs_result == MBEDTLS_ERR_SSL_WANT_READ ||
+                  hs_result == MBEDTLS_ERR_SSL_WANT_WRITE));
+        if (hs_result == 0) {
             client.deadline = osGetTime() + 5000;
             handle_client(&ssl);
+        } else if (!s_stop_flag) {
+            /* Never log the private pairing URL or its bearer token. */
+            log_write("[GPS-SVR] TLS handshake failed: -0x%04X\n",
+                      hs_result < 0 ? -hs_result : hs_result);
         }
 
         mbedtls_ssl_close_notify(&ssl);
@@ -476,10 +495,47 @@ bool gps_server_start(int port)
     /* Certificate serials are public: never reuse pairing-secret entropy. */
     if (mbedtls_ctr_drbg_random(&s_ctr_drbg, entropy, sizeof(entropy)) != 0)
         goto fail_ssl;
-    entropy[0]&=0x7f;entropy[15]|=1;
+    entropy[0] &= 0x7f;
+    entropy[15] |= 1;
     if (mbedtls_pk_setup(&s_pkey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) != 0 ||
         mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(s_pkey),
                            mbedtls_ctr_drbg_random, &s_ctr_drbg) != 0) goto fail_ssl;
+
+    /*
+     * Correct X.509 v3 leaf certificate identity and usage for local HTTPS.
+     * SAN (2.5.29.17) must contain the exact IP in the pairing QR URL:
+     * DER SEQUENCE { context-specific 7, four-byte IPv4 address }.
+     * EKU (2.5.29.37) must specify serverAuth.
+     *
+     * Self-signing still DOES NOT make the certificate trusted by Safari;
+     * users must not be promised no-warning pairing on stock iOS.
+     */
+    struct in_addr ip_addr;
+    if (!inet_aton(s_local_ip, &ip_addr)) goto fail_ssl;
+    unsigned char san_der[] = {0x30, 0x06, 0x87, 0x04, 0, 0, 0, 0};
+    memcpy(san_der + 4, &ip_addr.s_addr, 4);
+    static const unsigned char server_eku_der[] = {
+        0x30, 0x0a, 0x06, 0x08, 0x2b, 0x06,
+        0x01, 0x05, 0x05, 0x07, 0x03, 0x01
+    };
+
+    /* Keep certificate life under Apple's 825-day limit, and reject an
+     * incorrect system clock instead of generating an invalid certificate. */
+    time_t now = time(NULL);
+    if (now < (time_t)1767225600) {
+        log_write("[GPS-SVR] system clock is invalid; set 3DS date/time\n");
+        goto fail_ssl;
+    }
+    time_t not_before_time = now - (time_t)(24 * 60 * 60);
+    time_t not_after_time = now + (time_t)(365 * 24 * 60 * 60);
+    char not_before[16], not_after[16];
+    struct tm *t = gmtime(&not_before_time);
+    if (!t || strftime(not_before, sizeof(not_before), "%Y%m%d%H%M%S", t) != 14)
+        goto fail_ssl;
+    t = gmtime(&not_after_time);
+    if (!t || strftime(not_after, sizeof(not_after), "%Y%m%d%H%M%S", t) != 14)
+        goto fail_ssl;
+
     mbedtls_x509write_cert writer;
     mbedtls_mpi serial;
     mbedtls_x509write_crt_init(&writer);
@@ -489,10 +545,17 @@ bool gps_server_start(int port)
     mbedtls_x509write_crt_set_md_alg(&writer, MBEDTLS_MD_SHA256);
     mbedtls_x509write_crt_set_subject_key(&writer, &s_pkey);
     mbedtls_x509write_crt_set_issuer_key(&writer, &s_pkey);
-    int cert_ok = mbedtls_x509write_crt_set_serial(&writer, &serial) == 0 &&
+    int cert_ok =
+        mbedtls_x509write_crt_set_serial(&writer, &serial) == 0 &&
         mbedtls_x509write_crt_set_subject_name(&writer, "CN=3DS GPS local pairing") == 0 &&
         mbedtls_x509write_crt_set_issuer_name(&writer, "CN=3DS GPS local pairing") == 0 &&
-        mbedtls_x509write_crt_set_validity(&writer, "20260101000000", "20360101000000") == 0;
+        mbedtls_x509write_crt_set_validity(&writer, not_before, not_after) == 0 &&
+        mbedtls_x509write_crt_set_basic_constraints(&writer, 0, -1) == 0 &&
+        mbedtls_x509write_crt_set_key_usage(&writer, MBEDTLS_X509_KU_DIGITAL_SIGNATURE) == 0 &&
+        mbedtls_x509write_crt_set_extension(
+            &writer, "\x55\x1d\x11", 3, 0, san_der, sizeof(san_der)) == 0 &&
+        mbedtls_x509write_crt_set_extension(
+            &writer, "\x55\x1d\x25", 3, 0, server_eku_der, sizeof(server_eku_der)) == 0;
     int der_len = cert_ok ? mbedtls_x509write_crt_der(&writer, der, sizeof(der),
                               mbedtls_ctr_drbg_random, &s_ctr_drbg) : -1;
     mbedtls_x509write_crt_free(&writer);
