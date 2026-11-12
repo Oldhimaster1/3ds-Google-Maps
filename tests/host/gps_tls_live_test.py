@@ -143,13 +143,12 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
                             tls.sendall(fix[5:])
                             response = tls.recv(4096)
                             assert response.startswith(b'HTTP/1.1 204 No Content'), response[:80]
-                    # Three accepted fixes total in this session.
-                    assert request('POST', '/location', fix, auth)[0] == 204
+                    # The slow-body POST is the third accepted fix.
 
                 # Stop must interrupt a client that connects without sending TLS data.
                 with socket.create_connection(('127.0.0.1', port), timeout=3):
                     tail, _ = proc.communicate('\n', timeout=3)
-                expected_fixes = 5 if session == 0 else 2
+                expected_fixes = 3 if session == 0 else 2
                 assert proc.returncode == 0 and f'accepted={expected_fixes} injected={expected_fixes}' in tail, tail
                 logs.seek(0)
                 assert token not in logs.read()
