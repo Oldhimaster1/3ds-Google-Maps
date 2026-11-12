@@ -105,6 +105,20 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
                 assert request('POST', '/location', fix, auth, fragment=True)[0] == 204
                 assert request('POST', '/location', fix,
                                [('authorization', 'Bearer ' + token)])[0] == 204
+                # Repeated alternating valid/invalid requests must never
+                # poison the active session or change its bearer token.
+                for _ in range(12):
+                    assert request('POST', '/location', fix, auth)[0] == 204
+                    assert request('POST', '/location', fix,
+                                   [('Authorization', 'Bearer ' + 'f' * 32)])[0] == 403
+                if session == 0:
+                    # A Safari speculative TCP connection that never completes
+                    # TLS must not hold the single-server queue indefinitely.
+                    with socket.create_connection(('127.0.0.1', port), timeout=3):
+                        t0 = time.monotonic()
+                        status, _ = request('GET', '/')
+                        assert status == 200
+                        assert time.monotonic() - t0 < 20, 'idle TLS connection blocked other clients'
                 if session == 0:
                     # Safari's trust dialog can hold the connection for longer
                     # than the previous 10s handshake budget. This models an
@@ -148,7 +162,7 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
                 # Stop must interrupt a client that connects without sending TLS data.
                 with socket.create_connection(('127.0.0.1', port), timeout=3):
                     tail, _ = proc.communicate('\n', timeout=3)
-                expected_fixes = 3 if session == 0 else 2
+                expected_fixes = 15 if session == 0 else 14
                 assert proc.returncode == 0 and f'accepted={expected_fixes} injected={expected_fixes}' in tail, tail
                 logs.seek(0)
                 assert token not in logs.read()
@@ -161,4 +175,5 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
     print('PASS real TLS: explicit test trust succeeds; default public trust correctly rejects self-signed cert')
     print('PASS authenticated/fragmented HTTP, rejected malformed fixes, private tokens, restart rotation, bounded stop')
     print('PASS delayed TLS/client headers and slow GPS body (host-only; not Safari)')
+    print('PASS 24 additional alternating authorized/forbidden POSTs and blocked-TLS recovery')
     print('NOT VERIFIED: 3DS services, Safari trust, iOS geolocation or physical phone-to-console pairing')
