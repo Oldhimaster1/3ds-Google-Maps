@@ -68,8 +68,8 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
                     raise AssertionError('Self-signed certificate unexpectedly publicly trusted')
                 context = ssl.create_default_context(cafile=str(pem))
 
-                def request(method, path, body=b'', headers=(), fragment=False):
-                    with socket.create_connection(('127.0.0.1', port), timeout=3) as raw:
+                def request(method, path, body=b'', headers=(), fragment=False, socket_timeout=3):
+                    with socket.create_connection(('127.0.0.1', port), timeout=socket_timeout) as raw:
                         with context.wrap_socket(raw, server_hostname='127.0.0.1') as tls:
                             assert tls.version() in ('TLSv1.2', 'TLSv1.3')
                             head = (f'{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n'
@@ -116,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
                     # TLS must not hold the single-server queue indefinitely.
                     with socket.create_connection(('127.0.0.1', port), timeout=3):
                         t0 = time.monotonic()
-                        status, _ = request('GET', '/')
+                        status, _ = request('GET', '/', socket_timeout=22)
                         assert status == 200
                         assert time.monotonic() - t0 < 20, 'idle TLS connection blocked other clients'
                 if session == 0:
