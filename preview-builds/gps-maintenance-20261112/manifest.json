@@ -1,0 +1,18 @@
+{
+  "source_commit": "858f59e1dec89b99d9e7d8eb8589fd467a293919",
+  "source_tree": "617175fa09324d3e0c2049610c9315565b2d610d",
+  "starting_commit": "e7791340677f168628131572ea64fad4160b2742",
+  "status": "experimental GPS maintenance candidate; Safari and physical 3DS unverified",
+  "files": [
+    {
+      "filename": "3ds_google_maps.3dsx",
+      "size": 1900660,
+      "sha256": "1cbac060774d9ccbec1f029a9bb60788ee60b6beca44418cd6fb7aa6b476eea8"
+    },
+    {
+      "filename": "3ds_google_maps.cia",
+      "size": 1537472,
+      "sha256": "a2c949b514f32a040b3818e0c7d509b4f9cbbbdd7740ee4b18f7eb60494fa971"
+    }
+  ]
+}

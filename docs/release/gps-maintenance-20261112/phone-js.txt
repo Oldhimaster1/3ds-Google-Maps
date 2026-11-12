@@ -1,0 +1,2 @@
+PASS embedded JS: private fragment, refresh, missing pairing, secure-context check, acknowledged delivery, errors, throttling
+NOT VERIFIED: actual browser permission, geolocation or Safari certificate trust
