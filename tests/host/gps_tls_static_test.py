@@ -35,6 +35,25 @@ checks = {
         and "20360101000000" not in source
         and 'mbedtls_x509write_crt_set_validity(&writer, not_before, not_after)' in source
     ),
+    "Safari trust prompt and HTTP request windows are independently bounded": (
+        "#define GPS_TLS_HANDSHAKE_TIMEOUT_MS 60000ULL" in source
+        and "#define GPS_HTTP_REQUEST_TIMEOUT_MS 20000ULL" in source
+        and "osGetTime() + GPS_TLS_HANDSHAKE_TIMEOUT_MS" in source
+        and "osGetTime() + GPS_HTTP_REQUEST_TIMEOUT_MS" in source
+        and "osGetTime() + 10000" not in source
+        and "osGetTime() + 5000" not in source
+    ),
+    "recoverable TLS reads and writes are retried": (
+        source.count("n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE") >= 2
+        and "n == MBEDTLS_ERR_SSL_WANT_WRITE || n == MBEDTLS_ERR_SSL_WANT_READ" in source
+    ),
+    "TLS stage diagnostics omit private pairing data": (
+        "HTTPS handshake timed out before completion" in source
+        and "HTTPS handshake complete" in source
+        and "HTTPS request header read ended" in source
+        and "HTTPS request body read ended" in source
+        and "GPS page delivered" in source
+    ),
     "session-specific cert and private pairing token": (
         "mbedtls_ecp_gen_key(" in source
         and "gps_pairing_token(entropy, s_pair_token)" in source
