@@ -26,13 +26,13 @@ process.stdin.on('end',async()=>{
  const nextToken='11111111111111111111111111111111';
  const position={coords:{latitude:35,longitude:-82,accuracy:4,speed:null,heading:null}};
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
- function boot({hash='#'+goodToken,secure=true,storage=new Map(),responses=[204],hidden=false}={}){
+ function boot({hash='#'+goodToken,search='',secure=true,storage=new Map(),responses=[204],hidden=false}={}){
    let now=100000,watch=null,cleared=0,interval=null;
    const status={textContent:'',className:'box'};
    const requests=[],timeouts=new Map(),listeners={};
    let timer=0,replaced=null;
    const api={
-     location:{hash,pathname:'/',search:''},
+     location:{hash,pathname:'/',search},
      history:{replaceState:(a,b,path)=>{replaced=path;}},
      sessionStorage:{
        getItem:k=>storage.get(k)||null,
@@ -81,6 +81,11 @@ process.stdin.on('end',async()=>{
 
  const reload=boot({hash:'',storage:freshStore});
  assert(reload.watch,'a same-tab reload retains pairing');
+ const oldStore=new Map([['gpsToken',goodToken]]);
+ const freshQr=boot({hash:'',search:'?pair='+nextToken,storage:oldStore});
+ assert(freshQr.watch,'query QR must survive certificate-warning navigation');
+ assert.equal(oldStore.get('gpsToken'),nextToken,'fresh QR must override stale storage');
+ assert.equal(freshQr.replaced,'/','remove secret from visible query');
  const missing=boot({hash:'',storage:new Map()});
  assert(!missing.watch);
  assert.match(missing.status.textContent,/Scan the CURRENT QR/);
@@ -123,7 +128,7 @@ process.stdin.on('end',async()=>{
  assert(errors.status.textContent.includes('<img'));
  assert.equal(errors.status.innerHTML,undefined,'untrusted errors must never use innerHTML');
 
- console.log('PASS 13 GPS page checks: scan, refresh, missing/insecure pairing, HTTP auth,');
+ console.log('PASS GPS page checks: query/fragment scan, refresh, missing/insecure pairing, HTTP auth,');
  console.log('retry while stationary, throttling, stale-token rotation, privacy, backgrounding');
  console.log('NOT VERIFIED: iOS Safari certificate, real geolocation, console networking');
 });
