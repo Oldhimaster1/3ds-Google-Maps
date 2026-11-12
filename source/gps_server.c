@@ -79,12 +79,13 @@ static const char GPS_PAGE[] =
     "(function(){\n"
     "'use strict';\n"
     "var status=document.getElementById('s');\n"
-    "var raw=location.hash.slice(1),token='';\n"
+    "var pair=/(?:[?&])pair=([0-9a-f]{32})(?:&|$)/.exec(location.search);\n"
+    "var raw=pair?pair[1]:location.hash.slice(1),token='';\n"
     "try{\n"
     "  if(/^[0-9a-f]{32}$/.test(raw)){\n"
     "    token=raw;\n"
     "    sessionStorage.setItem('gpsToken',token);\n"
-    "    history.replaceState(null,'',location.pathname+location.search);\n"
+    "    history.replaceState(null,'',location.pathname);\n"
     "  }else{\n"
     "    token=sessionStorage.getItem('gpsToken')||'';\n"
     "  }\n"
@@ -338,6 +339,7 @@ static void handle_client(mbedtls_ssl_context *ssl)
 
     bool want_page = is_get && (
         strstr(hdr, "GET / ")    != NULL ||
+        strncmp(hdr, "GET /?pair=", 11) == 0 ||
         strstr(hdr, "GET /gps ") != NULL ||
         strstr(hdr, "GET /\r")   != NULL );
     bool want_loc  = is_post && strncmp(hdr, "POST /location HTTP/1.", 21) == 0;
@@ -357,6 +359,7 @@ static void handle_client(mbedtls_ssl_context *ssl)
             "Content-Type: text/html; charset=utf-8\r\n"
             "Content-Length: %d\r\n"
             "Cache-Control: no-cache, no-store\r\n"
+            "Referrer-Policy: no-referrer\r\n"
             "Connection: close\r\n"
             "\r\n",
             page_len);
@@ -798,7 +801,7 @@ void gps_server_get_url(char *buf, size_t len)
         buf[0] = '\0';
         return;
     }
-    snprintf(buf, len, "https://%s:%d/#%s", s_local_ip, s_port, s_pair_token);
+    snprintf(buf, len, "https://%s:%d/?pair=%s", s_local_ip, s_port, s_pair_token);
 }
 
 unsigned int gps_server_get_fix_count(void)
