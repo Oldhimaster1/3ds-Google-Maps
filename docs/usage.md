@@ -45,14 +45,14 @@ The 3DS has no built-in GPS. In server mode, the app runs a local HTTPS page and
 2. Scan the local pairing QR with your phone. On a network you trust, check that the page address matches the local address shown on your console. The browser may ask about the self-signed certificate. If it refuses the page or location permission, use a compatible setup or NMEA client mode.
 3. Allow the page to access location. Leave it in the foreground. Return to the map and press **A** to follow the current fix. **B** on the map connects GPS in the selected mode.
 
-Azahar was tested with a simulated HTTPS fix. Browser and certificate behavior on a physical phone can vary, and no iPhone or Android browser is claimed verified for this candidate. In NMEA client mode, `sdmc:/3ds_google_maps/gps.cfg` can contain one line with the phone server’s IPv4 address and TCP port separated by a space. Fixes expire after ten seconds without an update.
+Azahar was previously tested with a simulated HTTPS fix, and the maintainer reported the GPS reliability fix working with a real 3DS and iPhone. Other devices and prolonged sessions may behave differently. Tapping **Server** again keeps the existing pairing; after you explicitly stop and restart the server, scan the newly generated private GPS QR. In NMEA client mode, `sdmc:/3ds_google_maps/gps.cfg` can contain one line with the phone server’s IPv4 address and TCP port separated by a space. Fixes expire after ten seconds without an update.
 
 ## Troubleshoot
 
 - **Offline map is blank or blurred when you zoom:** select the completed pack, press **A** to preview, and return to a zoom level in the pack. A coarser cached tile may show temporarily as a zoom preview. Turn on coverage to see where exact tiles are available.
 - **Transfer stops:** check Wi-Fi, free SD space, the tile source and its expected zoom levels. Press **A** on the paused pack to continue with the same endpoint. Press **Select** on a completed pack to check image readability.
 - **Search or route fails:** confirm internet access and retry. These requests use external services. Press **B** to cancel a pending request.
-- **Phone does not connect:** make sure the local page is reachable and location is allowed. Wait for a fresh fix, then enable follow mode. Do not share the pairing QR or the local address.
+- **Phone does not connect:** confirm the local HTTPS page is reachable, manually acknowledge Safari's self-signed certificate warning where offered, and permit location while Safari is foregrounded. If pairing expires or the server restarts, rescan the current private GPS QR. Never share the private pairing QR or exact location.
 - **Need help:** report your device model, app version or commit, steps, and a sanitized log if available. Logs can contain request URLs and locations.
 
 ## Build from source

@@ -10,7 +10,7 @@ Pick somewhere you've never been. Wander down a street, take a closer look at th
 
 ![Maps for Nintendo 3DS: globe movement, Manhattan map exploration and StreetGuess menu — genuine RC3 emulator footage](docs/media/rc3/hero.gif)
 
-**[Download the latest preview](#download)** · **[Watch the teaser](docs/media/rc3/teaser.mp4?raw=true)** · [What's new since v2.0](#whats-new-since-v20) · [How to install](#download)
+**[Download the latest release](#download)** · **[Watch the teaser](docs/media/rc3/teaser.mp4?raw=true)** · [What's new since v2.0](#whats-new-since-v20) · [How to install](#download)
 
 </div>
 
@@ -78,17 +78,17 @@ These are short, genuine recordings of the newer features. They haven't yet been
 
 ## Download
 
-**Latest available build: v2.2.0 RC3 (preview).** You need a Nintendo 3DS-family system set up for homebrew. This is a major feature upgrade over the [v2.0 release][stable]; its new features still need hands-on testing on physical consoles.
+**Latest production release:** The links below follow GitHub's latest published stable release. You need a homebrew-enabled Nintendo 3DS-family system. This is a major feature upgrade over the [original v2.0 release][stable]; some advanced features still need wider real-hardware testing.
 
-**[Download CIA][cia]** · **[Download 3DSX][three]** · [SHA-256 checksums][sums]
+**[Download CIA][cia]** · **[Download 3DSX][three]** · [GPS maintenance build SHA-256 checksums][sums] · [All releases](https://github.com/Oldhimaster1/3ds-Google-Maps/releases)
 
 ### Install with FBI
 
-On your 3DS, open **FBI → Remote Install → Scan QR Code** and scan:
+On your 3DS, open **FBI → Remote Install → Scan QR Code** and scan this **permanent production QR**. It always points to the CIA attached to GitHub's latest stable release, including future release updates. This is separate from the *private GPS pairing QR* generated on your 3DS.
 
 <div align="center">
 
-<img src="preview-builds/rc3/fbi-rc3.png" width="240" alt="FBI install QR code for the verified RC3 CIA download">
+<img src="docs/media/fbi-install-latest.png" width="240" alt="FBI installation QR code for the latest production CIA release">
 
 </div>
 
@@ -124,7 +124,7 @@ Then launch it from the Homebrew Launcher.
 ## FAQ
 
 **Does it run on the original 3DS?**  
-The original 3DS is the performance target, with New 3DS models supported by the same source. The RC3 build and several features have run in Azahar; full original/New 3DS hardware testing, including gyro and stereo behavior, has not yet been completed.
+The original 3DS is the performance target, with New 3DS models supported by the same source. Several features have run in Azahar, and the GPS reliability update was reported working with a physical 3DS and iPhone. Complete original/New 3DS testing, including gyro and stereo behavior, remains in progress.
 
 **Does StreetGuess need an account?**  
 No. Daily challenges, friend codes and local records work without accounts or an online leaderboard. Street imagery still needs a working network connection.
@@ -149,10 +149,10 @@ Maps © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). S
 
 This is an independent homebrew project, not affiliated with Nintendo, Google, NASA or the imagery providers.
 
-[MIT License](LICENSE) · [Report a problem][issues] · [Stable v2.0][stable]
+[MIT License](LICENSE) · [Report a problem][issues] · [Original v2.0][stable]
 
 [stable]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.0
 [issues]: https://github.com/Oldhimaster1/3ds-Google-Maps/issues
-[cia]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/3ds_google_maps.cia
-[three]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/3ds_google_maps.3dsx
-[sums]: https://raw.githubusercontent.com/Oldhimaster1/3ds-Google-Maps/9cc4858b5fca0cb8d3806ead7ed0b960c7f144fb/preview-builds/rc3/SHA256SUMS
+[cia]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/latest/download/3ds_google_maps.cia
+[three]: https://github.com/Oldhimaster1/3ds-Google-Maps/releases/latest/download/3ds_google_maps.3dsx
+[sums]: docs/releases/gps-maintenance-SHA256SUMS
