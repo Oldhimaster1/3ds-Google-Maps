@@ -75,6 +75,48 @@ and none was deployed. This is an investigated next design, NOT a working or
 Safari-verified substitute. A hosted page fetching the current self-signed local
 endpoint would still encounter trust problems. Plain LAN HTTP was not substituted.
 
+## Follow-up: iPhone hotspot connection lost after trusting (November 12)
+
+The user installed and tested the maintenance candidate from source commit
+`858f59e1dec89b99d9e7d8eb8589fd467a293919`. Safari now offered a
+certificate warning with a continuation option, which the original v2.2.0
+did not. However, after accepting it, Safari displayed
+"The network connection was lost" at `172.20.10.6:8443` on a phone hotspot.
+The browser GPS page was not loaded. This is a real hardware result,
+**not** evidence of a successful fix.
+
+A subsequent, source-only follow-up on this branch:
+
+- Extends the **TLS handshake** window from 10 s to 60 s, to allow time for
+  the user to review a browser certificate warning.
+- Extends the **post-handshake HTTP** window from 5 s to 20 s.
+- Retries recoverable `MBEDTLS_ERR_SSL_WANT_READ` / `WANT_WRITE` results in
+  HTTP header/body reads and HTTP response writes.
+- Adds stage-only log entries to distinguish accepted TCP, completed handshake,
+  request read failure, timeout, and completed GPS page delivery. No pairing
+  secret, coordinates, or HTTP request body should be logged.
+- Adds long-pause scenarios to the native-host TLS regression script:
+  12 seconds before beginning TLS, 7 seconds after handshake before sending GET,
+  and 7 seconds during a partial location POST body. These are host simulations
+  of delayed activity, **not** a substitute for real iPhone tests.
+
+**The uploaded CIA and 3DSX in `preview-builds/gps-maintenance-20261112/`
+were built from the earlier `858f59e1` source and DO NOT include this
+follow-up. They must be rebuilt from the latest branch head before the next
+physical test.** Preserve the old test binaries as provenance; publish
+separate verified development artifacts with fresh hashes.
+
+Possible remaining risk: this server processes one TLS client at a time, so
+an abandoned connection can delay a replacement Safari connection until its
+deadline. If the next hardware attempt still fails, inspect the new stage logs
+and then investigate parallel connection handling rather than increasing
+timeouts indefinitely.
+
+Correcting the certificate and waiting for a manual exception does not
+establish automatic Safari trust. **Do not announce one-scan GPS as working
+or replace public release assets until the complete browser-geolocation path
+has been verified on physical hardware.**
+
 ## Personal acceptance before publication
 
 1. On the iPhone, test both Camera QR and full Safari from a fresh session. Record
