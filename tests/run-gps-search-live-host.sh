@@ -6,6 +6,7 @@ echo "1/8 QR BCH and independent decoded top-screen QR"
 sh tests/run-gps-qr-host.sh
 echo "2/8 HTTPS GPS response framing and acknowledgement ordering"
 python3 tests/host/gps_http_static_test.py
+python3 tests/host/gps_tls_static_test.py
 echo "3/8 Search input normalization"
 sh tests/run-search-input-host.sh
 echo "4/8 GPS follow jitter filtering"
