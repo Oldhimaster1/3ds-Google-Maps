@@ -13,7 +13,8 @@ static void png_read_from_memory(png_structp png_ptr, png_bytep data, png_size_t
     } png_memory_buffer;
     
     png_memory_buffer* buf = (png_memory_buffer*)png_get_io_ptr(png_ptr);
-    if (buf->position + (int)length > buf->size) {
+    if (!buf || buf->position < 0 || buf->position > buf->size ||
+        length > (png_size_t)(buf->size - buf->position)) {
         png_error(png_ptr, "Read past end of buffer");
     }
     memcpy(data, buf->data + buf->position, length);
@@ -22,7 +23,7 @@ static void png_read_from_memory(png_structp png_ptr, png_bytep data, png_size_t
 
 // libpng-based PNG decoder
 unsigned char* decode_png(const unsigned char* png_data, int png_size, int* width, int* height) {
-    if (!png_data || png_size < 8) {
+    if (!png_data || png_size < 8 || !width || !height) {
         return NULL;
     }
     
@@ -44,8 +45,13 @@ unsigned char* decode_png(const unsigned char* png_data, int png_size, int* widt
         return NULL;
     }
     
+    /* Mark buffer pointers volatile so a libpng longjmp cannot lose allocations. */
+    unsigned char *volatile pixels = NULL;
+    png_bytep *volatile row_pointers = NULL;
     // Set up error handling
     if (setjmp(png_jmpbuf(png_ptr))) {
+        free(row_pointers);
+        free(pixels);
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         return NULL;
     }
@@ -65,8 +71,15 @@ unsigned char* decode_png(const unsigned char* png_data, int png_size, int* widt
     // Read PNG info
     png_read_info(png_ptr, info_ptr);
     
-    *width = png_get_image_width(png_ptr, info_ptr);
-    *height = png_get_image_height(png_ptr, info_ptr);
+    png_uint_32 png_width = png_get_image_width(png_ptr, info_ptr);
+    png_uint_32 png_height = png_get_image_height(png_ptr, info_ptr);
+    /* Our sole consumer requires 256x256. Validate BEFORE decoding and tiling. */
+    if (png_width != 256 || png_height != 256) {
+        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        return NULL;
+    }
+    *width = (int)png_width;
+    *height = (int)png_height;
     png_byte color_type = png_get_color_type(png_ptr, info_ptr);
     png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
 
@@ -93,23 +106,32 @@ unsigned char* decode_png(const unsigned char* png_data, int png_size, int* widt
     }
 
     // Ensure we have an alpha channel (RGBA) for GPU_RGBA8
-    if (color_type != PNG_COLOR_TYPE_RGBA && color_type != PNG_COLOR_TYPE_GRAY_ALPHA) {
+    if (!(color_type & PNG_COLOR_MASK_ALPHA) &&
+        !png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
         png_set_add_alpha(png_ptr, 0xFF, PNG_FILLER_AFTER);
     }
     
+    png_set_interlace_handling(png_ptr);
     png_read_update_info(png_ptr, info_ptr);
+    /* Reject unexpected formats or row strides before writing RGBA pixels. */
+    if (png_get_channels(png_ptr, info_ptr) != 4 ||
+        png_get_rowbytes(png_ptr, info_ptr) != 256u * 4u) {
+        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        return NULL;
+    }
     
     // Allocate pixel buffer for RGBA (4 bytes per pixel)
-    unsigned char* pixels = malloc(*width * *height * 4);
+    pixels = malloc(256u * 256u * 4u);
     if (!pixels) {
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         return NULL;
     }
     
     // Allocate row pointers
-    png_bytep* row_pointers = malloc(*height * sizeof(png_bytep));
+    row_pointers = malloc(256u * sizeof(png_bytep));
     if (!row_pointers) {
         free(pixels);
+        pixels = NULL;
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         return NULL;
     }
@@ -124,6 +146,7 @@ unsigned char* decode_png(const unsigned char* png_data, int png_size, int* widt
     
     // Cleanup row pointers and libpng
     free(row_pointers);
+    row_pointers = NULL;
     png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
 
     // Allocate buffer for tiled output
