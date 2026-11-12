@@ -12,7 +12,7 @@ import ssl
 import subprocess
 import tempfile
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
 ROOT = Path(__file__).resolve().parents[2]
 MBED = Path(os.environ['MBEDTLS_HOST_ROOT'])
@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
                                     stdout=subprocess.PIPE, stderr=logs, text=True)
             try:
                 url = urlsplit(proc.stdout.readline().strip())
-                token = url.fragment
+                token = parse_qs(url.query).get('pair', [''])[0] or url.fragment
                 assert url.hostname == '127.0.0.1' and url.port == port and len(token) == 32
                 assert token != previous_token
                 pem = temp / 'cert.pem'
@@ -90,6 +90,9 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
 
                 status, page = request('GET', '/')
                 assert status == 200 and token.encode() not in page
+                status, paired_page = request('GET', '/?pair=' + token)
+                assert status == 200 and token.encode() not in paired_page
+                assert b'Referrer-Policy: no-referrer' in paired_page
                 assert b'watchPosition' in page
                 assert request('GET', '/missing')[0] == 404
                 fix = json.dumps({'lat': 35.0, 'lon': -82.0, 'acc': 4}).encode()
