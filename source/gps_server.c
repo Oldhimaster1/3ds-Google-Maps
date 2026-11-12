@@ -122,7 +122,7 @@ static const char GPS_PAGE[] =
 /* Safari may pause during the certificate trust prompt. Keep a generous,
  * bounded handshake window, with a separate HTTP deadline. */
 #define GPS_TLS_HANDSHAKE_TIMEOUT_MS 60000ULL
-#define GPS_HTTP_REQUEST_TIMEOUT_MS 20000ULL          /* max HTTP request header size       */
+#define GPS_HTTP_REQUEST_TIMEOUT_MS 20000ULL
 
 static mbedtls_ssl_config       s_ssl_conf;
 static mbedtls_x509_crt         s_cert;
