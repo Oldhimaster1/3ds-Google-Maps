@@ -35,9 +35,9 @@ checks = {
         and "20360101000000" not in source
         and 'mbedtls_x509write_crt_set_validity(&writer, not_before, not_after)' in source
     ),
-    "Safari trust prompt and HTTP request windows are independently bounded": (
-        "#define GPS_TLS_HANDSHAKE_TIMEOUT_MS 60000ULL" in source
-        and "#define GPS_HTTP_REQUEST_TIMEOUT_MS 20000ULL" in source
+    "TLS handshake and HTTP request windows are independently bounded": (
+        "#define GPS_TLS_HANDSHAKE_TIMEOUT_MS 16000ULL" in source
+        and "#define GPS_HTTP_REQUEST_TIMEOUT_MS 8000ULL" in source
         and "osGetTime() + GPS_TLS_HANDSHAKE_TIMEOUT_MS" in source
         and "osGetTime() + GPS_HTTP_REQUEST_TIMEOUT_MS" in source
         and "osGetTime() + 10000" not in source
@@ -54,10 +54,12 @@ checks = {
         and "HTTPS request body read ended" in source
         and "GPS page delivered" in source
     ),
-    "session-specific cert and private pairing token": (
+    "session-specific cert and private pairing token in query URL": (
         "mbedtls_ecp_gen_key(" in source
         and "gps_pairing_token(entropy, s_pair_token)" in source
-        and '\"https://%s:%d/#%s\"' in source
+        and 'https://%s:%d/?pair=%s' in source
+        and "location.search" in source
+        and "history.replaceState" in source
     ),
     "TLS private session data not printed in handshake diagnostics": (
         'TLS handshake failed: -0x%04X' in source

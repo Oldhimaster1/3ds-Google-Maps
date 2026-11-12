@@ -9,8 +9,9 @@ checks={
   "response lengths from sizeof": all("sizeof("+key+")-1" in source for key in
        ("ok_response","invalid_response","missing_response","options_response")),
   "HTTP framing": all(item in source for item in ("Content-Length: 0","Connection: close")),
-  "phone checks HTTP result": "if(!r.ok)throw Error('3DS returned HTTP '+r.status)" in source,
-  "phone counts acknowledged fixes": "n++;status.textContent='Fix #'" in source,
+  "phone rejects unsuccessful HTTP results": "if(!r.ok)throw Error('HTTP '+r.status)" in source,
+  "phone counts acknowledged fixes": "successes++;" in source and "delivered (accuracy '" in source,
+  "phone invalidates stale session token": "if(r.status===403){unpair();return;}" in source,
 }
 for name,ok in checks.items():print(("PASS" if ok else "FAIL"),name)
 assert all(checks.values())
