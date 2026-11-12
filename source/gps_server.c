@@ -118,7 +118,11 @@ static const char GPS_PAGE[] =
 #define SVR_STACK_SIZE  (128 * 1024)   /* 128 KB – generous for TLS ops      */
 #define SVR_THREAD_PRIO  0x35          /* lower priority than main UI (0x30) */
 #define SVR_SOC_BUF_SZ   0x100000     /* 1 MB SOC buffer (same as gps.c)    */
-#define HDR_BUF_SIZE     2048          /* max HTTP request header size       */
+#define HDR_BUF_SIZE     2048
+/* Safari may pause during the certificate trust prompt. Keep a generous,
+ * bounded handshake window, with a separate HTTP deadline. */
+#define GPS_TLS_HANDSHAKE_TIMEOUT_MS 60000ULL
+#define GPS_HTTP_REQUEST_TIMEOUT_MS 20000ULL          /* max HTTP request header size       */
 
 static mbedtls_ssl_config       s_ssl_conf;
 static mbedtls_x509_crt         s_cert;
@@ -183,23 +187,22 @@ static int my_net_recv(void *ctx, unsigned char *buf, size_t len) {
  * Internal helpers
  * ========================================================================= */
 
-/* Write the entire string via mbedTLS — retries on WANT_WRITE. */
+/* Send complete HTTP responses, retrying the recoverable TLS states.
+ * The socket callbacks enforce the phase deadline. */
 static bool ssl_send_all(mbedtls_ssl_context *ssl, const char *data, int len)
 {
     int sent = 0;
-    while (sent < len) {
+    while (!s_stop_flag && sent < len) {
         int n = mbedtls_ssl_write(ssl, (const unsigned char *)(data + sent), len - sent);
-        if (n > 0) {
-            sent += n;
-        } else {
-            if (n == MBEDTLS_ERR_SSL_WANT_WRITE) {
-                svcSleepThread(1000000LL); /* 1 ms */
-                continue;
-            }
+        if (n > 0) sent += n;
+        else if (n == MBEDTLS_ERR_SSL_WANT_WRITE || n == MBEDTLS_ERR_SSL_WANT_READ)
+            svcSleepThread(1000000LL);
+        else {
+            log_write("[GPS-SVR] HTTPS response write failed: %d\n", n);
             return false;
         }
     }
-    return true;
+    return sent == len;
 }
 
 /*
@@ -209,9 +212,16 @@ static bool ssl_send_all(mbedtls_ssl_context *ssl, const char *data, int len)
 static int read_headers(mbedtls_ssl_context *ssl, char *buf, int buf_size)
 {
     int total = 0;
-    while (total < buf_size - 1) {
+    while (!s_stop_flag && total < buf_size - 1) {
         int n = mbedtls_ssl_read(ssl, (unsigned char *)(buf + total), 1);
-        if (n <= 0) return -1;
+        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            svcSleepThread(1000000LL);
+            continue;
+        }
+        if (n <= 0) {
+            log_write("[GPS-SVR] HTTPS request header read ended: %d\n", n);
+            return -1;
+        }
         total++;
         buf[total] = '\0';
         if (total >= 4
@@ -219,19 +229,28 @@ static int read_headers(mbedtls_ssl_context *ssl, char *buf, int buf_size)
             && buf[total - 2] == '\r' && buf[total - 1] == '\n')
             return total;
     }
-    return -1; /* buffer full without finding end of headers */
+    if (!s_stop_flag)
+        log_write("[GPS-SVR] HTTPS request headers too large or interrupted\n");
+    return -1;
 }
 
 /* Read exactly `len` bytes. Returns true on success. */
 static bool read_exact(mbedtls_ssl_context *ssl, char *buf, int len)
 {
     int got = 0;
-    while (got < len) {
+    while (!s_stop_flag && got < len) {
         int n = mbedtls_ssl_read(ssl, (unsigned char *)(buf + got), len - got);
-        if (n <= 0) return false;
+        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            svcSleepThread(1000000LL);
+            continue;
+        }
+        if (n <= 0) {
+            log_write("[GPS-SVR] HTTPS request body read ended: %d\n", n);
+            return false;
+        }
         got += n;
     }
-    return true;
+    return got == len;
 }
 
 /*
@@ -292,8 +311,11 @@ static void handle_client(mbedtls_ssl_context *ssl)
             "Connection: close\r\n"
             "\r\n",
             page_len);
-        ssl_send_all(ssl, resp, resp_len);
-        ssl_send_all(ssl, GPS_PAGE, page_len);
+        if (!ssl_send_all(ssl, resp, resp_len) ||
+            !ssl_send_all(ssl, GPS_PAGE, page_len))
+            log_write("[GPS-SVR] GPS page response interrupted\n");
+        else
+            log_write("[GPS-SVR] GPS page delivered\n");
         return;
     }
 
@@ -392,7 +414,8 @@ static void server_thread_func(void *arg)
             close(client_fd);
             continue;
         }
-        ClientSocket client = { client_fd, osGetTime() + 10000 };
+        ClientSocket client = { client_fd, osGetTime() + GPS_TLS_HANDSHAKE_TIMEOUT_MS };
+        log_write("[GPS-SVR] HTTPS client accepted; awaiting handshake\n");
 
         /* TLS handshake -------------------------------------------------- */
         mbedtls_ssl_context ssl;
@@ -419,15 +442,18 @@ static void server_thread_func(void *arg)
                  (hs_result == MBEDTLS_ERR_SSL_WANT_READ ||
                   hs_result == MBEDTLS_ERR_SSL_WANT_WRITE));
         if (hs_result == 0) {
-            client.deadline = osGetTime() + 5000;
+            log_write("[GPS-SVR] HTTPS handshake complete\n");
+            client.deadline = osGetTime() + GPS_HTTP_REQUEST_TIMEOUT_MS;
             handle_client(&ssl);
+            mbedtls_ssl_close_notify(&ssl);
         } else if (!s_stop_flag) {
             /* Never log the private pairing URL or its bearer token. */
-            log_write("[GPS-SVR] TLS handshake failed: -0x%04X\n",
-                      hs_result < 0 ? -hs_result : hs_result);
+            if (osGetTime() >= client.deadline)
+                log_write("[GPS-SVR] HTTPS handshake timed out before completion\n");
+            else
+                log_write("[GPS-SVR] TLS handshake failed: -0x%04X\n",
+                          hs_result < 0 ? -hs_result : hs_result);
         }
-
-        mbedtls_ssl_close_notify(&ssl);
         mbedtls_ssl_free(&ssl);
         close(client_fd);
     }
