@@ -2228,8 +2228,16 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             break;
         case SETTINGS_HIT_GPS_MODE_SERVER:
             log_write("[SETTINGS] Server button tapped\n");
+            /* Re-tapping Server must NOT restart a running server: that
+             * invalidates the QR session token and strands the phone page
+             * with HTTP 403. Use the start/stop card to restart explicitly. */
+            if (gps_get_source_mode() == GPS_SOURCE_HTTPS_SERVER &&
+                gps_is_connected()) {
+                set_status_message("GPS server already running; scan the current QR");
+                break;
+            }
             if (gps_is_connected()) {
-                log_write("[SETTINGS] GPS was connected, cleaning up first\n");
+                log_write("[SETTINGS] switching from active GPS client\n");
                 gps_cleanup();
             }
             gps_set_source_mode(GPS_SOURCE_HTTPS_SERVER);
