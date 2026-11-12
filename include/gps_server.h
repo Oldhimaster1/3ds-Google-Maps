@@ -5,9 +5,10 @@
  * gps_server.h  —  HTTPS GPS bridge for Nintendo 3DS
  *
  * The 3DS hosts a tiny HTTPS server.  A phone browser navigates to
- * https://<3DS-IP>:8443, accepts the self-signed cert warning once, and the
- * page uses navigator.geolocation.watchPosition() to stream GPS fixes back via
- * POST /location.  No app, no PC, no Termux needed on the phone.
+ * https://<3DS-IP>:8443. The per-session self-signed certificate is NOT
+ * automatically trusted by Safari. Browser pairing remains experimental until
+ * the complete geolocation and delivery flow is verified on the target phone.
+ * The page uses navigator.geolocation.watchPosition() and POST /location.
  *
  * The server runs on a background libctru thread so the render loop is never
  * blocked.  GPS fixes are written atomically to the shared GPS state
@@ -18,7 +19,7 @@
  *   gps_server_stop()        — shutdown        (called by gps_cleanup())
  *   gps_server_update()      — no-op (threaded) (called by gps_update())
  *   gps_server_is_running()  — true after successful start
- *   gps_server_get_url()     — private QR URL with a per-session fragment token
+ *   gps_server_get_url()     — private QR URL with a per-session query token
  *   gps_server_get_fix_count() — how many /location POSTs arrived
  */
 
@@ -38,7 +39,7 @@ bool gps_server_is_running(void);
 /* No-op — kept for API symmetry; the server is fully threaded. */
 void gps_server_update(void);
 
-/* Fill buf with the URL the phone should visit, with a private fragment token; never log or share it.
+/* Fill buf with a private token-bearing QR URL; never log or share it.
  * Writes an empty string if the server is not running. */
 void gps_server_get_url(char *buf, size_t len);
 

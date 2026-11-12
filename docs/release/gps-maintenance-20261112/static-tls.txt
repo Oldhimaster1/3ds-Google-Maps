@@ -1,0 +1,10 @@
+PASS single TLS handshake call, now retried
+PASS actual 3DS address included as IP SAN
+PASS leaf key usage, not a CA
+PASS server-auth EKU extension
+PASS validity derives from RTC, not ten-year literals
+PASS session-specific cert and private pairing token
+PASS TLS private session data not printed in handshake diagnostics
+PASS SAN DER sample structure
+PASS EKU DER serverAuth structure
+Source regression checks passed; physical Safari trust is NOT guaranteed.

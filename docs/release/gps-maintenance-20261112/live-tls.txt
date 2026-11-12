@@ -1,0 +1,4 @@
+PASS production certificate: IP match/mismatch, current validity, P-256/SHA256, leaf KU/EKU
+PASS real TLS: explicit test trust succeeds; default public trust correctly rejects self-signed cert
+PASS authenticated/fragmented HTTP, rejected malformed fixes, private tokens, restart rotation, bounded stop
+NOT VERIFIED: 3DS services, Safari trust, iOS geolocation or physical phone-to-console pairing

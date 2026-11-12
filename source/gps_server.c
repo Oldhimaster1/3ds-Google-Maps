@@ -55,53 +55,109 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 /* =========================================================================
  * HTML page served to the phone browser
  * ========================================================================= */
 
 static const char GPS_PAGE[] =
-    "<!DOCTYPE html><html><head>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>3DS GPS</title>"
-    "<style>"
-    "body{font-family:sans-serif;padding:20px;background:#1a1a2e;color:#eee;max-width:480px}"
-    "h2{color:#7ec8e3;margin-top:0}"
-    ".box{padding:12px;background:#16213e;border-radius:8px;margin:10px 0;font-size:.9em;line-height:1.6}"
-    ".ok{color:#6fcf97}.err{color:#eb5757}"
-    "</style></head><body>"
-    "<h2>3DS GPS Bridge</h2>"
-    "<div class='box' id='s'>Requesting location permission...</div>"
-    "<div class='box'>Keep this page open in the foreground.<br>"
-    "Your browser may pause updates when locked or in the background.</div>"
+    "<!DOCTYPE html><html><head>\n"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>\n"
+    "<title>3DS GPS</title>\n"
+    "<style>\n"
+    "body{font-family:sans-serif;padding:20px;background:#1a1a2e;color:#eee;max-width:480px}\n"
+    "h2{color:#7ec8e3;margin-top:0}\n"
+    ".box{padding:12px;background:#16213e;border-radius:8px;margin:10px 0;font-size:.9em;line-height:1.6}\n"
+    ".ok{color:#6fcf97}.err{color:#eb5757}\n"
+    "</style></head><body>\n"
+    "<h2>3DS GPS Bridge</h2>\n"
+    "<div class='box' id='s'>Connecting to GPS...</div>\n"
+    "<div class='box'>Keep this page open in the foreground.\n"
+    "Your browser may pause updates while locked or in the background.</div>\n"
     "<script>\n"
-    "var token=location.hash.slice(1);history.replaceState(null,'','/');\n"
-    "var n=0, busy=false, lastSend=0;\n"
-    "function send(p){\n"
-    "  var now=Date.now(),la=p.coords.latitude,lo=p.coords.longitude,ac=p.coords.accuracy;\n"
-    "  var speed=p.coords.speed,heading=p.coords.heading;\n"
-    "  if(busy || now-lastSend<1500)return;\n"
-    "  busy=true;lastSend=now;\n"
-    "  var status=document.getElementById('s');\n"
-    "  status.textContent='Sending GPS position to 3DS...';\n"
-    "  var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},6000);\n"
-    "  fetch('/location',{method:'POST',signal:controller.signal,\n"
-    "    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},\n"
-    "    body:JSON.stringify({lat:la,lon:lo,acc:ac,speed:speed,heading:heading})})\n"
-    "   .then(function(r){if(!r.ok)throw Error('3DS returned HTTP '+r.status);\n"
-    "     n++;status.textContent='Fix #'+n+' delivered'\n"
-    "       +' (accuracy '+Math.round(ac)+'m)';status.className='box ok';})\n"
-    "   .catch(function(e){status.textContent='GPS send failed: '+e.message;status.className='box err';})\n"
-    "   .then(function(){clearTimeout(timer);busy=false;});\n"
+    "(function(){\n"
+    "'use strict';\n"
+    "var status=document.getElementById('s');\n"
+    "var pair=/(?:[?&])pair=([0-9a-f]{32})(?:&|$)/.exec(location.search);\n"
+    "var raw=pair?pair[1]:location.hash.slice(1),token='';\n"
+    "try{\n"
+    "  if(/^[0-9a-f]{32}$/.test(raw)){\n"
+    "    token=raw;\n"
+    "    sessionStorage.setItem('gpsToken',token);\n"
+    "    history.replaceState(null,'',location.pathname);\n"
+    "  }else{\n"
+    "    token=sessionStorage.getItem('gpsToken')||'';\n"
+    "  }\n"
+    "}catch(e){token=raw||token;}\n"
+    "var active=true,latest=null,busy=false,watchId=null;\n"
+    "var successes=0,failures=0,nextAttempt=0,timerId=null;\n"
+    "function show(message,type){\n"
+    "  status.textContent=message;\n"
+    "  status.className='box'+(type?' '+type:'');\n"
     "}\n"
-    "function onerr(e){\n"
-    "  document.getElementById('s').innerHTML=\n"
-    "    '<span class=\\'err\\'>GPS error: '+e.message+'</span>';}\n"
-    "if(navigator.geolocation){\n"
-    "  navigator.geolocation.watchPosition(send,onerr,\n"
-    "    {enableHighAccuracy:true,maximumAge:2000,timeout:15000});\n"
+    "function unpair(){\n"
+    "  active=false;\n"
+    "  try{sessionStorage.removeItem('gpsToken');}catch(e){}\n"
+    "  if(watchId!==null&&navigator.geolocation)navigator.geolocation.clearWatch(watchId);\n"
+    "  if(timerId!==null)clearInterval(timerId);\n"
+    "  show('Pairing expired or changed. Scan the CURRENT QR code on your 3DS again.','err');\n"
+    "}\n"
+    "function sendLatest(){\n"
+    "  if(!active||busy||!latest||document.hidden||Date.now()<nextAttempt)return;\n"
+    "  busy=true;\n"
+    "  var p=latest.coords,ac=p.accuracy;\n"
+    "  show('Sending GPS position to 3DS...');\n"
+    "  var controller=new AbortController();\n"
+    "  var timeout=setTimeout(function(){controller.abort();},7000);\n"
+    "  fetch('/location',{\n"
+    "    method:'POST',signal:controller.signal,cache:'no-store',\n"
+    "    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},\n"
+    "    body:JSON.stringify({lat:p.latitude,lon:p.longitude,acc:ac,\n"
+    "                         speed:p.speed,heading:p.heading})\n"
+    "  }).then(function(r){\n"
+    "    if(r.status===403){unpair();return;}\n"
+    "    if(!r.ok)throw Error('HTTP '+r.status);\n"
+    "    failures=0;successes++;\n"
+    "    nextAttempt=Date.now()+2500;\n"
+    "    show('Connected: fix #'+successes+' delivered (accuracy '+Math.round(ac)+'m)','ok');\n"
+    "  }).catch(function(e){\n"
+    "    if(!active)return;\n"
+    "    failures++;\n"
+    "    nextAttempt=Date.now()+Math.min(12000,2000*Math.pow(2,Math.min(failures-1,3)));\n"
+    "    show('Connection interrupted; retrying automatically. Check 3DS server and Wi-Fi.','err');\n"
+    "  }).then(function(){\n"
+    "    clearTimeout(timeout);\n"
+    "    busy=false;\n"
+    "  });\n"
+    "}\n"
+    "function position(p){\n"
+    "  if(!active)return;\n"
+    "  latest=p;\n"
+    "  sendLatest();\n"
+    "}\n"
+    "function geoError(e){\n"
+    "  if(e.code===1){\n"
+    "    show('Location access denied. Enable location permission for Safari.','err');\n"
+    "  }else{\n"
+    "    show('Waiting for iPhone location: '+e.message,'err');\n"
+    "  }\n"
+    "}\n"
+    "if(!/^[0-9a-f]{32}$/.test(token)){\n"
+    "  show('Pairing missing. Scan the CURRENT QR code on your 3DS.','err');\n"
+    "}else if(!window.isSecureContext){\n"
+    "  show('Safari does not trust this connection. Check the HTTPS certificate warning.','err');\n"
+    "}else if(!navigator.geolocation){\n"
+    "  show('Location is not supported in this browser.','err');\n"
     "}else{\n"
-    "  document.getElementById('s').textContent='Geolocation not supported';}\n"
+    "  watchId=navigator.geolocation.watchPosition(position,geoError,\n"
+    "    {enableHighAccuracy:true,maximumAge:2000,timeout:15000});\n"
+    "  timerId=setInterval(sendLatest,1000);\n"
+    "  document.addEventListener('visibilitychange',function(){\n"
+    "    if(!document.hidden)sendLatest();\n"
+    "  });\n"
+    "}\n"
+    "})();\n"
     "</script></body></html>\n";
 
 /* =========================================================================
@@ -111,7 +167,11 @@ static const char GPS_PAGE[] =
 #define SVR_STACK_SIZE  (128 * 1024)   /* 128 KB – generous for TLS ops      */
 #define SVR_THREAD_PRIO  0x35          /* lower priority than main UI (0x30) */
 #define SVR_SOC_BUF_SZ   0x100000     /* 1 MB SOC buffer (same as gps.c)    */
-#define HDR_BUF_SIZE     2048          /* max HTTP request header size       */
+#define HDR_BUF_SIZE     2048
+/* Safari may pause during the certificate trust prompt. Keep a generous,
+ * bounded handshake window, with a separate HTTP deadline. */
+#define GPS_TLS_HANDSHAKE_TIMEOUT_MS 16000ULL
+#define GPS_HTTP_REQUEST_TIMEOUT_MS 8000ULL
 
 static mbedtls_ssl_config       s_ssl_conf;
 static mbedtls_x509_crt         s_cert;
@@ -176,23 +236,22 @@ static int my_net_recv(void *ctx, unsigned char *buf, size_t len) {
  * Internal helpers
  * ========================================================================= */
 
-/* Write the entire string via mbedTLS — retries on WANT_WRITE. */
+/* Send complete HTTP responses, retrying the recoverable TLS states.
+ * The socket callbacks enforce the phase deadline. */
 static bool ssl_send_all(mbedtls_ssl_context *ssl, const char *data, int len)
 {
     int sent = 0;
-    while (sent < len) {
+    while (!s_stop_flag && sent < len) {
         int n = mbedtls_ssl_write(ssl, (const unsigned char *)(data + sent), len - sent);
-        if (n > 0) {
-            sent += n;
-        } else {
-            if (n == MBEDTLS_ERR_SSL_WANT_WRITE) {
-                svcSleepThread(1000000LL); /* 1 ms */
-                continue;
-            }
+        if (n > 0) sent += n;
+        else if (n == MBEDTLS_ERR_SSL_WANT_WRITE || n == MBEDTLS_ERR_SSL_WANT_READ)
+            svcSleepThread(1000000LL);
+        else {
+            log_write("[GPS-SVR] HTTPS response write failed: %d\n", n);
             return false;
         }
     }
-    return true;
+    return sent == len;
 }
 
 /*
@@ -202,9 +261,16 @@ static bool ssl_send_all(mbedtls_ssl_context *ssl, const char *data, int len)
 static int read_headers(mbedtls_ssl_context *ssl, char *buf, int buf_size)
 {
     int total = 0;
-    while (total < buf_size - 1) {
+    while (!s_stop_flag && total < buf_size - 1) {
         int n = mbedtls_ssl_read(ssl, (unsigned char *)(buf + total), 1);
-        if (n <= 0) return -1;
+        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            svcSleepThread(1000000LL);
+            continue;
+        }
+        if (n <= 0) {
+            log_write("[GPS-SVR] HTTPS request header read ended: %d\n", n);
+            return -1;
+        }
         total++;
         buf[total] = '\0';
         if (total >= 4
@@ -212,19 +278,28 @@ static int read_headers(mbedtls_ssl_context *ssl, char *buf, int buf_size)
             && buf[total - 2] == '\r' && buf[total - 1] == '\n')
             return total;
     }
-    return -1; /* buffer full without finding end of headers */
+    if (!s_stop_flag)
+        log_write("[GPS-SVR] HTTPS request headers too large or interrupted\n");
+    return -1;
 }
 
 /* Read exactly `len` bytes. Returns true on success. */
 static bool read_exact(mbedtls_ssl_context *ssl, char *buf, int len)
 {
     int got = 0;
-    while (got < len) {
+    while (!s_stop_flag && got < len) {
         int n = mbedtls_ssl_read(ssl, (unsigned char *)(buf + got), len - got);
-        if (n <= 0) return false;
+        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            svcSleepThread(1000000LL);
+            continue;
+        }
+        if (n <= 0) {
+            log_write("[GPS-SVR] HTTPS request body read ended: %d\n", n);
+            return false;
+        }
         got += n;
     }
-    return true;
+    return got == len;
 }
 
 /*
@@ -264,10 +339,12 @@ static void handle_client(mbedtls_ssl_context *ssl)
 
     bool want_page = is_get && (
         strstr(hdr, "GET / ")    != NULL ||
+        strncmp(hdr, "GET /?pair=", 11) == 0 ||
         strstr(hdr, "GET /gps ") != NULL ||
         strstr(hdr, "GET /\r")   != NULL );
     bool want_loc  = is_post && strncmp(hdr, "POST /location HTTP/1.", 21) == 0;
     if (want_loc && !gps_pairing_authorized(hdr, s_pair_token)) {
+        log_write("[GPS-SVR] Rejected location POST: pairing invalid or stale (HTTP 403)\n");
         static const char denied[]="HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         ssl_send_all(ssl,denied,sizeof(denied)-1);
         return;
@@ -282,11 +359,15 @@ static void handle_client(mbedtls_ssl_context *ssl)
             "Content-Type: text/html; charset=utf-8\r\n"
             "Content-Length: %d\r\n"
             "Cache-Control: no-cache, no-store\r\n"
+            "Referrer-Policy: no-referrer\r\n"
             "Connection: close\r\n"
             "\r\n",
             page_len);
-        ssl_send_all(ssl, resp, resp_len);
-        ssl_send_all(ssl, GPS_PAGE, page_len);
+        if (!ssl_send_all(ssl, resp, resp_len) ||
+            !ssl_send_all(ssl, GPS_PAGE, page_len))
+            log_write("[GPS-SVR] GPS page response interrupted\n");
+        else
+            log_write("[GPS-SVR] GPS page delivered\n");
         return;
     }
 
@@ -385,7 +466,8 @@ static void server_thread_func(void *arg)
             close(client_fd);
             continue;
         }
-        ClientSocket client = { client_fd, osGetTime() + 10000 };
+        ClientSocket client = { client_fd, osGetTime() + GPS_TLS_HANDSHAKE_TIMEOUT_MS };
+        log_write("[GPS-SVR] HTTPS client accepted; awaiting handshake\n");
 
         /* TLS handshake -------------------------------------------------- */
         mbedtls_ssl_context ssl;
@@ -397,12 +479,33 @@ static void server_thread_func(void *arg)
             continue;
         }
         mbedtls_ssl_set_bio(&ssl, &client, my_net_send, my_net_recv, NULL);
-        if (mbedtls_ssl_handshake(&ssl) == 0) {
-            client.deadline = osGetTime() + 5000;
+        /*
+         * Regression from v2.0: accepted sockets are now nonblocking, but
+         * TLS handshakes must still be resumed after WANT_READ/WANT_WRITE.
+         * Both the BIO callbacks and the enclosing deadline bound the wait.
+         */
+        int hs_result;
+        do {
+            hs_result = mbedtls_ssl_handshake(&ssl);
+            if (hs_result == MBEDTLS_ERR_SSL_WANT_READ ||
+                hs_result == MBEDTLS_ERR_SSL_WANT_WRITE)
+                svcSleepThread(1000000LL); /* yield 1 ms */
+        } while (!s_stop_flag && osGetTime() < client.deadline &&
+                 (hs_result == MBEDTLS_ERR_SSL_WANT_READ ||
+                  hs_result == MBEDTLS_ERR_SSL_WANT_WRITE));
+        if (hs_result == 0) {
+            log_write("[GPS-SVR] HTTPS handshake complete\n");
+            client.deadline = osGetTime() + GPS_HTTP_REQUEST_TIMEOUT_MS;
             handle_client(&ssl);
+            mbedtls_ssl_close_notify(&ssl);
+        } else if (!s_stop_flag) {
+            /* Never log the private pairing URL or its bearer token. */
+            if (osGetTime() >= client.deadline)
+                log_write("[GPS-SVR] HTTPS handshake timed out before completion\n");
+            else
+                log_write("[GPS-SVR] TLS handshake failed: -0x%04X\n",
+                          hs_result < 0 ? -hs_result : hs_result);
         }
-
-        mbedtls_ssl_close_notify(&ssl);
         mbedtls_ssl_free(&ssl);
         close(client_fd);
     }
@@ -476,23 +579,67 @@ bool gps_server_start(int port)
     /* Certificate serials are public: never reuse pairing-secret entropy. */
     if (mbedtls_ctr_drbg_random(&s_ctr_drbg, entropy, sizeof(entropy)) != 0)
         goto fail_ssl;
-    entropy[0]&=0x7f;entropy[15]|=1;
+    entropy[0] &= 0x7f;
+    entropy[15] |= 1;
     if (mbedtls_pk_setup(&s_pkey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) != 0 ||
         mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(s_pkey),
                            mbedtls_ctr_drbg_random, &s_ctr_drbg) != 0) goto fail_ssl;
+
+    /*
+     * Correct X.509 v3 leaf certificate identity and usage for local HTTPS.
+     * SAN (2.5.29.17) must contain the exact IP in the pairing QR URL:
+     * DER SEQUENCE { context-specific 7, four-byte IPv4 address }.
+     * EKU (2.5.29.37) must specify serverAuth.
+     *
+     * Self-signing still DOES NOT make the certificate trusted by Safari;
+     * users must not be promised no-warning pairing on stock iOS.
+     */
+    struct in_addr ip_addr;
+    if (!inet_aton(s_local_ip, &ip_addr) || ip_addr.s_addr == INADDR_ANY) goto fail_ssl;
+    unsigned char san_der[] = {0x30, 0x06, 0x87, 0x04, 0, 0, 0, 0};
+    memcpy(san_der + 4, &ip_addr.s_addr, 4);
+    static const unsigned char server_eku_der[] = {
+        0x30, 0x0a, 0x06, 0x08, 0x2b, 0x06,
+        0x01, 0x05, 0x05, 0x07, 0x03, 0x01
+    };
+
+    /* Bound the self-signed lifetime; this does not establish trust. Reject an
+     * incorrect system clock instead of generating an invalid certificate. */
+    time_t now = time(NULL);
+    if (now < (time_t)1767225600) {
+        log_write("[GPS-SVR] system clock is invalid; set 3DS date/time\n");
+        goto fail_ssl;
+    }
+    time_t not_before_time = now - (time_t)(24 * 60 * 60);
+    time_t not_after_time = now + (time_t)(365 * 24 * 60 * 60);
+    char not_before[16], not_after[16];
+    struct tm *t = gmtime(&not_before_time);
+    if (!t || strftime(not_before, sizeof(not_before), "%Y%m%d%H%M%S", t) != 14)
+        goto fail_ssl;
+    t = gmtime(&not_after_time);
+    if (!t || strftime(not_after, sizeof(not_after), "%Y%m%d%H%M%S", t) != 14)
+        goto fail_ssl;
+
     mbedtls_x509write_cert writer;
     mbedtls_mpi serial;
     mbedtls_x509write_crt_init(&writer);
     mbedtls_mpi_init(&serial);
-    mbedtls_mpi_read_binary(&serial, entropy, sizeof(entropy));
     mbedtls_x509write_crt_set_version(&writer, MBEDTLS_X509_CRT_VERSION_3);
     mbedtls_x509write_crt_set_md_alg(&writer, MBEDTLS_MD_SHA256);
     mbedtls_x509write_crt_set_subject_key(&writer, &s_pkey);
     mbedtls_x509write_crt_set_issuer_key(&writer, &s_pkey);
-    int cert_ok = mbedtls_x509write_crt_set_serial(&writer, &serial) == 0 &&
+    int cert_ok =
+        mbedtls_mpi_read_binary(&serial, entropy, sizeof(entropy)) == 0 &&
+        mbedtls_x509write_crt_set_serial(&writer, &serial) == 0 &&
         mbedtls_x509write_crt_set_subject_name(&writer, "CN=3DS GPS local pairing") == 0 &&
         mbedtls_x509write_crt_set_issuer_name(&writer, "CN=3DS GPS local pairing") == 0 &&
-        mbedtls_x509write_crt_set_validity(&writer, "20260101000000", "20360101000000") == 0;
+        mbedtls_x509write_crt_set_validity(&writer, not_before, not_after) == 0 &&
+        mbedtls_x509write_crt_set_basic_constraints(&writer, 0, -1) == 0 &&
+        mbedtls_x509write_crt_set_key_usage(&writer, MBEDTLS_X509_KU_DIGITAL_SIGNATURE) == 0 &&
+        mbedtls_x509write_crt_set_extension(
+            &writer, "\x55\x1d\x11", 3, 0, san_der, sizeof(san_der)) == 0 &&
+        mbedtls_x509write_crt_set_extension(
+            &writer, "\x55\x1d\x25", 3, 0, server_eku_der, sizeof(server_eku_der)) == 0;
     int der_len = cert_ok ? mbedtls_x509write_crt_der(&writer, der, sizeof(der),
                               mbedtls_ctr_drbg_random, &s_ctr_drbg) : -1;
     mbedtls_x509write_crt_free(&writer);
@@ -511,7 +658,8 @@ bool gps_server_start(int port)
     }
 
     mbedtls_ssl_conf_rng(&s_ssl_conf, mbedtls_ctr_drbg_random, &s_ctr_drbg);
-    mbedtls_ssl_conf_own_cert(&s_ssl_conf, &s_cert, &s_pkey);
+    if (mbedtls_ssl_conf_own_cert(&s_ssl_conf, &s_cert, &s_pkey) != 0)
+        goto fail_ssl;
     mbedtls_ssl_conf_authmode(&s_ssl_conf, MBEDTLS_SSL_VERIFY_NONE);
     /* Require at least TLS 1.2 */
     mbedtls_ssl_conf_min_version(&s_ssl_conf,
@@ -653,7 +801,7 @@ void gps_server_get_url(char *buf, size_t len)
         buf[0] = '\0';
         return;
     }
-    snprintf(buf, len, "https://%s:%d/#%s", s_local_ip, s_port, s_pair_token);
+    snprintf(buf, len, "https://%s:%d/?pair=%s", s_local_ip, s_port, s_pair_token);
 }
 
 unsigned int gps_server_get_fix_count(void)
