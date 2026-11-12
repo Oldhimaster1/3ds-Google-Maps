@@ -19,7 +19,7 @@
  *   gps_server_stop()        — shutdown        (called by gps_cleanup())
  *   gps_server_update()      — no-op (threaded) (called by gps_update())
  *   gps_server_is_running()  — true after successful start
- *   gps_server_get_url()     — private QR URL with a per-session fragment token
+ *   gps_server_get_url()     — private QR URL with a per-session query token
  *   gps_server_get_fix_count() — how many /location POSTs arrived
  */
 
@@ -39,7 +39,7 @@ bool gps_server_is_running(void);
 /* No-op — kept for API symmetry; the server is fully threaded. */
 void gps_server_update(void);
 
-/* Fill buf with the URL the phone should visit, with a private fragment token; never log or share it.
+/* Fill buf with a private token-bearing QR URL; never log or share it.
  * Writes an empty string if the server is not running. */
 void gps_server_get_url(char *buf, size_t len);
 
