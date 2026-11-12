@@ -14,7 +14,7 @@
 - `bash tests/run-gps-pairing-host.sh`: passed bearer-token authorization checks under ASan/UBSan.
 - `python3 tests/host/gps_tls_static_test.py` and `python3 tests/host/gps_http_static_test.py`: passed after updating assertions that still described the superseded 60/20-second timeouts and fragment-only QR handoff.
 
-- FBI QR: `fbi-install.png` independently decoded with OpenCV and exactly matches the commit-pinned URL in `FBI_CIA_URL` (raw GitHub URL pinned to binary commit `0d50f36e2dc104ecedaa953fe1838d2685aad8a3`).
+- FBI QR: `fbi-install.png` independently decoded with ZBar and exactly matches the commit-pinned URL in `FBI_CIA_URL` (raw GitHub URL pinned to binary commit `dfd01919ea46f3d6bee20db4e58175a6b0ff4769`).
 - Recovery verification: reran the full `ASAN_OPTIONS=detect_leaks=0 bash tests/run-all-host.sh` suite successfully, reran the GPS page and live TLS tests successfully, confirmed the root build outputs byte-for-byte match the preview packages, and revalidated both recorded SHA-256 hashes.
 
 ## Not tested
