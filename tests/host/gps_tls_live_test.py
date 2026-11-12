@@ -11,6 +11,7 @@ import socket
 import ssl
 import subprocess
 import tempfile
+import time
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -104,10 +105,52 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
                 assert request('POST', '/location', fix, auth, fragment=True)[0] == 204
                 assert request('POST', '/location', fix,
                                [('authorization', 'Bearer ' + token)])[0] == 204
+                if session == 0:
+                    # Safari's trust dialog can hold the connection for longer
+                    # than the previous 10s handshake budget. This models an
+                    # idle TCP connection before the client completes TLS; it
+                    # does NOT reproduce iOS's actual trust evaluation.
+                    def get_page_after_pause(wait_before_tls=0, wait_before_get=0):
+                        with socket.create_connection(('127.0.0.1', port), timeout=3) as raw:
+                            if wait_before_tls:
+                                time.sleep(wait_before_tls)
+                            with context.wrap_socket(raw, server_hostname='127.0.0.1') as tls:
+                                tls.settimeout(6)
+                                if wait_before_get:
+                                    time.sleep(wait_before_get)
+                                tls.sendall(b'GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n')
+                                response = b''
+                                while True:
+                                    chunk = tls.recv(4096)
+                                    if not chunk:
+                                        break
+                                    response += chunk
+                        assert response.startswith(b'HTTP/1.1 200 OK'), response[:80]
+                        assert b'3DS GPS Bridge' in response
+
+                    get_page_after_pause(wait_before_tls=12)
+                    get_page_after_pause(wait_before_get=7)
+
+                    # Body streaming must survive a slow sender too.
+                    with socket.create_connection(('127.0.0.1', port), timeout=3) as raw:
+                        with context.wrap_socket(raw, server_hostname='127.0.0.1') as tls:
+                            tls.settimeout(6)
+                            headers = (b'POST /location HTTP/1.1\r\nHost: 127.0.0.1\r\n'
+                                       + f'Content-Length: {len(fix)}\r\n'.encode()
+                                       + f'Authorization: Bearer {token}\r\n\r\n'.encode())
+                            tls.sendall(headers + fix[:5])
+                            time.sleep(7)
+                            tls.sendall(fix[5:])
+                            response = tls.recv(4096)
+                            assert response.startswith(b'HTTP/1.1 204 No Content'), response[:80]
+                    # Three accepted fixes total in this session.
+                    assert request('POST', '/location', fix, auth)[0] == 204
+
                 # Stop must interrupt a client that connects without sending TLS data.
                 with socket.create_connection(('127.0.0.1', port), timeout=3):
                     tail, _ = proc.communicate('\n', timeout=3)
-                assert proc.returncode == 0 and 'accepted=2 injected=2' in tail, tail
+                expected_fixes = 5 if session == 0 else 2
+                assert proc.returncode == 0 and f'accepted={expected_fixes} injected={expected_fixes}' in tail, tail
                 logs.seek(0)
                 assert token not in logs.read()
                 previous_token = token
@@ -118,4 +161,5 @@ with tempfile.TemporaryDirectory(prefix='gps-live-') as temp:
     print('PASS production certificate: IP match/mismatch, current validity, P-256/SHA256, leaf KU/EKU')
     print('PASS real TLS: explicit test trust succeeds; default public trust correctly rejects self-signed cert')
     print('PASS authenticated/fragmented HTTP, rejected malformed fixes, private tokens, restart rotation, bounded stop')
+    print('PASS delayed TLS/client headers and slow GPS body (host-only; not Safari)')
     print('NOT VERIFIED: 3DS services, Safari trust, iOS geolocation or physical phone-to-console pairing')
