@@ -12,5 +12,6 @@ sh tests/run-detail-mesh-host.sh
 sh tests/run-detail-runtime-host.sh
 sh tests/run-earth3d-host.sh
 sh tests/run-route-follow-host.sh
+sh tests/run-routing-service-host.sh
 sh tests/run-guess-all-host.sh
 echo 'Feature integration host checks: PASS'

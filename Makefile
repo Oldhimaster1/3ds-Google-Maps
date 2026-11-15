@@ -153,10 +153,12 @@ ifneq ($(ROMFS),)
 	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: $(BUILD) clean all cia
+.PHONY: $(BUILD) clean all 3dsx cia
 
 #---------------------------------------------------------------------------------
 all: $(BUILD)
+
+3dsx: all
 
 cia: all
 	@"$(MAKEROM)" -help | grep -q '^CTR MAKEROM v0\.18\.4 ' || { echo "CIA packaging requires makerom v0.18.4"; exit 1; }
