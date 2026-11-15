@@ -90,7 +90,7 @@ static const char GPS_PAGE[] =
     "    token=sessionStorage.getItem('gpsToken')||'';\n"
     "  }\n"
     "}catch(e){token=raw||token;}\n"
-    "var active=true,latest=null,busy=false,watchId=null;\n"
+    "var active=true,latest=null,busy=false,watchId=null,wakeLock=null;\n"
     "var successes=0,failures=0,nextAttempt=0,timerId=null;\n"
     "function show(message,type){\n"
     "  status.textContent=message;\n"
@@ -136,6 +136,12 @@ static const char GPS_PAGE[] =
     "  latest=p;\n"
     "  sendLatest();\n"
     "}\n"
+    "function keepScreenAwake(){\n"
+    "  if(!active||!navigator.wakeLock||document.hidden)return;\n"
+    "  navigator.wakeLock.request('screen').then(function(lock){wakeLock=lock;}).catch(function(){\n"
+    "    if(active&&!document.hidden)show('Screen wake lock unavailable; keep this page visible.','err');\n"
+    "  });\n"
+    "}\n"
     "function geoError(e){\n"
     "  if(e.code===1){\n"
     "    show('Location access denied. Enable location permission for Safari.','err');\n"
@@ -154,8 +160,9 @@ static const char GPS_PAGE[] =
     "    {enableHighAccuracy:true,maximumAge:2000,timeout:15000});\n"
     "  timerId=setInterval(sendLatest,1000);\n"
     "  document.addEventListener('visibilitychange',function(){\n"
-    "    if(!document.hidden)sendLatest();\n"
+    "    if(!document.hidden){keepScreenAwake();sendLatest();}\n"
     "  });\n"
+    "  keepScreenAwake();\n"
     "}\n"
     "})();\n"
     "</script></body></html>\n";
@@ -603,16 +610,15 @@ bool gps_server_start(int port)
         0x01, 0x05, 0x05, 0x07, 0x03, 0x01
     };
 
-    /* Bound the self-signed lifetime; this does not establish trust. Reject an
-     * incorrect system clock instead of generating an invalid certificate. */
+    /* Bound the self-signed lifetime; this does not establish trust. */
     time_t now = time(NULL);
     if (now < (time_t)1767225600) {
         log_write("[GPS-SVR] system clock is invalid; set 3DS date/time\n");
         goto fail_ssl;
     }
+    char not_before[16], not_after[16];
     time_t not_before_time = now - (time_t)(24 * 60 * 60);
     time_t not_after_time = now + (time_t)(365 * 24 * 60 * 60);
-    char not_before[16], not_after[16];
     struct tm *t = gmtime(&not_before_time);
     if (!t || strftime(not_before, sizeof(not_before), "%Y%m%d%H%M%S", t) != 14)
         goto fail_ssl;

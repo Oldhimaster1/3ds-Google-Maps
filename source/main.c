@@ -17,6 +17,7 @@
 #include "input_remap.h"
 #include "detail_runtime.h"
 #include "route_follow.h"
+#include "routing_service.h"
 #include "street_heading.h"
 #include "globe_detail.h"
 #include "pano_detail.h"
@@ -301,9 +302,11 @@ static void open_recents(void);
 static void open_favorites(void);
 static void open_cache_stats(void);
 static void open_route_to_address(void);
+static void clear_active_route(void);
 static void reroute_from_gps(double lat,double lon);
+static void connect_gps_from_map(void);
 static bool geocode_pick(const char* query, GeocodeResult* out);
-static bool parse_route_json(const char* json, u32 json_size);
+static bool apply_route_plan(const RoutePlan *plan);
 static void render_route_overlay(double center_lat, double center_lon, int zoom, int screen_width, int screen_height);
 static void close_explore(void);
 static void render_explore(void);
@@ -662,18 +665,24 @@ static void save_session(void) {
 }
 
 int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
     // Initialize services
     gfxInitDefault();
     log_init();
+    log_write("[MAIN] startup begin\n");
     cfguInit();
-    sslcInit(0);
-    httpcInit(0);
+    Result sslc_result = sslcInit(0);
+    Result httpc_result = httpcInit(0);
+    log_write("[MAIN] service init sslc=0x%08lX httpc=0x%08lX\n",
+              (unsigned long)sslc_result, (unsigned long)httpc_result);
     
     // Initialize graphics
     init_graphics();
     
     // Initialize network
     if (!network_init()) {
+        log_write("[MAIN] network_init FAILED\n");
         consoleInit(GFX_BOTTOM, NULL);
         printf("Failed to initialize network!\n");
         printf("Please ensure WiFi is enabled and connected.\n");
@@ -699,6 +708,7 @@ int main(int argc, char* argv[]) {
     
     // Initialize map tiles system
     if (!map_tiles_init()) {
+        log_write("[MAIN] map_tiles_init FAILED\n");
         consoleInit(GFX_BOTTOM, NULL);
         printf("Failed to initialize map tiles!\n");
         printf("Press START to exit.\n");
@@ -721,6 +731,8 @@ int main(int argc, char* argv[]) {
     favorites_load();
     load_session();
     set_status_message("Ready");
+    log_write("[MAIN] initialization complete lat=%.6f lon=%.6f zoom=%d\n",
+              map_state.lat, map_state.lon, map_state.zoom);
 
     g_last_interaction_ms = osGetTime();
     g_fps_last_ms = g_last_interaction_ms;
@@ -823,17 +835,19 @@ int main(int argc, char* argv[]) {
     }
 
     save_session();
+    log_write("[MAIN] shutdown requested\n");
 
 cleanup:
+    log_write("[MAIN] cleanup begin\n");
     if (guess_ui_active()) guess_ui_leave();
     if (g_explore_mode) close_explore();
-    route_follow_reset(&g_route_follow);
-    free(g_route_geometry);
+    clear_active_route();
     // Cleanup
     gps_cleanup();
     map_tiles_cleanup();
     network_cleanup();
     cleanup_graphics();
+    log_write("[MAIN] cleanup complete\n");
     log_close();
     httpcExit();
     sslcExit();
@@ -972,18 +986,7 @@ void update_input(void) {
     }
 
     // GPS controls
-    if (kDown & KEY_B) {
-        if (!gps_is_connected()) {
-            set_status_message("Connecting to GPS...");
-            if (gps_init()) {
-                set_status_message("GPS connected");
-            } else {
-                set_status_message("GPS connection failed");
-            }
-        } else {
-            set_status_message("GPS already connected");
-        }
-    }
+    if (kDown & KEY_B) connect_gps_from_map();
     if (kDown & KEY_A) {
         if (gps_is_connected()) {
             map_state.gps_tracking = !map_state.gps_tracking;
@@ -1117,22 +1120,14 @@ static bool handle_touch_button_action(TouchAction action) {
             open_recents();
             return true;
         case TOUCH_ACTION_ROUTE:
-            open_route_to_address();
+            if (g_route_active) clear_active_route();
+            else open_route_to_address();
             return true;
         case TOUCH_ACTION_IDENTIFY:
             open_reverse_geocode_center();
             return true;
         case TOUCH_ACTION_GPS_CONNECT:
-            if (!gps_is_connected()) {
-                set_status_message("Connecting to GPS...");
-                if (gps_init()) {
-                    set_status_message("GPS connected");
-                } else {
-                    set_status_message("GPS connection failed");
-                }
-            } else {
-                set_status_message("GPS already connected");
-            }
+            connect_gps_from_map();
             return true;
         case TOUCH_ACTION_GPS_TRACK:
             if (gps_is_connected()) {
@@ -2259,7 +2254,7 @@ static void apply_settings_hit(SettingsHitTarget hit) {
                 set_status_message("GPS server started; scan the private QR");
             } else {
                 log_write("[SETTINGS] gps_init() FAILED\n");
-                set_status_message("GPS server failed to start");
+                set_status_message("Set 3DS date/time, then retry GPS server");
             }
             break;
         case SETTINGS_HIT_GPS_START_STOP:
@@ -2288,7 +2283,7 @@ static void apply_settings_hit(SettingsHitTarget hit) {
                         set_status_message("GPS server started; scan the private QR");
                     } else {
                         log_write("[SETTINGS] gps_init() FAILED (start/stop)\n");
-                        set_status_message("GPS server failed to start");
+                        set_status_message("Set 3DS date/time, then retry GPS server");
                     }
                 }
             }
@@ -2655,8 +2650,8 @@ static void render_settings_panel(void) {
 }
 
 static void render_bottom_panel(void) {
-    static const char* primary_labels[8] = {
-        "Search", "Favorites", "Recents", "Route",
+    const char* primary_labels[8] = {
+        "Search", "Favorites", "Recents", g_route_active ? "Clear" : "Route",
         "Identify", "GPS", "Track", "Menu"
     };
     static const char* secondary_labels[8] = {
@@ -2877,6 +2872,8 @@ static void request_worker(void *arg) {
 }
 
 static bool wait_for_request(const char *url, const char *label, u8 **buffer, u32 *size) {
+    log_write("[REQUEST] start label=%s url_len=%lu\n",
+              label ? label : "(none)", url ? (unsigned long)strlen(url) : 0UL);
     /* The public geocoder prohibits autocomplete and requires <=1 query/s.
      * Wait without freezing the map render or suppressing GPS updates. */
     if (strstr(url,"nominatim.openstreetmap.org/")) {
@@ -2926,12 +2923,16 @@ static bool wait_for_request(const char *url, const char *label, u8 **buffer, u3
     threadJoin(thread, U64_MAX);
     threadFree(thread);
     if (atomic_load(&request.cancel) || !request.ok) {
+        log_write("[REQUEST] failed label=%s cancelled=%d\n",
+                  label ? label : "(none)", atomic_load(&request.cancel) ? 1 : 0);
         free(request.bytes);
         set_status_message(atomic_load(&request.cancel) ? "Request cancelled" : "Network request failed");
         return false;
     }
     *buffer = request.bytes;
     *size = request.size;
+    log_write("[REQUEST] complete label=%s bytes=%lu\n",
+              label ? label : "(none)", (unsigned long)request.size);
     return true;
 }
 
@@ -3071,82 +3072,66 @@ static bool geocode_pick(const char* query, GeocodeResult* out) {
     return true;
 }
 
-#define ROUTE_GEOMETRY_LIMIT 16000
-
-static bool parse_route_json(const char *json, u32 size) {
-    json_t *root = json_loadb(json, size, JSON_REJECT_DUPLICATES, NULL);
-    json_t *route = json_array_get(json_object_get(root, "routes"), 0);
-    json_t *coordinates = json_object_get(json_object_get(route, "geometry"), "coordinates");
-    const char *poly = json_string_value(json_object_get(root, "poly"));
-    size_t count = json_array_size(coordinates);
-    if (poly) {
-        count = *poly ? 1 : 0;
-        for (const char *p = poly; *p && count <= ROUTE_GEOMETRY_LIMIT; p++)
-            if (*p == ';' && p[1]) count++;
+static bool apply_route_plan(const RoutePlan *plan) {
+    if (!plan || !plan->geometry || plan->geometry_count < 2 ||
+        plan->geometry_count > ROUTE_GEOMETRY_LIMIT) return false;
+    RoutePoint *geometry = calloc(plan->geometry_count, sizeof(*geometry));
+    if (!geometry) return false;
+    for (size_t i = 0; i < plan->geometry_count; i++) {
+        geometry[i].lat = plan->geometry[i].lat;
+        geometry[i].lon = plan->geometry[i].lon;
     }
-    if (count < 2 || count > ROUTE_GEOMETRY_LIMIT) {
-        json_decref(root);
-        return false;
-    }
-    RoutePoint *points = calloc(count, sizeof(*points));
-    if (!points) { json_decref(root); return false; }
-    bool ok = true;
-    const char *p = poly;
-    for (size_t i = 0; i < count && ok; i++) {
-        if (poly) {
-            char *end;
-            points[i].lat = strtod(p, &end);
-            if (end == p || *end != ',') { ok = false; break; }
-            p = end + 1;
-            points[i].lon = strtod(p, &end);
-            if (end == p || (i + 1 < count ? *end != ';' : (*end && (*end != ';' || end[1])))) {
-                ok = false;
-                break;
-            }
-            p = *end ? end + 1 : end;
-            ok = isfinite(points[i].lat) && fabs(points[i].lat) <= 90 &&
-                 isfinite(points[i].lon) && fabs(points[i].lon) <= 180;
-        } else {
-            json_t *pair = json_array_get(coordinates, i);
-            ok = json_coord(json_array_get(pair, 0), 180, &points[i].lon) &&
-                 json_coord(json_array_get(pair, 1), 90, &points[i].lat);
-        }
-    }
-    if (!ok) {
-        free(points);
-        json_decref(root);
-        return false;
-    }
-
-    const char *next = json_string_value(json_object_get(root, "next"));
-    if (!next) {
-        json_t *leg = json_array_get(json_object_get(route, "legs"), 0);
-        json_t *step = json_array_get(json_object_get(leg, "steps"), 0);
-        next = json_string_value(json_object_get(step, "name"));
-    }
-    double distance = json_number_value(json_object_get(poly ? root : route, poly ? "distance_m" : "distance"));
-    double duration=json_number_value(json_object_get(poly ? root : route,
-                                          poly ? "duration_s" : "duration"));
-    if(!isfinite(distance)||distance<0)distance=0;
-    if(!isfinite(duration)||duration<0)duration=0;
     RouteFollow fresh={0};
-    if(!route_follow_begin(&fresh,(const RouteFollowPoint *)points,count,
-                           distance,duration)){
-        free(points);json_decref(root);return false;
+    if (!route_follow_begin(&fresh, (const RouteFollowPoint *)geometry,
+                            plan->geometry_count,
+                            plan->distance_m, plan->duration_s)) {
+        free(geometry);
+        return false;
     }
-    g_route_next_dist_m = (int)fmin(2147483647, fmax(0, distance));
-    snprintf(g_route_next_text, sizeof(g_route_next_text), "%s", next && *next ? next : "Route");
+    g_route_next_dist_m = (int)fmin(2147483647, fmax(0, plan->distance_m));
+    snprintf(g_route_next_text, sizeof(g_route_next_text), "%s", plan->summary);
     route_follow_reset(&g_route_follow);
     free(g_route_geometry);
     g_route_follow=fresh;
     g_route_last_fix_sequence=0;
-    g_route_geometry = points;
-    g_route_geometry_count = count;
-    g_route_count = count < MAX_ROUTE_POINTS ? (int)count : MAX_ROUTE_POINTS;
+    g_route_geometry = geometry;
+    g_route_geometry_count = plan->geometry_count;
+    g_route_count = plan->geometry_count < MAX_ROUTE_POINTS ?
+                    (int)plan->geometry_count : MAX_ROUTE_POINTS;
     for (int i = 0; i < g_route_count; i++)
-        g_route[i] = points[i * (count - 1) / (g_route_count - 1)];
-    json_decref(root);
+        g_route[i] = geometry[i * (plan->geometry_count - 1) /
+                              (g_route_count - 1)];
     return true;
+}
+
+static void connect_gps_from_map(void) {
+    if (gps_is_connected()) {
+        set_status_message("GPS already connected");
+        return;
+    }
+    set_status_message("Connecting to GPS...");
+    set_status_message(gps_init() ? "GPS connected" : "GPS connection failed");
+}
+
+static void clear_active_route(void) {
+    if (!g_route_active && !g_route_geometry && !g_route_follow.metres) {
+        set_status_message("No active route");
+        return;
+    }
+    route_follow_reset(&g_route_follow);
+    free(g_route_geometry);
+    g_route_geometry = NULL;
+    g_route_geometry_count = 0;
+    g_route_count = 0;
+    g_route_active = false;
+    g_route_has_destination = false;
+    g_route_destination_lat = 0;
+    g_route_destination_lon = 0;
+    g_route_last_fix_sequence = 0;
+    g_route_next_dist_m = 0;
+    g_route_next_text[0] = '\0';
+    log_write("[ROUTE] active route cleared\n");
+    set_status_message("Route cleared");
 }
 
 static void open_route_to_address(void) {
@@ -3187,14 +3172,20 @@ static void open_route_to_address(void) {
                  from_lat, from_lon, dest.lat, dest.lon);
     } else {
         snprintf(url, sizeof(url),
-                 "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true",
+                 "http://routing.openstreetmap.de/routed-car/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true",
                  from_lon, from_lat, dest.lon, dest.lat);
     }
 
     u8 *buf = NULL;
     u32 size = 0;
     if (!wait_for_request(url, "Planning route", &buf, &size)) return;
-    bool ok = parse_route_json((const char *)buf, size);
+    RoutePlan plan = {0};
+    bool ok = route_plan_parse_json((const char *)buf, size, &plan) &&
+              apply_route_plan(&plan);
+    log_write("[ROUTE] plan response bytes=%lu parsed=%d points=%lu\n",
+              (unsigned long)size, ok ? 1 : 0,
+              (unsigned long)plan.geometry_count);
+    route_plan_reset(&plan);
     free(buf);
     if (!ok) {
         set_status_message("Route parse failed");
@@ -3219,12 +3210,18 @@ static void reroute_from_gps(double lat,double lon) {
                  network_get_proxy_base_url(),lat,lon,
                  g_route_destination_lat,g_route_destination_lon);
     else
-        snprintf(url,sizeof(url),"https://router.project-osrm.org/route/v1/driving/"
+        snprintf(url,sizeof(url),"http://routing.openstreetmap.de/routed-car/route/v1/driving/"
                  "%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=false",
                  lon,lat,g_route_destination_lon,g_route_destination_lat);
     u8 *buf=NULL;u32 length=0;
     if(!wait_for_request(url,"Rerouting", &buf,&length))return;
-    bool ok=parse_route_json((const char*)buf,length);
+    RoutePlan plan = {0};
+    bool ok=route_plan_parse_json((const char*)buf,length,&plan) &&
+            apply_route_plan(&plan);
+    log_write("[ROUTE] reroute response bytes=%lu applied=%d points=%lu\n",
+              (unsigned long)length, ok ? 1 : 0,
+              (unsigned long)plan.geometry_count);
+    route_plan_reset(&plan);
     free(buf);
     set_status_message(ok?"Route updated from GPS":"Could not recalculate route");
 }
@@ -4022,6 +4019,7 @@ static bool json_coord(json_t *value, double limit, double *out) {
 }
 
 static bool read_geocode(json_t *entry, GeocodeResult *result) {
+    if (!json_is_object(entry) || !result) return false;
     if (!json_coord(json_object_get(entry, "lat"), 90, &result->lat) ||
         !json_coord(json_object_get(entry, "lon"), 180, &result->lon)) return false;
     const char *name = json_string_value(json_object_get(entry, "display_name"));
@@ -4038,22 +4036,28 @@ static bool read_geocode(json_t *entry, GeocodeResult *result) {
 }
 
 static int parse_geocode_results_json(const char *json, u32 size, GeocodeResult *results, int max) {
+    if (!json || !size || !results || max <= 0) return 0;
     json_t *root = json_loadb(json, size, JSON_REJECT_DUPLICATES, NULL);
-    json_t *list = json_is_array(root) ? root : json_object_get(root, "results");
+    if (!root) return 0;
+    json_t *list = json_is_array(root) ? root :
+                   json_is_object(root) ? json_object_get(root, "results") : NULL;
     size_t i;
     json_t *entry;
     int count = 0;
-    json_array_foreach(list, i, entry) {
-        if (count >= max) break;
-        if (read_geocode(entry, &results[count])) count++;
+    if (json_is_array(list)) {
+        json_array_foreach(list, i, entry) {
+            if (count >= max) break;
+            if (read_geocode(entry, &results[count])) count++;
+        }
     }
     json_decref(root);
     return count;
 }
 
 static bool parse_reverse_geocode_json(const char *json, u32 size, GeocodeResult *result) {
+    if (!json || !size || !result) return false;
     json_t *root = json_loadb(json, size, JSON_REJECT_DUPLICATES, NULL);
-    bool ok = read_geocode(root, result);
+    bool ok = root && read_geocode(root, result);
     json_decref(root);
     return ok;
 }

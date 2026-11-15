@@ -7,7 +7,7 @@ nearby buildings, Street View Explorer and StreetGuess. See [Explore controls an
 
 ## Map and settings
 
-The top screen displays the map. The touch panel opens **Search**, **Favorites**, **Recents**, **Route**, **Identify**, **GPS**, **Track**, and **Menu**. Zoom out with **Y** from Z1 to Z0; another deliberate **Y** press at Z0 opens the 3D globe at the same coordinates. Zoom into the globe with **X** until the normal map returns. Use the D-Pad or Circle Pad to pan, **X/Y** to change zoom, and **Start** to exit. You can drag in the upper area of the touch panel to pan. The app saves the view, layer, night mode, GPS mode, and related settings when it exits normally.
+The top screen displays the map. The touch panel opens **Search**, **Favorites**, **Recents**, **Route**, **Identify**, **GPS**, **Track**, and **Menu**. After a route is active, the same **Route** button changes to **Clear** and removes the route line, progress, ETA, and rerouting state. Zoom out with **Y** from Z1 to Z0; another deliberate **Y** press at Z0 opens the 3D globe at the same coordinates. Zoom into the globe with **X** until the normal map returns. Use the D-Pad or Circle Pad to pan, **X/Y** to change zoom, and **Start** to exit. You can drag in the upper area of the touch panel to pan. The app saves the view, layer, night mode, GPS mode, and related settings when it exits normally.
 
 In **Menu → Explore**, drag the **Fly-in** slider to set the Street View entry animation from Off to 1600 ms. Imagery searches begin as the transition starts; no unrelated offline demo image appears. In **Menu → View**, choose **Street** or **Sat** and adjust night mode or the debug overlay. Press **Select** in that tab for per-tile SD, network, decode, and GPU upload timings. In **Menu → Data**, manage the optional LAN proxy, browsing cache, and offline packs. Clearing the browsing cache preserves saved packs.
 
@@ -42,10 +42,10 @@ The downloader uses two persistent connections and writes completed tiles into t
 The 3DS has no built-in GPS. In server mode, the app runs a local HTTPS page and uses your phone browser’s [Geolocation API](https://developer.mozilla.org/en-US/docs/Web/API/Geolocation_API). Both devices need a local network path to each other. Guest networks with client isolation can block access even if both devices show Wi-Fi connectivity.
 
 1. On the console, open **Menu → GPS** and tap **Server**.
-2. Scan the local pairing QR with your phone. On a network you trust, check that the page address matches the local address shown on your console. The browser may ask about the self-signed certificate. If it refuses the page or location permission, use a compatible setup or NMEA client mode.
+2. Scan the local pairing QR with your phone. On a network you trust, check that the page address matches the local address shown on your console. The browser may ask about the self-signed certificate; a QR code cannot make stock iOS trust a certificate issued by the 3DS. If the browser refuses the page or location permission, use a compatible setup or NMEA client mode.
 3. Allow the page to access location. Leave it in the foreground. Return to the map and press **A** to follow the current fix. **B** on the map connects GPS in the selected mode.
 
-Azahar was previously tested with a simulated HTTPS fix, and the maintainer reported the GPS reliability fix working with a real 3DS and iPhone. Other devices and prolonged sessions may behave differently. Tapping **Server** again keeps the existing pairing; after you explicitly stop and restart the server, scan the newly generated private GPS QR. In NMEA client mode, `sdmc:/3ds_google_maps/gps.cfg` can contain one line with the phone server’s IPv4 address and TCP port separated by a space. Fixes expire after ten seconds without an update.
+The page requests the Screen Wake Lock API when supported, which can prevent the display from sleeping while the page is visible. This is best-effort only: browser security policies may reject it, and ordinary web pages cannot reliably continue geolocation while locked or backgrounded. For unattended or locked-screen tracking, a native phone companion or trusted relay is required. Azahar was previously tested with a simulated HTTPS fix, and the maintainer reported the GPS reliability fix working with a real 3DS and iPhone. Other devices and prolonged sessions may behave differently. Tapping **Server** again keeps the existing pairing; after you explicitly stop and restart the server, scan the newly generated private GPS QR. In NMEA client mode, `sdmc:/3ds_google_maps/gps.cfg` can contain one line with the phone server’s IPv4 address and TCP port separated by a space. Fixes expire after ten seconds without an update.
 
 ## Troubleshoot
 
@@ -53,6 +53,7 @@ Azahar was previously tested with a simulated HTTPS fix, and the maintainer repo
 - **Transfer stops:** check Wi-Fi, free SD space, the tile source and its expected zoom levels. Press **A** on the paused pack to continue with the same endpoint. Press **Select** on a completed pack to check image readability.
 - **Search or route fails:** confirm internet access and retry. These requests use external services. Press **B** to cancel a pending request.
 - **Phone does not connect:** confirm the local HTTPS page is reachable, manually acknowledge Safari's self-signed certificate warning where offered, and permit location while Safari is foregrounded. If pairing expires or the server restarts, rescan the current private GPS QR. Never share the private pairing QR or exact location.
+- **GPS server does not start:** set the 3DS date and time, then retry. The server requires a valid clock to create a valid HTTPS certificate. If startup still fails, check `sdmc:/3ds_google_maps_debug.log` and report the `[GPS-SVR]` entries around the failure.
 - **Need help:** report your device model, app version or commit, steps, and a sanitized log if available. Logs can contain request URLs and locations.
 
 ## Build from source
@@ -69,7 +70,15 @@ make
 ./tests/run-host.sh
 ```
 
-On Windows, use the corresponding MSYS2 path to the devkitPro installation, such as `/c/devkitPro`. The build produces `3ds_google_maps.3dsx` and a development ELF. The host tests cover region planning, antimeridian wrapping, and interrupted writes.
+On Windows, use the corresponding MSYS2 path to the devkitPro installation, such as `/c/devkitPro`. The build produces `3ds_google_maps.3dsx` and a development ELF. The host tests cover region planning, antimeridian wrapping, interrupted writes,
+route-provider response parsing, route geometry ownership, GPS pairing, and
+browser-page behavior. The route parser tests accept both direct OSRM GeoJSON
+and the LAN proxy response shape, and reject malformed or incomplete responses.
+Runtime diagnostics are written to the SD-card root at
+`sdmc:/3ds_google_maps_debug.log`. The log includes startup and shutdown
+stages, service initialization results, worker/request outcomes, HTTP status
+and byte counts, route parsing/application results, and GPS server stages.
+Pairing tokens and full request URLs are intentionally not logged.
 
 ### Build the CIA
 

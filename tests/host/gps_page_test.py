@@ -27,7 +27,7 @@ process.stdin.on('end',async()=>{
  const position={coords:{latitude:35,longitude:-82,accuracy:4,speed:null,heading:null}};
  const flush=()=>new Promise(resolve=>setImmediate(resolve));
  function boot({hash='#'+goodToken,search='',secure=true,storage=new Map(),responses=[204],hidden=false}={}){
-   let now=100000,watch=null,cleared=0,interval=null;
+   let now=100000,watch=null,cleared=0,wakeRequests=0,interval=null;
    const status={textContent:'',className:'box'};
    const requests=[],timeouts=new Map(),listeners={};
    let timer=0,replaced=null;
@@ -42,10 +42,11 @@ process.stdin.on('end',async()=>{
      window:{isSecureContext:secure},
      document:{hidden,getElementById:()=>status,
                addEventListener:(name,fn)=>{listeners[name]=fn;}},
-     navigator:{geolocation:{
-       watchPosition:(send,err)=>{watch={send,err};return 3;},
-       clearWatch:id=>{assert.equal(id,3);cleared++;}
-     }},
+     navigator:{wakeLock:{request:()=>{wakeRequests++;return Promise.resolve({});}},
+       geolocation:{
+         watchPosition:(send,err)=>{watch={send,err};return 3;},
+         clearWatch:id=>{assert.equal(id,3);cleared++;}
+       }},
      Date:{now:()=>now},AbortController,
      setTimeout:(cb,delay)=>{const id=++timer;timeouts.set(id,{cb,delay});return id;},
      clearTimeout:id=>timeouts.delete(id),
@@ -60,6 +61,7 @@ process.stdin.on('end',async()=>{
    };
    vm.runInNewContext(code,api);
    return {status,requests,storage,api,get watch(){return watch;},
+           get wakeRequests(){return wakeRequests;},
            get cleared(){return cleared;},get interval(){return interval;},
            get replaced(){return replaced;},
            advance(ms){now+=ms;},flush};
@@ -67,6 +69,7 @@ process.stdin.on('end',async()=>{
  const freshStore=new Map();
  const fresh=boot({storage:freshStore});
  assert(fresh.watch&&fresh.interval);
+ assert.equal(fresh.wakeRequests,1,'supported wake lock is requested while visible');
  assert.equal(fresh.replaced,'/');
  assert.equal(freshStore.get('gpsToken'),goodToken);
  fresh.watch.send(position); await flush();

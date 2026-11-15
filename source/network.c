@@ -20,6 +20,8 @@ static bool configure_tls(CURL *curl) {
     return curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &ca) == CURLE_OK &&
            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L) == CURLE_OK &&
            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L) == CURLE_OK &&
+           curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2) == CURLE_OK &&
+           curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1) == CURLE_OK &&
            curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https") == CURLE_OK;
 }
 
@@ -441,9 +443,15 @@ static size_t retry_header(void *ptr, size_t size, size_t count, void *context) 
 
 bool network_request_ex(void *handle, const char *url, size_t limit, atomic_bool *cancel,
                         u8 **buffer, u32 *size, NetworkRequestInfo *info) {
-    if (!handle || !url || !limit) return false;
+    if (!handle || !url || !limit || !buffer || !size) {
+        log_write("[NET] request rejected invalid arguments\n");
+        return false;
+    }
+    log_write("[NET] request started url_len=%lu limit=%lu\n",
+              (unsigned long)strlen(url), (unsigned long)limit);
     CURL *curl = handle;
     struct curl_buf data = { NULL, 0, limit };
+    char error_buffer[CURL_ERROR_SIZE] = {0};
     NetworkRequestInfo local_info = {0};
     if (!info) info = &local_info;
     *info = (NetworkRequestInfo){0};
@@ -455,15 +463,21 @@ bool network_request_ex(void *handle, const char *url, size_t limit, atomic_bool
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, cancel ? 0L : 1L);
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, transfer_progress);
     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, error_buffer);
     CURLcode code = curl_easy_perform(curl);
     info->curl_code = code;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &info->http_status);
     if (code != CURLE_OK || info->http_status != 200 || !data.size) {
+        log_write("[NET] request failed http=%ld curl=%d bytes=%lu detail=%s\n",
+                  info->http_status, (int)code, (unsigned long)data.size,
+                  error_buffer[0] ? error_buffer : curl_easy_strerror(code));
         free(data.data);
         return false;
     }
     *buffer = data.data;
     *size = data.size;
+    log_write("[NET] request complete http=%ld bytes=%lu\n",
+              info->http_status, (unsigned long)data.size);
     return true;
 }
 
