@@ -11,6 +11,7 @@ int main(void){
  assert(!detail_plan_panorama(0,0,55,0,&k));
  assert(detail_plan_panorama(0,0,55,3,&k) && k.kind==DETAIL_PANORAMA&&k.z==2);
  assert(detail_plan_panorama(0,0,29,2,&k) && k.z==4);
+ assert(detail_plan_panorama(0,0,29,3,&k) && k.z==4);
  assert(detail_plan_url(k,id,url,sizeof(url)));
  assert(strstr(url,"panoid=1234567890123456789012"));
  assert(!detail_plan_url(k,"../bad",url,sizeof(url)));

@@ -1,5 +1,6 @@
 #include "detail_runtime.h"
 #include "detail_plan.h"
+#include "pano_detail.h"
 #include "explore.h"
 #include "network.h"
 #include "pano_runtime.h"
@@ -12,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Only one 256 or 512 pixel RGB565 tile in GPU memory. The original 1024x512
+/* At most four 256 or 512 pixel RGB565 tiles in GPU memory. The original 1024x512
  * panorama and bundled globe always remain visible as fallbacks. Worker owns
  * JPEG/PNG and RGB allocations; the render thread alone creates GPU textures. */
 #define DETAIL_COMPRESSED_MAX (1024u*1024u)
@@ -24,6 +25,7 @@ static struct {
  bool result_ok,desired_valid,loaded_valid,failed_valid;
  DetailKind context;
  DetailKey desired,requested,loaded,failed;
+ DetailKey cache[4];unsigned cache_count,cache_next;
  u64 desired_since,last_request,failed_since;
  char current_id[48],requested_id[48],status[100];
  uint16_t *pixels;
@@ -98,6 +100,10 @@ static void poll_finished(void){
  if(stream.result_ok&&stream.pixels&&current &&
     explore_detail_upload(stream.requested,stream.pixels)){
   stream.loaded=stream.requested;stream.loaded_valid=true;
+  if(stream.requested.kind==DETAIL_GLOBE)stream.cache_count=stream.cache_next=0;
+  stream.cache[stream.cache_next]=stream.requested;
+  stream.cache_next=(stream.cache_next+1)%4;
+  if(stream.cache_count<4)stream.cache_count++;
   stream.failed_valid=false;
   snprintf(stream.status,sizeof(stream.status),
    "%s detail z%u loaded",
@@ -120,10 +126,15 @@ static void reset_context(DetailKind kind,const char *id){
  if(stream.thread)atomic_store(&stream.cancel,true);
  explore_detail_clear();
  stream.context=kind;
+ stream.cache_count=stream.cache_next=0;
  stream.desired_valid=stream.loaded_valid=stream.failed_valid=false;
  stream.desired_since=0;stream.last_request=0;
  snprintf(stream.current_id,sizeof(stream.current_id),"%s",id?id:"");
  stream.status[0]=0;
+}
+static bool cached(DetailKey key){
+ for(unsigned i=0;i<stream.cache_count;i++)if(detail_plan_equal(stream.cache[i],key))return true;
+ return false;
 }
 static void tick(DetailKey wanted){
  u64 now=osGetTime();
@@ -133,7 +144,7 @@ static void tick(DetailKey wanted){
   if(stream.thread && !detail_plan_equal(stream.requested,wanted))
    atomic_store(&stream.cancel,true);
  }
- if(stream.thread||(stream.loaded_valid&&detail_plan_equal(stream.loaded,wanted))||
+ if(stream.thread||cached(wanted)||
     (stream.failed_valid&&detail_plan_equal(stream.failed,wanted)&&
     now>=stream.failed_since&&now-stream.failed_since<DETAIL_RETRY_MS)||
     !is_connected()||now<stream.desired_since||
@@ -165,6 +176,21 @@ void detail_runtime_update_panorama(const PanoLiveImage *p,float yaw,float pitch
   return;
  }
  reset_context(DETAIL_PANORAMA,p->id);
+ /* Poll before choosing the next missing tile, so a completed request is
+  * still validated against its own desired key. Four 512px RGB565 patches
+  * cost at most 2 MiB of resident texture data. */
+ poll_finished();
+ if(stream.cache_count && stream.cache[0].z!=wanted.z){
+  /* Coarse and fine meshes overlap: retire the old level together. */
+  explore_detail_clear();stream.cache_count=stream.cache_next=0;
+  stream.loaded_valid=false;
+ }
+ PanoDetailTile visible[PANO_VISIBLE_MAX];
+ int count=pano_detail_visible(yaw,pitch,fov,wanted.z,visible);
+ for(int i=0;i<count && i<4;i++){
+  DetailKey candidate={DETAIL_PANORAMA,visible[i].z,visible[i].x,visible[i].y};
+  if(!cached(candidate)){wanted=candidate;break;}
+ }
  tick(wanted);
 }
 void detail_runtime_update_globe(double lat,double lon,float distance,unsigned quality){
@@ -187,6 +213,7 @@ void detail_runtime_stop(void){
  free(stream.pixels);stream.pixels=NULL;
  explore_detail_clear();
  stream.context=DETAIL_NONE;
+ stream.cache_count=stream.cache_next=0;
  stream.desired_valid=stream.loaded_valid=stream.failed_valid=false;
  stream.desired_since=stream.last_request=0;
  stream.current_id[0]=stream.requested_id[0]=stream.status[0]=0;

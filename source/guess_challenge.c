@@ -82,7 +82,7 @@ bool guess_country_parse(const char *answer,char out[3]){
  {"canada","CA"},{"portugal","PT"},{"denmark","DK"},{"norway","NO"},{"sweden","SE"},{"iceland","IS"},
  {"poland","PL"},{"greece","GR"},{"turkey","TR"},{"romania","RO"},{"belgium","BE"},{"switzerland","CH"},
  {"estonia","EE"},{"latvia","LV"},{"lithuania","LT"},{"ireland","IE"},{"new zealand","NZ"},
- {"thailand","TH"},{"indonesia","ID"},{"india","IN"},{"egypt","EG"},{"morocco","MA"},
+ {"luxembourg","LU"},{"slovakia","SK"},{"philippines","PH"},{"peru","PE"},{"chile","CL"},{"thailand","TH"},{"indonesia","ID"},{"india","IN"},{"egypt","EG"},{"morocco","MA"},
  {"china","CN"},{"russia","RU"},{"ukraine","UA"},{"hungary","HU"},{"croatia","HR"},{"slovenia","SI"}};
  for(unsigned i=0;i<sizeof(names)/sizeof(names[0]);i++)if(!strcmp(text,names[i][0])){memcpy(out,names[i][1],3);return true;}
  return false;

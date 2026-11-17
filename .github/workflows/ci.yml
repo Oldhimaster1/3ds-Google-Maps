@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - run: sudo apt-get update && sudo apt-get install -y libjansson-dev python3-opencv python3-numpy
+      - run: sudo apt-get update && sudo apt-get install -y libjansson-dev libfribidi-dev python3-opencv python3-numpy
       - name: Full host regression gate with ASan and UBSan
         env:
           ASAN_OPTIONS: detect_leaks=1
@@ -40,7 +40,7 @@ jobs:
       - name: Fresh devkitARM build
         run: |
           docker run --rm -v "$PWD:/src" -v "$RUNNER_TEMP/maps-tools:/tools:ro" -w /src devkitpro/devkitarm:latest bash -ec '
-            dkp-pacman -Syu --noconfirm --needed 3ds-dev 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson
+            dkp-pacman -Syu --noconfirm --needed 3ds-dev 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson 3ds-libfribidi
             make clean
             make -j2 cia BANNERTOOL=/tools/bannertool MAKEROM=/tools/makerom
           '

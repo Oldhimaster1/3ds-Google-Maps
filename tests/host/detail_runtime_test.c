@@ -137,6 +137,18 @@ int main(void){
  advance(500);detail_runtime_update_globe(0,0,2.0f,2);
  assert(requests==failed_requests);
  detail_runtime_stop();
- puts("detail runtime: PASS");
+ connected=1;network_ok=1;
+ int before_uploads=uploads;
+ for(int i=0;i<40;i++){
+  detail_runtime_update_panorama(&pano,0,0,55,3);
+  if(active)run_active();
+  advance(240);
+ }
+ assert(uploads-before_uploads==4);
+ int cached_requests=requests;
+ for(int i=0;i<10;i++){detail_runtime_update_panorama(&pano,0,0,55,3);advance(240);}
+ assert(requests==cached_requests);
+ detail_runtime_stop();assert(!active&&created==freed);
+ puts("detail runtime: PASS (four viewport tiles, bounded cache, no repeat requests)");
  return 0;
 }

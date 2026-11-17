@@ -3,7 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 int main(void){
- assert(guess_location_count>=28);
+ assert(guess_location_count>=100);
+ assert(guess_country_parse("Philippines",(char[3]){0}));
+ assert(guess_country_parse("Chile",(char[3]){0}));
  for(uint32_t seed=0;seed<10000;seed++)for(unsigned d=0;d<3;d++){
   GuessChallenge a,b;char code[40];assert(guess_challenge_make(&a,seed,d));
   assert(guess_challenge_code(&a,code,sizeof(code)));assert(guess_challenge_parse(&b,code));

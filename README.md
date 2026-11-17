@@ -14,6 +14,8 @@ Pick somewhere you've never been. Wander down a street, take a closer look at th
 
 </div>
 
+**New preview:** [v2.3.0 Preview 1](https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.3.0-preview.1) adds expanded StreetGuess coverage, tiled zoom detail, languages and optional music. [Preview notes](docs/releases/v2.3.0-preview.1.md).
+
 ## What's new since v2.0?
 
 The original release was mainly about browsing maps, searching for places, planning routes and taking maps offline. This version takes things a lot further.
@@ -50,7 +52,7 @@ Look for clues in the panorama, place a pin on the map, and see how close your g
 - **Country Streak:** Name the country and see how long you can keep your streak alive.
 - **Mystery Expeditions and Surprise Me:** Let the game pick somewhere unexpected.
 
-There are currently **32 curated panorama locations across 21 countries**, plus classic random-location play. Explorer difficulty offers hints without a timer; Standard and Expert provide a bigger challenge. Your records stay on the SD card, and no online account is required.
+There are currently **113 curated panorama locations across 33 countries**, plus classic random-location play. Explorer difficulty offers hints without a timer; Standard and Expert provide a bigger challenge. Your records stay on the SD card, and no online account is required.
 
 The curated challenges use Panoramax imagery. Classic random play uses experimental Google imagery and may not work in every area. Missing challenge images can be retried without losing the round.
 
@@ -111,7 +113,7 @@ Then launch it from the Homebrew Launcher.
 3. **Play StreetGuess:** Choose **Settings → Explore → Play StreetGuess**. Press **Select** to open the challenge menu, then choose a mode or a friend code.
 4. **Connect your phone for GPS:** Use the GPS server option while both devices are on the same trusted Wi-Fi. Scan the private pairing QR, allow location access and keep that QR private.
 
-[Full map controls](docs/usage.md) · [Explore and gyro guide](docs/explore.md) · [StreetGuess guide](docs/streetguess.md)
+[Languages and optional ambient music](docs/languages-and-music.md) · [Full map controls](docs/usage.md) · [Explore and gyro guide](docs/explore.md) · [StreetGuess guide](docs/streetguess.md)
 
 ## A few useful tips
 
@@ -145,7 +147,7 @@ Check the [troubleshooting guide](docs/usage.md#troubleshoot) and [known limitat
 
 The project is open source. [Build it with devkitPro](docs/usage.md#build-from-source) or browse the [release changes](docs/releases/v2.2.0.md).
 
-Maps © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Satellite imagery shown in the current gallery is credited to Esri and contributors; the globe uses NASA Blue Marble/GIBS. Elevation uses Terrarium data, and street imagery belongs to its credited creators. [StreetGuess image credits and licenses](docs/datasets/streetguess-v2.json) · [Third-party licenses](THIRD_PARTY_LICENSES.md).
+Maps © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Satellite imagery shown in the current gallery is credited to Esri and contributors; the globe uses NASA Blue Marble/GIBS. Elevation uses Terrarium data, and street imagery belongs to its credited creators. [StreetGuess image credits and licenses](docs/datasets/streetguess-v3.json) · [Third-party licenses](THIRD_PARTY_LICENSES.md).
 
 This is an independent homebrew project, not affiliated with Nintendo, Google, NASA or the imagery providers.
 

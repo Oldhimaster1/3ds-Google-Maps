@@ -32,12 +32,18 @@ static C3D_Tex building_texture;
 static bool building_texture_ready;
 static float terrain_focus_x,terrain_focus_z;
 static ExploreMode loaded;
-static Vertex *detail_vertices;
-static u16 *detail_indices;
-static unsigned detail_index_count;
-static C3D_Tex detail_texture;
-static bool detail_ready;
-static ExploreMode detail_mode;
+#define DETAIL_CACHE_SLOTS 4
+static struct {
+ Vertex *vertices;u16 *indices;unsigned index_count;
+ C3D_Tex texture;bool ready;ExploreMode mode;
+} detail_slots[DETAIL_CACHE_SLOTS];
+static unsigned detail_slot;
+#define detail_vertices detail_slots[detail_slot].vertices
+#define detail_indices detail_slots[detail_slot].indices
+#define detail_index_count detail_slots[detail_slot].index_count
+#define detail_texture detail_slots[detail_slot].texture
+#define detail_ready detail_slots[detail_slot].ready
+#define detail_mode detail_slots[detail_slot].mode
 
 static bool load_texture(C3D_Tex *tex, Asset asset, bool wrap) {
     if (!C3D_TexInit(tex, asset.width, asset.height, GPU_RGB565)) return false;
@@ -304,6 +310,7 @@ bool explore_detail_upload(DetailKey key,const uint16_t *morton_pixels){
                       key.kind==DETAIL_GLOBE?EXPLORE_GLOBE:EXPLORE_NONE;
  if(!morton_pixels || expected==EXPLORE_NONE || loaded!=expected ||
     key.z>8 || key.x>=(1u<<key.z) || key.y>=(1u<<key.z))return false;
+ if(expected==EXPLORE_GLOBE)explore_detail_clear();
  unsigned side=key.kind==DETAIL_PANORAMA?512:256;
  unsigned subdivisions=(key.kind==DETAIL_GLOBE && key.z==0)?32:16;
  unsigned verts=(subdivisions+1)*(subdivisions+1);
@@ -351,16 +358,19 @@ bool explore_detail_upload(DetailKey key,const uint16_t *morton_pixels){
  detail_vertices=v;detail_indices=idx;
  detail_index_count=tris;
  detail_mode=expected;detail_ready=true;
+ detail_slot=(detail_slot+1)%DETAIL_CACHE_SLOTS;
  return true;
 }
 void explore_detail_clear(void){
- if(!detail_ready&&!detail_vertices&&!detail_indices)return;
  C3D_FrameSync();
+ for(detail_slot=0;detail_slot<DETAIL_CACHE_SLOTS;detail_slot++){
  if(detail_ready)C3D_TexDelete(&detail_texture);
  if(detail_vertices)linearFree(detail_vertices);
  if(detail_indices)linearFree(detail_indices);
  detail_vertices=NULL;detail_indices=NULL;
  detail_index_count=0;detail_ready=false;detail_mode=EXPLORE_NONE;
+ }
+ detail_slot=0;
 }
 
 void explore_unload(void) {
@@ -418,6 +428,8 @@ void explore_draw(C3D_RenderTarget *target, float yaw, float pitch,
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, projection_uniform, &projection);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, view_uniform, &view);
     C3D_DrawElements(GPU_TRIANGLES, index_count, C3D_UNSIGNED_SHORT, indices);
+    unsigned next_detail_slot=detail_slot;
+    for(detail_slot=0;detail_slot<DETAIL_CACHE_SLOTS;detail_slot++){
     if(detail_ready && detail_mode==loaded && detail_vertices &&
        detail_indices && detail_index_count){
         BufInfo_Init(buffers);
@@ -426,6 +438,8 @@ void explore_draw(C3D_RenderTarget *target, float yaw, float pitch,
         C3D_DrawElements(GPU_TRIANGLES,detail_index_count,
                          C3D_UNSIGNED_SHORT,detail_indices);
     }
+    }
+    detail_slot=next_detail_slot;
     if(loaded==EXPLORE_TERRAIN && building_vertices && building_indices &&
        building_index_count && building_texture_ready){
         /* Same left/right projection as terrain gives genuine stereo disparity. */

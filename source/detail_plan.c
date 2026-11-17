@@ -17,8 +17,8 @@ bool detail_plan_equal(DetailKey a,DetailKey b){
 bool detail_plan_panorama(float yaw,float pitch,float fov,unsigned quality,DetailKey *out){
  if(!out||quality>3||quality==0||!isfinite(yaw)||!isfinite(pitch)||!isfinite(fov))return false;
  /* No full-resolution equirectangular allocation: only one visible 512px tile.
-  * Auto chooses 2/3 based on field-of-view; Detail can request zoom 4. */
- unsigned z=quality==1?2:quality==2?(fov<=32?4:3):(fov<37?3:2);
+  * Auto chooses zoom 2–4 based on field-of-view; each request stays tile-sized. */
+ unsigned z=quality==1?2:quality==2?(fov<=32?4:3):(fov<=32?4:fov<50?3:2);
  PanoDetailTile tiles[PANO_VISIBLE_MAX];
  int count=pano_detail_visible(yaw,pitch,fov,(int)z,tiles);
  if(count<=0)return false;

@@ -60,7 +60,7 @@ Azahar was previously tested with a simulated HTTPS fix, and the maintainer repo
 Install [devkitPro and the Nintendo 3DS toolchain](https://devkitpro.org/wiki/Getting_Started). In the devkitPro shell:
 
 ```sh
-dkp-pacman -S 3ds-dev 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson
+dkp-pacman -S 3ds-dev 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson 3ds-libfribidi
 export DEVKITPRO=/opt/devkitpro
 export DEVKITARM="$DEVKITPRO/devkitARM"
 export PATH="$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH"
