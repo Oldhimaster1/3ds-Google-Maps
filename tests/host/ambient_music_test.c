@@ -5,6 +5,7 @@
 #include <stdio.h>
 static unsigned starts,stops,queued,pauses,resumes,cleared;
 static bool fail,fail_alloc;
+static float gain;
 int ndspInit(void){starts++;return fail?-1:0;}
 void ndspExit(void){stops++;}
 void *linearAlloc(size_t n){return fail_alloc?NULL:malloc(n);}
@@ -14,7 +15,7 @@ void ndspChnReset(unsigned c){assert(c==23);}
 void ndspChnSetInterp(unsigned c,int i){assert(c==23 && i==NDSP_INTERP_LINEAR);}
 void ndspChnSetRate(unsigned c,float r){assert(c==23 && r==16000);}
 void ndspChnSetFormat(unsigned c,int f){assert(c==23 && f==NDSP_FORMAT_MONO_PCM16);}
-void ndspChnSetMix(unsigned c,const float *mix){assert(c==23 && mix[0]>0 && mix[0]<1 && mix[0]==mix[1]);}
+void ndspChnSetMix(unsigned c,const float *mix){assert(c==23 && mix[0]>=0 && mix[0]<=1 && mix[0]==mix[1]);gain=mix[0];}
 void ndspChnWaveBufAdd(unsigned c,ndspWaveBuf *w){
     assert(c==23 && w->looping && w->nsamples==128000);
     const s16 *pcm=w->data_vaddr;long amplitude=0;
@@ -26,11 +27,21 @@ void ndspChnWaveBufClear(unsigned c){assert(c==23);cleared++;}
 int main(void){
     ambient_music_update(false);assert(starts==0);
     ambient_music_update(true);ambient_music_update(true);assert(starts==1 && queued==1);
+    ambient_music_set_volume(0);assert(gain==0);
+    ambient_music_set_volume(100);assert(gain==1);
+    ambient_music_set_volume(1000);assert(gain==1);
+    ambient_music_set_volume(25);assert(gain==.25f);
     ambient_music_update(false);ambient_music_update(false);assert(pauses==1);
     ambient_music_update(true);assert(resumes==1 && queued==1);
     ambient_music_exit();assert(cleared==1 && stops==1);
+    ambient_music_set_volume(0);ambient_music_update(true);assert(starts==1);
+    ambient_music_set_volume(55);
     fail=true;ambient_music_update(true);ambient_music_update(true);assert(starts==2 && queued==1);
-    ambient_music_exit();fail=false;fail_alloc=true;ambient_music_update(true);
-    assert(starts==3 && stops==2 && queued==1);ambient_music_exit();
+    assert(ambient_music_status()==AMBIENT_DSP_ERROR);
+    fail=false;ambient_music_retry();assert(ambient_music_status()==AMBIENT_READY);
+    ambient_music_update(true);assert(starts==3 && queued==2);
+    ambient_music_exit();fail_alloc=true;ambient_music_update(true);
+    assert(starts==4 && stops==3 && queued==2);
+    assert(ambient_music_status()==AMBIENT_MEMORY_ERROR);ambient_music_exit();
     puts("PASS original audio loop samples, pause/resume, DSP failure, allocation failure and cleanup");
 }

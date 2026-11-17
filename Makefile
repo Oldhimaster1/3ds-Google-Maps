@@ -39,8 +39,8 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 NO_SMDH		:=	1
 
-APP_TITLE	:= 3DS Maps 2.3 Preview
-APP_DESCRIPTION := Maps and StreetGuess - 2.3.0 Preview
+APP_TITLE	:= 3DS Maps 2.3
+APP_DESCRIPTION := Maps and StreetGuess - 2.3.1
 APP_AUTHOR	:= Oldhimaster1
 BANNERTOOL	?= bannertool
 MAKEROM		?= makerom
@@ -163,7 +163,7 @@ cia: all
 	"$(BANNERTOOL)" makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "Oldhimaster1" -i icon.png -r regionfree -f visible -o "$(BUILD)/cia-icon.bin"
 	"$(BANNERTOOL)" makebanner -i banner.png -a banner.wav -o "$(BUILD)/cia-banner.bin"
 	"$(MAKEROM)" -f ncch -target t -rsf tools/cia.rsf -elf "$(TARGET).elf" -icon "$(BUILD)/cia-icon.bin" -banner "$(BUILD)/cia-banner.bin" -o "$(BUILD)/$(TARGET).cxi"
-	"$(MAKEROM)" -f cia -target t -content "$(BUILD)/$(TARGET).cxi:0:0" -major 2 -minor 3 -micro 0 -o "$(BUILD)/$(TARGET).cia"
+	"$(MAKEROM)" -f cia -target t -content "$(BUILD)/$(TARGET).cxi:0:0" -major 2 -minor 3 -micro 1 -o "$(BUILD)/$(TARGET).cia"
 	mv "$(BUILD)/$(TARGET).cia" "$(TARGET).cia"
 
 $(BUILD):

@@ -155,7 +155,9 @@ typedef enum {
     SETTINGS_HIT_TAB_LOCALE,
     SETTINGS_HIT_LANGUAGE_PREV,
     SETTINGS_HIT_LANGUAGE_NEXT,
-    SETTINGS_HIT_MUSIC
+    SETTINGS_HIT_MUSIC,
+    SETTINGS_HIT_VOLUME_DOWN,
+    SETTINGS_HIT_VOLUME_UP
 } SettingsHitTarget;
 
 #define MAX_RECENTS 10
@@ -166,7 +168,6 @@ static MapState map_state;
 static C3D_RenderTarget* top_screen;
 static C3D_RenderTarget* bottom_screen;
 static C2D_TextBuf g_ui_text_buf;
-static PrintConsole g_modal_console;
 static bool g_should_exit = false;
 static u64 g_last_interaction_ms = 0;
 static RecentPlace g_recents[MAX_RECENTS];
@@ -271,7 +272,6 @@ static char g_route_next_text[80] = {0};
 static int g_route_next_dist_m = 0;
 static TouchAction g_last_touch_action = TOUCH_ACTION_NONE;
 static u64 g_last_touch_action_ms = 0;
-static int g_console_ui_depth = 0;
 static u64 g_last_dpad_pan_ms = 0;
 
 // Function prototypes
@@ -323,8 +323,6 @@ static bool favorites_save(void);
 static void add_favorite(const char* name, double lat, double lon);
 static void set_last_place_name(const char* name);
 static void set_status_message(const char* message);
-static void begin_bottom_console_ui(void);
-static void end_bottom_console_ui(const char* status_message);
 static TouchAction get_touch_action(const touchPosition* touch);
 static bool handle_touch_button_action(TouchAction action);
 static int circle_pad_axis_to_pan(int axis);
@@ -404,48 +402,7 @@ static void close_menu(const char* status_message) {
     }
 }
 
-static void begin_bottom_console_ui(void) {
-    if (g_console_ui_depth == 0) {
-        consoleInit(GFX_TOP, &g_modal_console);
-    }
-    g_console_ui_depth++;
-    consoleSelect(&g_modal_console);
-    consoleClear();
-}
 
-static void end_bottom_console_ui(const char* status_message) {
-    u16 fb_width = 0;
-    u16 fb_height = 0;
-    u8* fb = NULL;
-
-    if (g_console_ui_depth <= 0) return;
-
-    g_console_ui_depth--;
-    if (g_console_ui_depth == 0) {
-        consoleClear();
-
-        gfxSetScreenFormat(GFX_TOP, GSP_BGR8_OES);
-        gfxSetDoubleBuffering(GFX_TOP, true);
-
-        fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &fb_width, &fb_height);
-        if (fb && fb_width > 0 && fb_height > 0) {
-            memset(fb, 0, (size_t)fb_width * (size_t)fb_height * 3);
-        }
-        gfxScreenSwapBuffers(GFX_TOP, false);
-        gspWaitForVBlank();
-
-        fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &fb_width, &fb_height);
-        if (fb && fb_width > 0 && fb_height > 0) {
-            memset(fb, 0, (size_t)fb_width * (size_t)fb_height * 3);
-        }
-        gfxScreenSwapBuffers(GFX_TOP, false);
-        gspWaitForVBlank();
-
-        if (status_message && status_message[0]) {
-            set_status_message(status_message);
-        }
-    }
-}
 
 
 static bool parse_latlon(const char* s, double* out_lat, double* out_lon) {
@@ -728,6 +685,7 @@ int main(int argc, char* argv[]) {
     input_remap_set_active(&g_controls);
     ui_access_load(UI_ACCESS_CFG);
     intl_load(INTL_CFG);
+    ambient_music_set_volume(intl_music_volume());
     favorites_load();
     load_session();
     set_status_message("Ready");
@@ -740,6 +698,12 @@ int main(int argc, char* argv[]) {
     static int frame_counter = 0;
     while (aptMainLoop() && !g_should_exit) {
         ambient_music_update(intl_music() && (g_explore_mode==EXPLORE_STREET || guess_ui_active()));
+        static AmbientStatus last_audio_status;
+        AmbientStatus audio_status=ambient_music_status();
+        if(audio_status!=last_audio_status && audio_status!=AMBIENT_READY)
+            set_status_message(audio_status==AMBIENT_DSP_ERROR?
+                "Audio unavailable: DSP initialization failed":"Audio unavailable: not enough memory");
+        last_audio_status=audio_status;
         frame_counter++;
         g_fps_frames++;
 
@@ -1578,16 +1542,16 @@ static void render_explore(void) {
     const char *title = g_explore_mode == EXPLORE_GLOBE ? "World globe" :
                         g_explore_mode == EXPLORE_TERRAIN ? "Terrain in 3D" : "Street View Explorer";
     char coordinates[58];
-    snprintf(coordinates, sizeof(coordinates), "%.2f, %.2f",
+    intl_snprintf(coordinates, sizeof(coordinates), "%.2f, %.2f",
              g_explore_pitch * (180.0 / M_PI), g_explore_yaw * (180.0 / M_PI));
     const PanoLiveImage *live = g_explore_mode == EXPLORE_STREET ?
         pano_runtime_current() : NULL;
     char live_label[96];
-    if (live) snprintf(live_label, sizeof(live_label), "%s %s",
+    if (live) intl_snprintf(live_label, sizeof(live_label), "%s %s",
                        street_provider_name(live->provider),
                        live->is_pano ? "360 panorama" : "street photo");
     char terrain_label[90];
-    snprintf(terrain_label,sizeof(terrain_label),"%.4f, %.4f",
+    intl_snprintf(terrain_label,sizeof(terrain_label),"%.4f, %.4f",
              g_terrain_origin_lat,g_terrain_origin_lon);
     const char *place = g_explore_mode == EXPLORE_STREET ?
         (live ? live_label : "Loading selected map location") :
@@ -1598,7 +1562,7 @@ static void render_explore(void) {
     draw_ui_text(12, 34, .40f, .40f, dim, 0, place);
     if (g_explore_mode == EXPLORE_STREET) {
         char source_label[64];
-        snprintf(source_label,sizeof(source_label),"Y / Source: %s  [Select]",
+        intl_snprintf(source_label,sizeof(source_label),"Y / Source: %s  [Select]",
                  street_provider_name(pano_runtime_provider()));
         C2D_DrawRectSolid(12,58,.15f,296,27,C2D_Color32(30,48,65,255));
         draw_control_text(16,67,.38f,.38f,accent,0,source_label);
@@ -1683,14 +1647,14 @@ static void render_explore(void) {
             g_explore_gyro && !g_explore_gyro_filter.ready ? "Gyro: HOLD STILL to calibrate" :
             g_explore_gyro ? "X Gyro ON  Select Recenter" : "X Gyro OFF  Select Recenter");
         char zoomlabel[80];
-        snprintf(zoomlabel,sizeof(zoomlabel),"Up/Down Zoom  (%d deg)",(int)g_explore_fov);
+        intl_snprintf(zoomlabel,sizeof(zoomlabel),"Up/Down Zoom  (%d deg)",(int)g_explore_fov);
         draw_control_text(12,205,.39f,.39f,white,0,zoomlabel);
         draw_control_text(12,224,.33f,.33f,dim,0,
             "L/R Move   L+Down Retry   A Map   B Back");
     } else draw_control_text(14, 196, .44f, .44f, dim, 0, "A  Open map     B  Back");
     if (g_debug_overlay) {
         char fps[24];
-        snprintf(fps, sizeof(fps), "%lu FPS", (unsigned long)g_fps);
+        intl_snprintf(fps, sizeof(fps), "%lu FPS", (unsigned long)g_fps);
         draw_ui_text(306, 196, .4f, .4f, accent, C2D_AlignRight, fps);
     }
     C3D_FrameEnd(0);
@@ -1865,26 +1829,21 @@ static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 col
         scale_x*=ui_access_scale();
         scale_y*=ui_access_scale();
     }
-    C2D_Text ui_text;
+    static UiText ui_text;
     ui_text_parse(&ui_text,g_ui_text_buf,text);
-    C2D_TextOptimize(&ui_text);
-    C2D_DrawText(&ui_text,flags|C2D_WithColor,x,y,.98f,scale_x,scale_y,color);
+    ui_text_optimize(&ui_text);
+    ui_text_draw(&ui_text,flags|C2D_WithColor,x,y,.98f,scale_x,scale_y,color);
     if(pref->weight>0){
         float spread=pref->weight==2?.80f:.40f;
-        C2D_DrawText(&ui_text,flags|C2D_WithColor,x+spread,y,.985f,
+        ui_text_draw(&ui_text,flags|C2D_WithColor,x+spread,y,.985f,
                      scale_x,scale_y,color);
     }
-}
-static void control_printf(const char *format,...){
- char text[512],hint[768];va_list args;va_start(args,format);
- vsnprintf(text,sizeof(text),format,args);va_end(args);
- input_remap_hint(REMAP_MAP,text,hint,sizeof(hint));printf("%s",hint);
 }
 static void draw_control_text(float x,float y,float sx,float sy,u32 color,u32 flags,const char *text){
  char hint[256];
  unsigned profile=g_explore_mode==EXPLORE_STREET?REMAP_STREET:
                   g_explore_mode!=EXPLORE_NONE?REMAP_EARTH:REMAP_MAP;
- input_remap_hint(profile,text,hint,sizeof(hint));
+ input_remap_hint(profile,intl_translate(text),hint,sizeof(hint));
  draw_ui_text(x,y,sx,sy,color,flags,hint);
 }
 /* Measure text instead of compressing it horizontally. UTF-8 is always
@@ -1893,6 +1852,7 @@ static void draw_ui_fit_line(float x,float y,float scale,u32 color,
                              const char *input,float max_width){
     if(!input||!input[0]||!g_ui_text_buf)return;
     char line[192];
+    input=intl_translate(input);
     size_t total=strlen(input);
     if(total>=sizeof(line))total=sizeof(line)-1;
     size_t lo=0,hi=total;
@@ -1905,7 +1865,7 @@ static void draw_ui_fit_line(float x,float y,float scale,u32 color,
         while(mid<total && ((unsigned char)input[mid]&0xc0)==0x80)mid++;
         if(mid>=sizeof(line))mid=sizeof(line)-1;
         memcpy(line,input,mid);line[mid]=0;
-        C2D_Text measure;
+        static UiText measure;
         ui_text_parse(&measure,g_ui_text_buf,line);
         float width=measure.width*real_scale;
         if(width<=max_width)lo=mid;
@@ -1920,7 +1880,7 @@ static void draw_ui_fit_line(float x,float y,float scale,u32 color,
         while(take>0 && (input[take-1]==' '||input[take-1]==','))take--;
         while(take>0){
             memcpy(line,input,take);memcpy(line+take,"...",4);
-            C2D_Text t;ui_text_parse(&t,g_ui_text_buf,line);
+            static UiText t;ui_text_parse(&t,g_ui_text_buf,line);
             if(t.width*real_scale<=max_width)break;
             take--;
             while(take>0 && ((unsigned char)input[take]&0xc0)==0x80)take--;
@@ -1999,7 +1959,9 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
         case SETTINGS_TAB_LOCALE:
             if(point_in_rect(touch->px,touch->py,12,103,70,36))return SETTINGS_HIT_LANGUAGE_PREV;
             if(point_in_rect(touch->px,touch->py,238,103,70,36))return SETTINGS_HIT_LANGUAGE_NEXT;
-            if(point_in_rect(touch->px,touch->py,12,166,296,34))return SETTINGS_HIT_MUSIC;
+            if(point_in_rect(touch->px,touch->py,12,147,296,30))return SETTINGS_HIT_MUSIC;
+            if(point_in_rect(touch->px,touch->py,12,183,60,30))return SETTINGS_HIT_VOLUME_DOWN;
+            if(point_in_rect(touch->px,touch->py,248,183,60,30))return SETTINGS_HIT_VOLUME_UP;
             break;
         case SETTINGS_TAB_VIEW:
             if (point_in_rect(touch->px, touch->py, 172, 101, 56, 28)) return SETTINGS_HIT_TILE_STREET;
@@ -2070,8 +2032,18 @@ static void apply_settings_hit(SettingsHitTarget hit) {
             intl_set_language((intl_language()+(hit==SETTINGS_HIT_LANGUAGE_NEXT?1:INTL_LANGUAGE_COUNT-1))%INTL_LANGUAGE_COUNT);
             if(!intl_save(INTL_CFG))set_status_message("Could not save language setting");
             break;
+        case SETTINGS_HIT_VOLUME_DOWN:
+        case SETTINGS_HIT_VOLUME_UP: {
+            unsigned volume=intl_music_volume();
+            if(hit==SETTINGS_HIT_VOLUME_DOWN)volume=volume<10?0:volume-10;
+            else volume=volume>90?100:volume+10;
+            intl_set_music_volume(volume);ambient_music_set_volume(volume);
+            if(!intl_save(INTL_CFG))set_status_message("Could not save music setting");
+            break;
+        }
         case SETTINGS_HIT_MUSIC:
-            intl_set_music(!intl_music());
+            if(ambient_music_status()!=AMBIENT_READY && intl_music())ambient_music_retry();
+            else intl_set_music(!intl_music());
             if(!intl_save(INTL_CFG))set_status_message("Could not save music setting");
             break;
         case SETTINGS_HIT_CLOSE:
@@ -2387,10 +2359,18 @@ static void render_settings_panel(void) {
         draw_ui_text(47,112,.5f,.5f,white,C2D_AlignCenter,"<");
         draw_ui_text(273,112,.5f,.5f,white,C2D_AlignCenter,">");
         draw_ui_text(160,112,.5f,.5f,white,C2D_AlignCenter,intl_language_name(intl_language()));
-        C2D_DrawRectSolid(12,166,.2f,296,34,C2D_Color32(35,48,64,255));
-        draw_ui_text(23,174,.43f,.43f,white,0,"Music");
-        draw_ui_text(294,174,.43f,.43f,white,C2D_AlignRight,intl_music()?"ON":"OFF");
-        draw_ui_text(12,210,.30f,.30f,white,0,"Street View / StreetGuess");
+        C2D_DrawRectSolid(12,147,.2f,296,30,C2D_Color32(35,48,64,255));
+        draw_ui_text(23,154,.43f,.43f,white,0,"Music");
+        draw_ui_text(294,154,.43f,.43f,white,C2D_AlignRight,intl_music() && ambient_music_status()!=AMBIENT_READY?"Retry":intl_music()?"ON":"OFF");
+        C2D_DrawRectSolid(12,183,.2f,60,30,C2D_Color32(35,48,64,255));
+        C2D_DrawRectSolid(248,183,.2f,60,30,C2D_Color32(35,48,64,255));
+        draw_ui_text(42,189,.45f,.45f,white,C2D_AlignCenter,"-");
+        draw_ui_text(278,189,.45f,.45f,white,C2D_AlignCenter,"+");
+        char volume[64];intl_snprintf(volume,sizeof(volume),"Volume: %u%%",intl_music_volume());
+        draw_ui_text(160,189,.4f,.4f,white,C2D_AlignCenter,volume);
+        const char *audio=ambient_music_status()==AMBIENT_DSP_ERROR?"Audio unavailable: DSP initialization failed":
+            ambient_music_status()==AMBIENT_MEMORY_ERROR?"Audio unavailable: not enough memory":"Street View / StreetGuess";
+        draw_ui_fit_line(12,220,.30f,white,audio,296);
     } else if (g_settings_tab == SETTINGS_TAB_VIEW) {
         bool street_active = network_get_tile_source() == TILE_SOURCE_STREET;
         bool sat_active = network_get_tile_source() == TILE_SOURCE_SATELLITE;
@@ -2402,7 +2382,7 @@ static void render_settings_panel(void) {
         C2D_DrawRectSolid(12.0f, 86.0f, 0.2f, 296.0f, 52.0f, C2D_Color32f(0.12f, 0.15f, 0.19f, 1.0f));
         C2D_DrawRectSolid(12.0f, 86.0f, 0.3f, 296.0f, 6.0f, C2D_Color32f(0.52f, 0.75f, 0.92f, 1.0f));
         draw_ui_text(24.0f, 98.0f, 0.46f, 0.46f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), 0, "Map style");
-        snprintf(line, sizeof(line), "%s via %s", network_get_tile_source_name(), network_get_effective_tile_backend_name());
+        intl_snprintf(line, sizeof(line), "%s via %s", network_get_tile_source_name(), network_get_effective_tile_backend_name());
         draw_ui_text(24.0f, 118.0f, 0.32f, 0.32f, C2D_Color32f(0.72f, 0.82f, 0.90f, 1.0f), 0, line);
 
         C2D_DrawRectSolid(172.0f, 101.0f, 0.4f, 56.0f, 28.0f,
@@ -2432,11 +2412,11 @@ static void render_settings_panel(void) {
         C2D_DrawRectSolid(12.0f, 150.0f, 0.2f, 296.0f, 56.0f, C2D_Color32f(0.12f, 0.15f, 0.19f, 1.0f));
 
         draw_ui_text(24.0f, 100.0f, 0.44f, 0.44f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), 0, "Prefetch ring");
-        snprintf(line, sizeof(line), "%d tile%s beyond view", g_prefetch_ring, (g_prefetch_ring == 1) ? "" : "s");
+        intl_snprintf(line, sizeof(line), "Prefetch ring: %d tiles", g_prefetch_ring);
         draw_ui_text(24.0f, 120.0f, 0.32f, 0.32f, C2D_Color32f(0.72f, 0.82f, 0.90f, 1.0f), 0, line);
 
         draw_ui_text(24.0f, 164.0f, 0.44f, 0.44f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), 0, "Prefetch cadence");
-        snprintf(line, sizeof(line), "Every %d idle frame%s", g_prefetch_every_n_frames, (g_prefetch_every_n_frames == 1) ? "" : "s");
+        intl_snprintf(line, sizeof(line), "Idle frames between requests: %d", g_prefetch_every_n_frames);
         draw_ui_text(24.0f, 184.0f, 0.32f, 0.32f, C2D_Color32f(0.72f, 0.82f, 0.90f, 1.0f), 0, line);
 
         C2D_DrawRectSolid(214.0f, 98.0f, 0.3f, 28.0f, 28.0f,
@@ -2445,7 +2425,7 @@ static void render_settings_panel(void) {
                           ring_inc_pressed ? C2D_Color32f(0.95f, 0.66f, 0.30f, 1.0f) : C2D_Color32f(0.20f, 0.24f, 0.30f, 1.0f));
         C2D_DrawRectSolid(245.0f, 98.0f, 0.3f, 24.0f, 28.0f, C2D_Color32f(0.12f, 0.15f, 0.19f, 1.0f));
         draw_ui_text(228.0f, 104.0f, 0.46f, 0.46f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), C2D_AlignCenter, "-");
-        snprintf(line, sizeof(line), "%d", g_prefetch_ring);
+        intl_snprintf(line, sizeof(line), "%d", g_prefetch_ring);
         draw_ui_text(257.0f, 104.0f, 0.40f, 0.40f, C2D_Color32f(0.90f, 0.93f, 0.97f, 1.0f), C2D_AlignCenter, line);
         draw_ui_text(286.0f, 104.0f, 0.42f, 0.42f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), C2D_AlignCenter, "+");
 
@@ -2455,11 +2435,11 @@ static void render_settings_panel(void) {
                           rate_inc_pressed ? C2D_Color32f(0.95f, 0.66f, 0.30f, 1.0f) : C2D_Color32f(0.20f, 0.24f, 0.30f, 1.0f));
         C2D_DrawRectSolid(245.0f, 162.0f, 0.3f, 24.0f, 28.0f, C2D_Color32f(0.12f, 0.15f, 0.19f, 1.0f));
         draw_ui_text(228.0f, 168.0f, 0.46f, 0.46f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), C2D_AlignCenter, "-");
-        snprintf(line, sizeof(line), "%d", g_prefetch_every_n_frames);
+        intl_snprintf(line, sizeof(line), "%d", g_prefetch_every_n_frames);
         draw_ui_text(257.0f, 168.0f, 0.40f, 0.40f, C2D_Color32f(0.90f, 0.93f, 0.97f, 1.0f), C2D_AlignCenter, line);
         draw_ui_text(286.0f, 168.0f, 0.42f, 0.42f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), C2D_AlignCenter, "+");
 
-        snprintf(line, sizeof(line), "RAM %lu/%lu tiles", (unsigned long)map_tiles_get_cache_used(), (unsigned long)map_tiles_get_cache_capacity());
+        intl_snprintf(line, sizeof(line), "RAM %lu/%lu tiles", (unsigned long)map_tiles_get_cache_used(), (unsigned long)map_tiles_get_cache_capacity());
         draw_ui_text(12.0f, 216.0f, 0.34f, 0.34f, C2D_Color32f(0.74f, 0.82f, 0.90f, 1.0f), 0, line);
     } else if (g_settings_tab == SETTINGS_TAB_DATA) {
         bool proxy_pressed = is_recent_settings_hit(SETTINGS_HIT_PROXY_TOGGLE, now_ms);
@@ -2504,7 +2484,7 @@ static void render_settings_panel(void) {
         draw_ui_text(24.0f, 184.0f, 0.40f, 0.40f, C2D_Color32f(0.97f, 0.98f, 1.0f, 1.0f), 0, "tile cache");
         draw_ui_text(178.0f, 166.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "Offline");
         draw_ui_text(178.0f, 184.0f, 0.40f, 0.40f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, "regions");
-        snprintf(line, sizeof(line), "backend %s", network_get_effective_tile_backend_name());
+        intl_snprintf(line, sizeof(line), "backend %s", network_get_effective_tile_backend_name());
         draw_ui_text(12.0f, 222.0f, 0.30f, 0.30f, C2D_Color32f(0.56f, 0.62f, 0.70f, 1.0f), 0, line);
     } else if (g_settings_tab == SETTINGS_TAB_EXPLORE) {
         static const char *names[] = {"World globe", "3D terrain",
@@ -2516,8 +2496,8 @@ static void render_settings_panel(void) {
             draw_ui_text(24, y + 4, .43f, .43f, C2D_Color32(238, 246, 253, 255), 0, names[i]);
         }
         char fly_label[45];
-        if (g_street_fly_ms==0) snprintf(fly_label,sizeof(fly_label),"Fly-in: OFF");
-        else snprintf(fly_label,sizeof(fly_label),"Fly-in: %d ms",g_street_fly_ms);
+        if (g_street_fly_ms==0) intl_snprintf(fly_label,sizeof(fly_label),"Fly-in: OFF");
+        else intl_snprintf(fly_label,sizeof(fly_label),"Fly-in: %d ms",g_street_fly_ms);
         draw_ui_text(20, 202, .34f, .34f, C2D_Color32(238, 246, 253, 255), 0, fly_label);
         C2D_DrawRectSolid(150,210,.5f,144,5,C2D_Color32(48,74,92,255));
         C2D_DrawRectSolid(150,210,.6f,144*g_street_fly_ms/(float)STREET_FLY_MAX_MS,5,
@@ -2562,22 +2542,22 @@ static void render_settings_panel(void) {
         };
         char values[4][44];
         if(g_more_page==0){
-            snprintf(values[0],44,"%s",speed[g_earth_options.input_speed]);
-            snprintf(values[1],44,"%u",g_earth_options.dead_zone);
-            snprintf(values[2],44,"%s",g_earth_options.gyro_invert?"Yes":"No");
-            snprintf(values[3],44,"%s",quality[g_earth_options.panorama_quality]);
+            intl_snprintf(values[0],44,"%s",speed[g_earth_options.input_speed]);
+            intl_snprintf(values[1],44,"%u",g_earth_options.dead_zone);
+            intl_snprintf(values[2],44,"%s",g_earth_options.gyro_invert?"Yes":"No");
+            intl_snprintf(values[3],44,"%s",quality[g_earth_options.panorama_quality]);
         }else if(g_more_page==1){
-            snprintf(values[0],44,"%.1fx",earth_options_terrain_scale(&g_earth_options));
-            snprintf(values[1],44,"%s",g_earth_options.buildings?"On":"Off");
-            snprintf(values[2],44,"%s",globe[g_earth_options.globe_detail]);
-            snprintf(values[3],44,"%s",sampler[g_earth_options.sampler]);
+            intl_snprintf(values[0],44,"%.1fx",earth_options_terrain_scale(&g_earth_options));
+            intl_snprintf(values[1],44,"%s",g_earth_options.buildings?"On":"Off");
+            intl_snprintf(values[2],44,"%s",globe[g_earth_options.globe_detail]);
+            intl_snprintf(values[3],44,"%s",sampler[g_earth_options.sampler]);
         }else{
-            snprintf(values[0],44,"%s",input_remap_profile_name(g_remap_profile));
-            snprintf(values[1],44,"%s <- %s",
+            intl_snprintf(values[0],44,"%s",input_remap_profile_name(g_remap_profile));
+            intl_snprintf(values[1],44,"%s <- %s",
                      input_remap_button_name(g_remap_action),
                      input_remap_button_name(g_controls.physical[g_remap_profile][g_remap_action]));
-            snprintf(values[2],44,"%s",g_remap_capture?"Listening...":"Tap to bind");
-            snprintf(values[3],44,"Defaults");
+            intl_snprintf(values[2],44,"%s",g_remap_capture?"Listening...":"Tap to bind");
+            intl_snprintf(values[3],44,"Defaults");
         }
         for(int i=0;i<4;i++){
             float y=80+i*34;
@@ -2642,7 +2622,7 @@ static void render_settings_panel(void) {
 
         if (client_mode) {
             draw_ui_text(24.0f, 164.0f, 0.44f, 0.44f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), 0, "TCP NMEA client");
-            snprintf(line, sizeof(line), "Host  %s  port %d", gps_get_nmea_host(), gps_get_nmea_port());
+            intl_snprintf(line, sizeof(line), "Host  %s  port %d", gps_get_nmea_host(), gps_get_nmea_port());
             draw_ui_text(24.0f, 184.0f, 0.32f, 0.32f, C2D_Color32f(0.72f, 0.82f, 0.90f, 1.0f), 0, line);
             draw_ui_text(24.0f, 204.0f, 0.30f, 0.30f,
                          gps_is_connected() ? C2D_Color32f(0.55f, 0.96f, 0.72f, 1.0f)
@@ -2658,29 +2638,29 @@ static void render_settings_panel(void) {
                 GpsFix fix;
                 if(gps_get_fix(&fix) && gps_get_server_fix_count()>0) {
                     if(fix.has_speed && fix.has_heading)
-                        snprintf(line,sizeof(line),"GPS %.1f mph, %.0f deg  +/-%.0fm",
+                        intl_snprintf(line,sizeof(line),"GPS %.1f mph, %.0f deg  +/-%.0fm",
                                  fix.speed_mps*2.23693629,fix.heading_deg,
                                  fmax(0.0,fix.accuracy_m));
                     else if(fix.has_speed)
-                        snprintf(line,sizeof(line),"GPS %.1f mph  Age %.1fs",
+                        intl_snprintf(line,sizeof(line),"GPS %.1f mph  Age %.1fs",
                                  fix.speed_mps*2.23693629,fix.age_ms/1000.0);
                     else
-                        snprintf(line,sizeof(line),"Fixes %u  Age %.1fs  Accuracy %.0fm",
+                        intl_snprintf(line,sizeof(line),"Fixes %u  Age %.1fs  Accuracy %.0fm",
                                  gps_get_server_fix_count(),fix.age_ms/1000.0,
                                  fix.accuracy_m>=0?fix.accuracy_m:0);
                 }
                 else
-                    snprintf(line,sizeof(line),"Waiting for phone GPS  (0 fixes)");
+                    intl_snprintf(line,sizeof(line),"Waiting for phone GPS  (0 fixes)");
                 draw_ui_text(24.0f, 200.0f, 0.36f, 0.36f, C2D_Color32f(0.80f, 0.88f, 0.92f, 1.0f), 0, line);
             } else {
                 /* Show the actual IP address even before starting */
                 u32 raw_ip = (u32)gethostid();
                 unsigned char *ipb = (unsigned char *)&raw_ip;
-                snprintf(line, sizeof(line), "HTTPS server  port 8443  (%u.%u.%u.%u)",
+                intl_snprintf(line, sizeof(line), "HTTPS server  port 8443  (%u.%u.%u.%u)",
                          ipb[0], ipb[1], ipb[2], ipb[3]);
                 draw_ui_text(24.0f, 164.0f, 0.42f, 0.42f, C2D_Color32f(0.96f, 0.98f, 1.0f, 1.0f), 0, line);
                 draw_ui_text(24.0f, 184.0f, 0.32f, 0.32f, C2D_Color32f(0.72f, 0.82f, 0.90f, 1.0f), 0, "Tap here or GPS button to start");
-                snprintf(line, sizeof(line), "https://%u.%u.%u.%u:8443",
+                intl_snprintf(line, sizeof(line), "https://%u.%u.%u.%u:8443",
                          ipb[0], ipb[1], ipb[2], ipb[3]);
                 draw_ui_text(24.0f, 204.0f, 0.30f, 0.30f, C2D_Color32f(0.60f, 0.88f, 0.98f, 1.0f), 0, line);
             }
@@ -2690,7 +2670,8 @@ static void render_settings_panel(void) {
     if(g_settings_tab==SETTINGS_TAB_GPS && gps_get_source_mode()==GPS_SOURCE_HTTPS_SERVER && gps_is_connected())
         draw_ui_fit_line(12,222,.35f,C2D_Color32(193,215,230,255),
                          "Scan TOP QR | Same WiFi | Allow phone location",296);
-    else
+    else if(g_settings_tab==SETTINGS_TAB_VIEW || g_settings_tab==SETTINGS_TAB_TILES ||
+            g_settings_tab==SETTINGS_TAB_DATA || g_settings_tab==SETTINGS_TAB_GPS)
         draw_control_text(160.0f, 222.0f, 0.32f, 0.32f, C2D_Color32f(0.66f, 0.76f, 0.86f, 1.0f), C2D_AlignCenter,
                      g_settings_tab == SETTINGS_TAB_VIEW ? "SELECT: tile timings   B: close" :
                      "Touch cards to change settings   B to close");
@@ -2723,7 +2704,7 @@ static void render_bottom_panel(void) {
 
     draw_ui_text(12.0f, 10.0f, 0.62f, 0.62f, C2D_Color32f(0.95f, 0.97f, 0.99f, 1.0f), 0, "3DS Maps Control");
 
-    snprintf(line, sizeof(line), "WiFi %s   %s %s   Z%d   FPS %lu",
+    intl_snprintf(line, sizeof(line), "WiFi %s   %s %s   Z%d   FPS %lu",
              is_connected() ? "OK" : "OFF",
              network_get_effective_tile_backend_name(),
              network_get_tile_source_name(),
@@ -2732,47 +2713,47 @@ static void render_bottom_panel(void) {
     draw_ui_text(12.0f, 32.0f, 0.42f, 0.42f, C2D_Color32f(0.73f, 0.82f, 0.92f, 1.0f), 0, line);
 
     if (g_request_label) {
-        snprintf(line, sizeof(line), "%s   B: Cancel", g_request_label);
+        intl_snprintf(line, sizeof(line), "%s   B: Cancel", g_request_label);
     } else if (g_debug_overlay) {
         TileTiming timing;
         if (map_tiles_get_timing(&timing))
-            snprintf(line, sizeof(line), "SD %u  Net %u  Decode %u  GPU %u ms",
+            intl_snprintf(line, sizeof(line), "SD %u  Net %u  Decode %u  GPU %u ms",
                      timing.sd_ms, timing.network_ms, timing.decode_ms, timing.upload_ms);
-        else snprintf(line, sizeof(line), "Waiting for a tile timing sample");
+        else intl_snprintf(line, sizeof(line), "Waiting for a tile timing sample");
     } else if (g_status_message[0] && (now_ms - g_status_message_ms) < 2200) {
-        snprintf(line, sizeof(line), "Status: %.32s", g_status_message);
+        intl_snprintf(line, sizeof(line), "Status: %.32s", g_status_message);
     } else if (g_route_active && g_route_follow.matched) {
         if(g_route_follow.off_route)
-            snprintf(line,sizeof(line),"Off route: checking GPS position");
+            intl_snprintf(line,sizeof(line),"Off route: checking GPS position");
         else if(g_route_follow.duration_s>0)
-            snprintf(line,sizeof(line),"Route %.1f mi left, ETA %.0f min",
+            intl_snprintf(line,sizeof(line),"Route %.1f mi left, ETA %.0f min",
                      g_route_follow.remaining_m/1609.344,
                      g_route_follow.eta_s/60);
         else
-            snprintf(line,sizeof(line),"Route %.1f mi left",
+            intl_snprintf(line,sizeof(line),"Route %.1f mi left",
                      g_route_follow.remaining_m/1609.344);
     } else if (gps_is_connected() || map_state.gps_tracking) {
         GpsFix fix;
-        if (!gps_get_fix(&fix)) snprintf(line, sizeof(line), "Waiting for GPS fix");
+        if (!gps_get_fix(&fix)) intl_snprintf(line, sizeof(line), "Waiting for GPS fix");
         else if(fix.has_speed){
-            if(fix.has_heading) snprintf(line,sizeof(line),"GPS %.1f mph   Course %03.0f deg",
+            if(fix.has_heading) intl_snprintf(line,sizeof(line),"GPS %.1f mph   Course %03.0f deg",
                  fix.speed_mps*2.23693629,fix.heading_deg);
-            else snprintf(line,sizeof(line),"GPS %.1f mph   Accuracy %.0fm",
+            else intl_snprintf(line,sizeof(line),"GPS %.1f mph   Accuracy %.0fm",
                  fix.speed_mps*2.23693629,fmax(0.0,fix.accuracy_m));
         }
         else if (fix.accuracy_m >= 0)
-            snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy %.0f m", fix.age_ms / 1000.0, fix.accuracy_m);
-        else snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy unavailable", fix.age_ms / 1000.0);
+            intl_snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy %.0f m", fix.age_ms / 1000.0, fix.accuracy_m);
+        else intl_snprintf(line, sizeof(line), "GPS %.1fs old   Accuracy unavailable", fix.age_ms / 1000.0);
     } else if (g_route_active) {
-        snprintf(line, sizeof(line), "Route: %.34s", g_route_next_text[0] ? g_route_next_text : "Active");
+        intl_snprintf(line, sizeof(line), "Route: %.34s", g_route_next_text[0] ? g_route_next_text : "Active");
     } else if (g_last_place_name[0]) {
-        snprintf(line, sizeof(line), "Place: %.34s", g_last_place_name);
+        intl_snprintf(line, sizeof(line), "Place: %.34s", g_last_place_name);
     } else {
-        snprintf(line, sizeof(line), "Lat %.4f  Lon %.4f", map_state.lat, map_state.lon);
+        intl_snprintf(line, sizeof(line), "Lat %.4f  Lon %.4f", map_state.lat, map_state.lon);
     }
     draw_ui_text(12.0f, 62.0f, 0.42f, 0.42f, C2D_Color32f(0.90f, 0.92f, 0.95f, 1.0f), 0, line);
 
-    snprintf(small, sizeof(small), g_show_coverage ? "Green: saved  Amber: no pack tile" : "Touch here to drag map");
+    intl_snprintf(small, sizeof(small), g_show_coverage ? "Green: saved  Amber: no pack tile" : "Touch here to drag map");
     C2D_DrawRectSolid(10.0f, 72.0f, 0.2f, 300.0f, 16.0f, C2D_Color32f(0.16f, 0.21f, 0.27f, 1.0f));
     draw_ui_text(160.0f, 75.0f, 0.36f, 0.36f, C2D_Color32f(0.84f, 0.89f, 0.94f, 1.0f), C2D_AlignCenter, small);
 
@@ -2884,7 +2865,7 @@ static void open_favorites(void) {
             SwkbdButton btn = swkbdInputText(&swkbd, name, sizeof(name));
             if (btn == SWKBD_BUTTON_RIGHT) {
                 if (name[0] == '\0') {
-                    snprintf(name, sizeof(name), "%.4f, %.4f", map_state.lat, map_state.lon);
+                    intl_snprintf(name, sizeof(name), "%.4f, %.4f", map_state.lat, map_state.lon);
                 }
                 add_favorite(name, map_state.lat, map_state.lon);
                 set_last_place_name(name);
@@ -3011,11 +2992,11 @@ static void render_place_panel(void) {
     if (place_identify) {
         C2D_DrawRectSolid(9,57,.20f,302,67,C2D_Color32(31,74,91,255));
         draw_ui_address_two_lines(place_rows[0].name,white);
-        snprintf(line, sizeof(line), "%.6f, %.6f", place_rows[0].lat, place_rows[0].lon);
+        intl_snprintf(line, sizeof(line), "%.6f, %.6f", place_rows[0].lat, place_rows[0].lon);
         draw_ui_text(13, 146, .45f, .45f, dim, 0, line);
         draw_ui_text(13, 172, .43f, .43f, dim, 0, "Saved to Recents");
     } else {
-        snprintf(line, sizeof(line), "%d of %d", place_selection + 1, place_count);
+        intl_snprintf(line, sizeof(line), "%d of %d", place_selection + 1, place_count);
         draw_ui_text(12, 31, .39f, .39f, dim, 0, line);
         int first=place_selection>2?place_selection-2:0;
         for(int i=first;i<place_count && i<first+3;i++){
@@ -3306,51 +3287,44 @@ static void render_route_overlay(double center_lat, double center_lon, int zoom,
     }
 }
 
-static void open_cache_stats(void) {
-    begin_bottom_console_ui();
-    while (aptMainLoop() && !g_should_exit) {
-        consoleClear();
-        printf("=== Cache stats ===\n\n");
-        printf("RAM tiles: %lu/%lu\n",
-               (unsigned long)map_tiles_get_cache_used(),
-               (unsigned long)map_tiles_get_cache_capacity());
-        printf("SD cache: %s\n", network_get_disk_cache_enabled() ? "ON" : "OFF");
-     printf("Prefetch: ring=%d throttle=%d\n", g_prefetch_ring, g_prefetch_every_n_frames);
-        printf("Night mode: %s\n", g_night_mode ? "ON" : "OFF");
-        TileTiming timing;
-        if (map_tiles_get_timing(&timing)) {
-            printf("Last loaded tile: %s\n", timing.local ? "SD card" : "network");
-            printf("SD access:  %u ms\nNetwork:    %u ms\nDecode:     %u ms\nGPU upload: %u ms\n",
-                   timing.sd_ms, timing.network_ms, timing.decode_ms, timing.upload_ms);
-        }
-        printf("FPS: %lu\n", (unsigned long)g_fps);
-
-        control_printf("\nX: Clear SD tile cache\n");
-        control_printf("B or R: Back\n");
-        printf("START: Exit\n");
-
-        hidScanInput();
-        u32 kDown = input_remap_apply(REMAP_MAP,hidKeysDown());
-        if (kDown & KEY_START) {
-            g_should_exit = true;
-            end_bottom_console_ui(NULL);
-            return;
-        }
-        if (kDown & KEY_X) {
-            consoleClear();
-            printf("Clearing SD tile cache...\n");
-            bool ok = network_clear_disk_tile_cache();
-            printf("%s\n", ok ? "Done." : "Failed.");
-            svcSleepThread(700000000LL);
-            continue;
-        }
-        if (kDown & (KEY_B | KEY_R)) {
-            end_bottom_console_ui("Closed cache stats");
-            return;
-        }
-        svcSleepThread(60000000LL); // ~60ms
+static const char *cache_notice;
+static void render_cache_stats(void){
+    u32 fg=C2D_Color32(238,246,253,255);
+    C2D_DrawRectSolid(0,0,0,320,240,C2D_Color32(17,24,34,255));
+    draw_ui_text(12,7,.52f,.52f,fg,0,"Cache statistics");
+    char line[192];
+    intl_snprintf(line,sizeof(line),"RAM tiles: %lu/%lu\n",(unsigned long)map_tiles_get_cache_used(),(unsigned long)map_tiles_get_cache_capacity());
+    draw_ui_fit_line(12,34,.35f,fg,line,296);
+    intl_snprintf(line,sizeof(line),"SD cache: %s\n",intl_translate(network_get_disk_cache_enabled()?"ON":"OFF"));
+    draw_ui_fit_line(12,52,.35f,fg,line,296);
+    intl_snprintf(line,sizeof(line),"Prefetch: ring=%d throttle=%d\n",g_prefetch_ring,g_prefetch_every_n_frames);
+    draw_ui_fit_line(12,70,.35f,fg,line,296);
+    TileTiming timing;
+    if(map_tiles_get_timing(&timing)){
+        intl_snprintf(line,sizeof(line),"Last loaded tile: %s\n",intl_translate(timing.local?"SD card":"network"));
+        draw_ui_fit_line(12,88,.35f,fg,line,296);
+        intl_snprintf(line,sizeof(line),"SD %u  Net %u  Decode %u  GPU %u ms",timing.sd_ms,timing.network_ms,timing.decode_ms,timing.upload_ms);
+        draw_ui_fit_line(12,106,.35f,fg,line,296);
     }
-    end_bottom_console_ui(NULL);
+    intl_snprintf(line,sizeof(line),"FPS: %lu\n",(unsigned long)g_fps);
+    draw_ui_fit_line(12,124,.35f,fg,line,296);
+    if(cache_notice)draw_ui_fit_line(12,154,.35f,fg,cache_notice,296);
+    draw_control_text(12,193,.34f,.34f,fg,0,"X: Clear SD tile cache");
+    draw_control_text(12,215,.34f,.34f,fg,0,"B or R: Back");
+}
+static void open_cache_stats(void) {
+    cache_notice=NULL;g_bottom_modal=render_cache_stats;
+    while(aptMainLoop() && !g_should_exit){
+        hidScanInput();u32 keys=input_remap_apply(REMAP_MAP,hidKeysDown());
+        if(keys&KEY_START)g_should_exit=true;
+        if(keys&(KEY_START|KEY_B|KEY_R))break;
+        if(keys&KEY_X){
+            cache_notice="Clearing SD tile cache...";render_map();
+            cache_notice=network_clear_disk_tile_cache()?"SD cache cleared":"SD cache clear failed";
+        }
+        gps_update();map_tiles_process_downloads();render_map();
+    }
+    g_bottom_modal=NULL;
 }
 
 /* -------- Offline region download ---------------------------------------- */
@@ -3395,8 +3369,8 @@ static void draw_region_panel(void) {
             const char *layer = item->partial ? "Paused" :
                                 item->source == TILE_SOURCE_SATELLITE ? "Sat" : "Street";
             if (item->size < 1024 * 1024)
-                snprintf(type, sizeof(type), "%s  %.1f KB", layer, item->size / 1024.0);
-            else snprintf(type, sizeof(type), "%s  %.1f MB", layer, item->size / 1048576.0);
+                intl_snprintf(type, sizeof(type), "%s  %.1f KB", layer, item->size / 1024.0);
+            else intl_snprintf(type, sizeof(type), "%s  %.1f MB", layer, item->size / 1048576.0);
             draw_ui_text(302, y + 6, .35f, .35f, dim, C2D_AlignRight, type);
         }
     } else if (region_items) {
@@ -3480,15 +3454,15 @@ static u64 region_sd_free_bytes(void) {
 
 static void region_format_eta(char *out, size_t size, const RegionProgressMetrics *metrics) {
     if (!metrics->eta_known) {
-        snprintf(out, size, "--");
+        intl_snprintf(out, size, "--");
     } else if (metrics->eta_seconds < 60) {
-        snprintf(out, size, "%llus", (unsigned long long)metrics->eta_seconds);
+        intl_snprintf(out, size, "%llus", (unsigned long long)metrics->eta_seconds);
     } else if (metrics->eta_seconds < 3600) {
-        snprintf(out, size, "%llum %02llus",
+        intl_snprintf(out, size, "%llum %02llus",
                  (unsigned long long)(metrics->eta_seconds / 60),
                  (unsigned long long)(metrics->eta_seconds % 60));
     } else {
-        snprintf(out, size, "%lluh %02llum",
+        intl_snprintf(out, size, "%lluh %02llum",
                  (unsigned long long)(metrics->eta_seconds / 3600),
                  (unsigned long long)((metrics->eta_seconds / 60) % 60));
     }
@@ -3631,10 +3605,10 @@ static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, uns
     u64 start_ms = osGetTime();
     atomic_store(&transfer.launch, true);
     region_items = NULL;
-    snprintf(region_title, sizeof(region_title), "Downloading region");
-    snprintf(region_detail, sizeof(region_detail), "%.24s", item->name);
+    intl_snprintf(region_title, sizeof(region_title), "Downloading region");
+    intl_snprintf(region_detail, sizeof(region_detail), "%.24s", item->name);
     region_total = job.count;
-    snprintf(region_summary, sizeof(region_summary), "Saving to SD card");
+    intl_snprintf(region_summary, sizeof(region_summary), "Saving to SD card");
     region_actions[0] = "B  Pause and keep downloaded tiles";
     region_actions[1] = NULL;
     region_actions[2] = NULL;
@@ -3651,17 +3625,17 @@ static void run_region_transfer(const RegionItem *item, TilePackEntry *plan, uns
                                                                 job.count, now_ms - start_ms);
         char eta[24];
         region_format_eta(eta, sizeof(eta), &metrics);
-        snprintf(region_summary, sizeof(region_summary), "%u/%u tiles  |  %.1f tiles/s",
+        intl_snprintf(region_summary, sizeof(region_summary), "%u/%u tiles  |  %.1f tiles/s",
                  region_progress, job.count, metrics.tiles_per_second);
-        snprintf(region_hint, sizeof(region_hint), "%.2f MB downloaded  |  ETA %s",
+        intl_snprintf(region_hint, sizeof(region_hint), "%.2f MB downloaded  |  ETA %s",
                  atomic_load(&transfer.downloaded_bytes) / 1048576.0, eta);
         const char *state = atomic_load(&transfer.cancel) ? "  |  Pausing..." :
                             atomic_load(&transfer.cooldown_workers) ? "  |  Provider cooldown" : "";
         if (free_bytes)
-            snprintf(region_status, sizeof(region_status), "SD free %.0f MB  |  %u connection%s%s",
-                     free_bytes / 1048576.0, worker_count, worker_count == 1 ? "" : "s", state);
-        else snprintf(region_status, sizeof(region_status), "%u connection%s%s",
-                      worker_count, worker_count == 1 ? "" : "s", state);
+            intl_snprintf(region_status, sizeof(region_status), "SD free %.0f MB | Connections: %u%s",
+                     free_bytes / 1048576.0, worker_count, intl_translate(state));
+        else intl_snprintf(region_status, sizeof(region_status), "Connections: %u%s",
+                      worker_count, intl_translate(state));
         if (region_frame() & (KEY_B | KEY_START)) atomic_store(&transfer.cancel, true);
     }
     if (!atomic_load(&transfer.done)) atomic_store(&transfer.cancel, true);
@@ -3721,7 +3695,7 @@ static void open_offline_download(void) {
     bool route = false, confirmed = false, quick_name = false, changed = true;
     unsigned count = 0;
     region_items = NULL;
-    snprintf(region_title, sizeof(region_title), "New offline pack");
+    intl_snprintf(region_title, sizeof(region_title), "New offline pack");
     region_total = 0;
     u64 free_bytes = region_sd_free_bytes();
     region_actions[0] = "Left/Right  Min zoom    Up/Down  Max zoom";
@@ -3733,20 +3707,20 @@ static void open_offline_download(void) {
             count = region_plan(plan, REGION_LIMIT, min_zoom, max_zoom,
                                 route ? g_route_geometry : &center,
                                 route ? g_route_geometry_count : 1, map_state.zoom<1?1:map_state.zoom, 420);
-            snprintf(region_detail, sizeof(region_detail), "%s  |  Zoom %d-%d",
+            intl_snprintf(region_detail, sizeof(region_detail), "%s  |  Zoom %d-%d",
                      route ? "Route corridor" : "Current map area", min_zoom, max_zoom);
             if (count > REGION_LIMIT) {
-                snprintf(region_summary, sizeof(region_summary), "Region exceeds %d tiles", REGION_LIMIT);
-                snprintf(region_hint, sizeof(region_hint), "Lower the maximum zoom.");
+                intl_snprintf(region_summary, sizeof(region_summary), "Region exceeds %d tiles", REGION_LIMIT);
+                intl_snprintf(region_hint, sizeof(region_hint), "Lower the maximum zoom.");
             } else {
-                snprintf(region_summary, sizeof(region_summary), "%u tiles", count);
-                snprintf(region_hint, sizeof(region_hint), "Estimated size: %.1f to %.1f MB",
+                intl_snprintf(region_summary, sizeof(region_summary), "%u tiles", count);
+                intl_snprintf(region_hint, sizeof(region_hint), "Estimated size: %.1f to %.1f MB",
                          count * 15 / 1024.0, count * 100 / 1024.0);
             }
             if (free_bytes)
-                snprintf(region_status, sizeof(region_status), "SD free: %.0f MB  |  %s tiles",
+                intl_snprintf(region_status, sizeof(region_status), "SD free: %.0f MB  |  %s tiles",
                          free_bytes / 1048576.0, network_get_tile_source_name());
-            else snprintf(region_status, sizeof(region_status), "Layer: %s", network_get_tile_source_name());
+            else intl_snprintf(region_status, sizeof(region_status), "Layer: %s", network_get_tile_source_name());
             changed = false;
         }
         u32 keys = region_frame();
@@ -3762,7 +3736,7 @@ static void open_offline_download(void) {
         if (keys & KEY_DDOWN && max_zoom > min_zoom) { max_zoom--; changed = true; }
         if (keys & KEY_X) {
             if (g_route_active && g_route_count >= 2) { route = !route; changed = true; }
-            else snprintf(region_status, sizeof(region_status), "Plan a route first to download its corridor.");
+            else intl_snprintf(region_status, sizeof(region_status), "Plan a route first to download its corridor.");
         }
     }
     RegionItem item = { .source = network_get_tile_source(), .partial = true };
@@ -3863,15 +3837,15 @@ static void check_region(const RegionItem *item) {
         return;
     }
     region_items = NULL;
-    snprintf(region_title, sizeof(region_title), "Checking offline pack");
-    snprintf(region_detail, sizeof(region_detail), "%.24s", item->name);
+    intl_snprintf(region_title, sizeof(region_title), "Checking offline pack");
+    intl_snprintf(region_detail, sizeof(region_detail), "%.24s", item->name);
     region_total = pack.tile_count;
-    snprintf(region_summary, sizeof(region_summary), "Reading tile images");
+    intl_snprintf(region_summary, sizeof(region_summary), "Reading tile images");
     region_actions[0] = "B  Stop check";
     region_actions[1] = region_actions[2] = NULL;
     while (!atomic_load(&check.done) && aptMainLoop() && !g_should_exit) {
         region_progress = atomic_load(&check.checked);
-        snprintf(region_status, sizeof(region_status), "%u / %u checked  |  %u unreadable",
+        intl_snprintf(region_status, sizeof(region_status), "%u / %u checked  |  %u unreadable",
                  region_progress, region_total, atomic_load(&check.bad));
         if (region_frame() & (KEY_B | KEY_START)) atomic_store(&check.cancel, true);
     }
@@ -3880,7 +3854,7 @@ static void check_region(const RegionItem *item) {
     threadFree(thread);
     unsigned checked = atomic_load(&check.checked);
     char result[96];
-    snprintf(result, sizeof(result), "%u checked, %u unreadable%s", checked, atomic_load(&check.bad),
+    intl_snprintf(result, sizeof(result), "%u checked, %u unreadable%s", checked, atomic_load(&check.bad),
              checked < pack.tile_count ? " (stopped)" : "");
     tilepack_close(&pack);
     set_status_message(result);
@@ -3898,10 +3872,10 @@ static void open_offline_regions(void) {
         region_count = count;
         region_confirm = confirm;
         const RegionItem *item = count ? &items[selected] : NULL;
-        snprintf(region_title, sizeof(region_title), "Offline regions");
-        snprintf(region_detail, sizeof(region_detail), "%d saved or paused  |  Coverage %s",
+        intl_snprintf(region_title, sizeof(region_title), "Offline regions");
+        intl_snprintf(region_detail, sizeof(region_detail), "%d saved or paused  |  Coverage %s",
                  count, g_show_coverage ? "ON" : "OFF");
-        snprintf(region_status, sizeof(region_status), "%s", confirm ? "Press X again to remove this pack." :
+        intl_snprintf(region_status, sizeof(region_status), "%s", confirm ? "Press X again to remove this pack." :
                  osGetTime() - g_status_message_ms < 3500 ? g_status_message : "Up/Down selects a pack.");
         region_actions[0] = "Y  New pack    L  Tile source    R  Coverage";
         region_actions[1] = item && item->partial ? "A  Resume    X  Remove" : "A  Preview    Select  Check    X  Remove";

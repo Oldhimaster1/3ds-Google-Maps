@@ -10,6 +10,7 @@
 #include "guess_core.h"
 #include "guess_challenge.h"
 #include <citro2d.h>
+#include "ui_text.h"
 #include <3ds.h>
 #include "panorama_live.h"
 #include "pano_gyro.h"
@@ -47,7 +48,9 @@ C2D_TextBuf C2D_TextBufNew(size_t sz){(void)sz;return malloc(sizeof(struct C2D_T
 void C2D_TextBufDelete(C2D_TextBuf p){free(p);}
 void C2D_TextBufClear(C2D_TextBuf p){(void)p;}
 void C2D_TextParse(C2D_Text *x,C2D_TextBuf t,const char*s){(void)x;(void)t;(void)s;}
-void ui_text_parse(C2D_Text *x,C2D_TextBuf t,const char*s){C2D_TextParse(x,t,s);}
+void ui_text_parse(UiText *x,C2D_TextBuf t,const char*s){(void)x;(void)t;(void)s;}
+void ui_text_optimize(const UiText *x){(void)x;}
+void ui_text_draw(const UiText *t,u32 f,float x,float y,float z,float sx,float sy,u32 color){(void)t;(void)f;(void)x;(void)y;(void)z;(void)sx;(void)sy;(void)color;}
 void C2D_TextOptimize(C2D_Text *x){(void)x;}
 bool C2D_DrawText(const C2D_Text *t,u32 f,float a,float b,float c,float d,float e,u32 color){(void)t;(void)f;(void)a;(void)b;(void)c;(void)d;(void)e;(void)color;return true;}
 void C2D_Prepare(void){}

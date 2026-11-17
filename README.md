@@ -14,12 +14,13 @@ Pick somewhere you've never been. Wander down a street, take a closer look at th
 
 </div>
 
-**New preview:** [v2.3.0 Preview 1](https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.3.0-preview.1) adds expanded StreetGuess coverage, tiled zoom detail, languages and optional music. [Preview notes](docs/releases/v2.3.0-preview.1.md).
+**Version 2.3.1:** [Release and downloads](https://github.com/Oldhimaster1/3ds-Google-Maps/releases/tag/v2.3.1) · [Release notes](docs/releases/v2.3.1.md). Includes nine languages, adjustable ambient music, expanded StreetGuess coverage and progressive panorama detail.
 
 ## What's new since v2.0?
 
 The original release was mainly about browsing maps, searching for places, planning routes and taking maps offline. This version takes things a lot further.
 
+- **Languages and music:** Nine interface languages, joined Arabic and mixed-script text, plus optional original music with saved volume and audio recovery.
 - **Street View Explorer:** Find real panoramic imagery, look around, follow connected viewpoints and try motion controls on a New 3DS. Panoramax, KartaView and optional Mapillary are supported; Google and Bing integrations are experimental.
 - **A globe in your pocket:** Spin the Earth, zoom back into maps and explore NASA Blue Marble imagery, with extra historical GIBS detail where available.
 - **3D places:** Explore elevation near your chosen location and simple OpenStreetMap buildings, including stereoscopic views on supported 3DS models.

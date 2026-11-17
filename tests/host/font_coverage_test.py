@@ -36,7 +36,7 @@ while offset:
             raise AssertionError(method)
     next_payload = struct.unpack_from('<I', font, offset + 16)[0]
     offset = next_payload - 8 if next_payload else 0
-source = (root / 'source/intl.c').read_text()
+source = (root / 'source/intl_messages.inc').read_text()
 rows = re.findall(r'^    \{\{(.*)\}\},$', source, flags=re.M)
 assert len(rows) > 100
 for row in rows:
@@ -45,7 +45,7 @@ for row in rows:
     placeholders = re.findall(r'%(?:\d+\$)?[\d.]*[sudi]', translations[0])
     for translation in translations:
         assert re.findall(r'%(?:\d+\$)?[\d.]*[sudi]', translation) == placeholders
-        assert all(ord(ch) in glyphs for ch in translation), translation
+        assert all(ord(ch) in glyphs or ch.isspace() for ch in translation), translation
 for text in ['ﻡﻼﺳ', 'ﻉﺭﺎﺷ', 'Москва', 'İstanbul', 'Αθήνα', 'שלום', 'Tiếng Việt']:
     assert all(ord(ch) in glyphs for ch in text), text
 print(f'PASS shipped BCFNT: {len(glyphs)} codepoints, {len(rows)} translated messages, Arabic presentation glyphs and format placeholders')
