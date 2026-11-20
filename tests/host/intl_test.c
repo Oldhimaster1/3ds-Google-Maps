@@ -29,11 +29,25 @@ int main(void){
     intl_set_language(0);
     char tiny[2];assert(intl_snprintf(tiny,sizeof(tiny),"%s","é")==2 && tiny[0]==0);
     char exact[3];assert(intl_snprintf(exact,sizeof(exact),"%s","é")==2 && !strcmp(exact,"é"));
+    intl_set_language(1);
+    char display[INTL_TEXT_CAP];
+    assert(intl_display("12 buildings loaded",display,sizeof(display)));
+    assert(strstr(display,"12") && strcmp(display,"12 buildings loaded"));
+    assert(intl_display("Panorama detail z4 loaded",display,sizeof(display)));
+    assert(strstr(display,"4") && strcmp(display,"Panorama detail z4 loaded"));
+    assert(intl_display("Unmatched private place name",display,sizeof(display)) && !strcmp(display,"Unmatched private place name"));
+    assert(!intl_display("12 buildings loaded",display,2));
+    intl_set_language(2);
+    assert(intl_display("12 buildings loaded",display,sizeof(display)) && strstr(display,"12"));
     intl_set_language(1);intl_set_music(true);
-    assert(intl_save("language.cfg"));intl_set_language(0);intl_set_music(false);
-    assert(intl_load("language.cfg") && intl_language()==1 && intl_music());
+    intl_set_music_volume(25);assert(intl_save("language.cfg"));intl_set_language(0);intl_set_music(false);
+    assert(intl_load("language.cfg") && intl_language()==1 && intl_music() && intl_music_volume()==25);
     FILE *f=fopen("language.cfg","wb");assert(f);fputs("1 999 2\n",f);fclose(f);
     assert(!intl_load("language.cfg") && intl_language()==1 && intl_music());
+    f=fopen("language.cfg","wb");assert(f);fputs("1 1 1\n",f);fclose(f);
+    assert(intl_load("language.cfg") && intl_music_volume()==55);
+    f=fopen("language.cfg","wb");assert(f);fputs("2 0 1 101\n",f);fclose(f);
+    assert(!intl_load("language.cfg") && intl_music_volume()==55);
     unlink("language.cfg");
     puts("PASS Arabic joining/ligatures, bidi numbers, Hebrew, UTF-8, nine locales and preference persistence");
 }

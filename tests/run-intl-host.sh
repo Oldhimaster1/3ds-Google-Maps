@@ -8,3 +8,4 @@ ${CC:-cc} -std=c11 -Wall -Wextra -Werror -g -O1 -fsanitize=address,undefined \
  $(pkg-config --libs fribidi) -o "$work/intl-test"
 (cd "$work" && ./intl-test)
 python3 tests/host/font_coverage_test.py
+python3 tests/host/translation_catalog_test.py

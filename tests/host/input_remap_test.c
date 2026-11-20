@@ -1,4 +1,5 @@
 #include "input_remap.h"
+#include "intl.h"
 #include <3ds.h>
 #include <assert.h>
 #include <stdio.h>
@@ -45,6 +46,13 @@ int main(void){
  assert(!strcmp(hint,"L: search (B) X/D-Down"));
  input_remap_hint(REMAP_STREET,"NASA GIBS / Blue Marble",hint,sizeof(hint));
  assert(!strcmp(hint,"NASA GIBS / Blue Marble"));
+ input_remap_default(&m);input_remap_bind(&m,REMAP_MAP,6,0);input_remap_set_active(&m);
+ char translated_hint[1024];
+ for(unsigned lang=0;lang<INTL_LANGUAGE_COUNT;lang++){
+  intl_set_language(lang);
+  input_remap_hint(REMAP_MAP,intl_translate("Up/Down: Select   A: Go   B: Back"),translated_hint,sizeof(translated_hint));
+  assert(!strncmp(translated_hint,"A/D-Down:",9));
+ }
  input_remap_set_active(NULL);
  puts("input remap: PASS");
  return 0;

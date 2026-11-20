@@ -119,17 +119,17 @@ static void print(float x,float y,float scale,u32 color,const char *s) {
             color=C2D_Color32(221,237,247,(color>>24)&255u);
     }
     if(scale<.65f)scale*=ui_access_scale();
-    C2D_Text t;
+    static UiText t;
     ui_text_parse(&t,ui.text,s);
-    C2D_TextOptimize(&t);
+    ui_text_optimize(&t);
     /* Dialogs are near z=.95; text at .85 was hidden behind them. */
-    C2D_DrawText(&t,C2D_WithColor,x,y,.99f,scale,scale,color);
+    ui_text_draw(&t,C2D_WithColor,x,y,.99f,scale,scale,color);
     if(cfg->weight>0)
-        C2D_DrawText(&t,C2D_WithColor,x+(cfg->weight==2?.7f:.35f),y,.991f,
+        ui_text_draw(&t,C2D_WithColor,x+(cfg->weight==2?.7f:.35f),y,.991f,
                      scale,scale,color);
 }
 static void print_hint(float x,float y,float scale,u32 color,const char *s){
- char hint[256];input_remap_hint(REMAP_GUESS,s,hint,sizeof(hint));print(x,y,scale,color,hint);
+ char hint[256];input_remap_hint(REMAP_GUESS,intl_translate(s),hint,sizeof(hint));print(x,y,scale,color,hint);
 }
 static void card(float y,const char *heading,const char *detail){
     C2D_DrawRectSolid(10,y,.25f,300,35,C2D_Color32(25,40,58,255));
@@ -344,9 +344,9 @@ static void find_round(u64 now){
         if(good){
             guess_replay_add(&ui.replay,actual.lat,actual.lon);
             guess_replay_save(&ui.replay,GUESS_REPLAY_FILE);
-            intl_snprintf(ui.last_view_id,sizeof(ui.last_view_id),"%s",p->id);
+            snprintf(ui.last_view_id,sizeof(ui.last_view_id),"%s",p->id);
             ui.last_azimuth=p->azimuth;
-            intl_snprintf(ui.start_id,sizeof(ui.start_id),"%s",p->id);
+            snprintf(ui.start_id,sizeof(ui.start_id),"%s",p->id);
             /* Deterministic per-round random initial direction, not always north. */
             ui.yaw=(float)(((ui.game.rng>>17)%360)*PI/180.0f);
             ui.fetching=false;
@@ -551,7 +551,7 @@ static void handle_play(u32 keys,u32 held,touchPosition touch,u64 now){
         float corrected=ui.yaw;
         if(ui.last_view_id[0] && street_heading_transfer(ui.last_azimuth,
                 ui.yaw,after->azimuth,&corrected))ui.yaw=corrected;
-        intl_snprintf(ui.last_view_id,sizeof(ui.last_view_id),"%s",after->id);
+        snprintf(ui.last_view_id,sizeof(ui.last_view_id),"%s",after->id);
         ui.last_azimuth=after->azimuth;
     }
     /* Provider latency must not consume a player's timed round. */
