@@ -1,0 +1,30 @@
+{
+  "source_commit": "594182424e952ecb8f7a2bd0e96fc4d3ca3155e2",
+  "host_suite_entries_passed": 35,
+  "shaped_translations_checked": 4833,
+  "format_cases_checked": 774,
+  "emulator": "Azahar 2126.2",
+  "installed_CIA_title_version": "2.3.1",
+  "emulator_UI": {
+    "languages": 9,
+    "volume_min": 0,
+    "volume_max": 100,
+    "music_toggle": true,
+    "settings": [
+      2,
+      1,
+      1,
+      100
+    ],
+    "result": "passed"
+  },
+  "artifact_sha256": {
+    "3ds_google_maps.cia": "bfcef6d321e60e2b4913c9e50c0e59a33c20e34e12a2921284302ce0e2087b9a",
+    "3ds_google_maps.3dsx": "8b5595fe935741d6b3a738e9154c7fae5e175956cb052d2cbf462e3fc7792baa"
+  },
+  "limits": [
+    "Physical console not tested",
+    "Host audio sink unavailable; audible output not verified",
+    "Emulator live imagery requests timed out"
+  ]
+}
