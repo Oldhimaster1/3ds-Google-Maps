@@ -36,6 +36,10 @@
 #include "street_sources.h"
 #include "street_fly_logic.h"
 #include "ui_accessibility.h"
+#include "intl.h"
+#include "ui_text.h"
+#include "ambient_music.h"
+#define INTL_CFG "sdmc:/3ds_google_maps/language.cfg"
 #include "pano_motion.h"
 #include "guess_ui.h"
 #include "street_nav.h"
@@ -101,6 +105,7 @@ typedef enum {
     SETTINGS_TAB_EXPLORE,
     SETTINGS_TAB_TEXT,
     SETTINGS_TAB_MORE,
+    SETTINGS_TAB_LOCALE,
     SETTINGS_TAB_COUNT
 } SettingsTab;
 
@@ -146,7 +151,11 @@ typedef enum {
     SETTINGS_HIT_MORE_ROW2,
     SETTINGS_HIT_MORE_ROW3,
     SETTINGS_HIT_MORE_ROW4,
-    SETTINGS_HIT_MORE_PAGE
+    SETTINGS_HIT_MORE_PAGE,
+    SETTINGS_HIT_TAB_LOCALE,
+    SETTINGS_HIT_LANGUAGE_PREV,
+    SETTINGS_HIT_LANGUAGE_NEXT,
+    SETTINGS_HIT_MUSIC
 } SettingsHitTarget;
 
 #define MAX_RECENTS 10
@@ -718,6 +727,7 @@ int main(int argc, char* argv[]) {
     input_remap_load(&g_controls,INPUT_REMAP_FILE);
     input_remap_set_active(&g_controls);
     ui_access_load(UI_ACCESS_CFG);
+    intl_load(INTL_CFG);
     favorites_load();
     load_session();
     set_status_message("Ready");
@@ -729,6 +739,7 @@ int main(int argc, char* argv[]) {
     // Main loop
     static int frame_counter = 0;
     while (aptMainLoop() && !g_should_exit) {
+        ambient_music_update(intl_music() && (g_explore_mode==EXPLORE_STREET || guess_ui_active()));
         frame_counter++;
         g_fps_frames++;
 
@@ -833,6 +844,7 @@ cleanup:
     gps_cleanup();
     map_tiles_cleanup();
     network_cleanup();
+    ambient_music_exit();
     cleanup_graphics();
     log_close();
     httpcExit();
@@ -853,6 +865,7 @@ void init_graphics(void) {
     C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
     C2D_Prepare();
     g_ui_text_buf = C2D_TextBufNew(4096);
+    if(!ui_text_init())log_write("[TEXT] Unicode font could not be loaded\n");
     
     // Main map uses hardware rendering on both screens. Console screens are still used for modal text menus.
     top_screen = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
@@ -864,6 +877,7 @@ void cleanup_graphics(void) {
         C2D_TextBufDelete(g_ui_text_buf);
         g_ui_text_buf = NULL;
     }
+    ui_text_exit();
     C2D_Fini();
     C3D_Fini();
 }
@@ -1837,7 +1851,7 @@ void render_map(void) {
 }
 
 /* Preserve uniform glyph proportions; font size and weight preferences apply
- * to the entire application's lightweight UI without external fonts. */
+ * to the application's UI and bundled Unicode font. */
 static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 color, u32 flags, const char* text) {
     if (!g_ui_text_buf || !text || !text[0]) return;
     const UiAccessConfig *pref=ui_access_get();
@@ -1852,7 +1866,7 @@ static void draw_ui_text(float x, float y, float scale_x, float scale_y, u32 col
         scale_y*=ui_access_scale();
     }
     C2D_Text ui_text;
-    C2D_TextParse(&ui_text,g_ui_text_buf,text);
+    ui_text_parse(&ui_text,g_ui_text_buf,text);
     C2D_TextOptimize(&ui_text);
     C2D_DrawText(&ui_text,flags|C2D_WithColor,x,y,.98f,scale_x,scale_y,color);
     if(pref->weight>0){
@@ -1892,7 +1906,7 @@ static void draw_ui_fit_line(float x,float y,float scale,u32 color,
         if(mid>=sizeof(line))mid=sizeof(line)-1;
         memcpy(line,input,mid);line[mid]=0;
         C2D_Text measure;
-        C2D_TextParse(&measure,g_ui_text_buf,line);
+        ui_text_parse(&measure,g_ui_text_buf,line);
         float width=measure.width*real_scale;
         if(width<=max_width)lo=mid;
         else hi=mid-1;
@@ -1906,7 +1920,7 @@ static void draw_ui_fit_line(float x,float y,float scale,u32 color,
         while(take>0 && (input[take-1]==' '||input[take-1]==','))take--;
         while(take>0){
             memcpy(line,input,take);memcpy(line+take,"...",4);
-            C2D_Text t;C2D_TextParse(&t,g_ui_text_buf,line);
+            C2D_Text t;ui_text_parse(&t,g_ui_text_buf,line);
             if(t.width*real_scale<=max_width)break;
             take--;
             while(take>0 && ((unsigned char)input[take]&0xc0)==0x80)take--;
@@ -1976,12 +1990,17 @@ static SettingsHitTarget get_settings_hit(const touchPosition* touch) {
     static const SettingsHitTarget tabs[] = {
         SETTINGS_HIT_TAB_VIEW, SETTINGS_HIT_TAB_TILES, SETTINGS_HIT_TAB_DATA,
         SETTINGS_HIT_TAB_GPS, SETTINGS_HIT_TAB_EXPLORE, SETTINGS_HIT_TAB_TEXT,
-        SETTINGS_HIT_TAB_MORE
+        SETTINGS_HIT_TAB_MORE, SETTINGS_HIT_TAB_LOCALE
     };
     for (int i = 0; i < SETTINGS_TAB_COUNT; i++)
-        if (point_in_rect(touch->px, touch->py, 3 + i * 45, 50, 43, 24)) return tabs[i];
+        if (point_in_rect(touch->px, touch->py, 3 + i * 39, 50, 37, 24)) return tabs[i];
 
     switch (g_settings_tab) {
+        case SETTINGS_TAB_LOCALE:
+            if(point_in_rect(touch->px,touch->py,12,103,70,36))return SETTINGS_HIT_LANGUAGE_PREV;
+            if(point_in_rect(touch->px,touch->py,238,103,70,36))return SETTINGS_HIT_LANGUAGE_NEXT;
+            if(point_in_rect(touch->px,touch->py,12,166,296,34))return SETTINGS_HIT_MUSIC;
+            break;
         case SETTINGS_TAB_VIEW:
             if (point_in_rect(touch->px, touch->py, 172, 101, 56, 28)) return SETTINGS_HIT_TILE_STREET;
             if (point_in_rect(touch->px, touch->py, 238, 101, 58, 28)) return SETTINGS_HIT_TILE_SATELLITE;
@@ -2045,6 +2064,16 @@ static void apply_settings_hit(SettingsHitTarget hit) {
     g_last_settings_hit_ms = osGetTime();
 
     switch (hit) {
+        case SETTINGS_HIT_TAB_LOCALE:g_settings_tab=SETTINGS_TAB_LOCALE;break;
+        case SETTINGS_HIT_LANGUAGE_PREV:
+        case SETTINGS_HIT_LANGUAGE_NEXT:
+            intl_set_language((intl_language()+(hit==SETTINGS_HIT_LANGUAGE_NEXT?1:INTL_LANGUAGE_COUNT-1))%INTL_LANGUAGE_COUNT);
+            if(!intl_save(INTL_CFG))set_status_message("Could not save language setting");
+            break;
+        case SETTINGS_HIT_MUSIC:
+            intl_set_music(!intl_music());
+            if(!intl_save(INTL_CFG))set_status_message("Could not save music setting");
+            break;
         case SETTINGS_HIT_CLOSE:
             close_menu("Closed settings");
             break;
@@ -2299,7 +2328,7 @@ static void apply_settings_hit(SettingsHitTarget hit) {
 }
 
 static void render_settings_panel(void) {
-    static const char* tab_names[SETTINGS_TAB_COUNT] = { "View", "Tiles", "Data", "GPS", "Explore", "Text", "More" };
+    static const char* tab_names[SETTINGS_TAB_COUNT] = { "View", "Tiles", "Data", "GPS", "Explore", "Text", "More", "Language" };
     static const char* tab_hints[SETTINGS_TAB_COUNT] = {
         "Style and live overlays",
         "Tile loading behavior",
@@ -2307,7 +2336,8 @@ static void render_settings_panel(void) {
         "GPS source and server",
         "Globe, terrain and street-level photos",
         "Readability, text size and weight",
-        "Controls and Earth quality"
+        "Controls and Earth quality",
+        "Language / Music"
     };
     u64 now_ms = osGetTime();
     char line[128];
@@ -2331,7 +2361,7 @@ static void render_settings_panel(void) {
     }
 
     for (int i = 0; i < SETTINGS_TAB_COUNT; i++) {
-        float x = 3.0f + (float)i * 45.0f;
+        float x = 3.0f + (float)i * 39.0f;
         bool selected = (i == g_settings_tab);
         bool pressed = (i == SETTINGS_TAB_VIEW  && is_recent_settings_hit(SETTINGS_HIT_TAB_VIEW,  now_ms)) ||
                        (i == SETTINGS_TAB_TILES && is_recent_settings_hit(SETTINGS_HIT_TAB_TILES, now_ms)) ||
@@ -2342,14 +2372,26 @@ static void render_settings_panel(void) {
                        (i == SETTINGS_TAB_MORE && is_recent_settings_hit(SETTINGS_HIT_TAB_MORE, now_ms));
         u32 fill = selected ? C2D_Color32f(0.28f, 0.48f, 0.66f, 1.0f)
                             : (pressed ? C2D_Color32f(0.24f, 0.29f, 0.35f, 1.0f) : C2D_Color32f(0.15f, 0.18f, 0.22f, 1.0f));
-        C2D_DrawRectSolid(x, 50.0f, 0.2f, 43.0f, 24.0f, fill);
-        draw_ui_text(x + 21.5f, 56.0f, 0.34f, 0.34f,
+        C2D_DrawRectSolid(x, 50.0f, 0.2f, 37.0f, 24.0f, fill);
+        draw_ui_text(x + 18.5f, 56.0f, 0.28f, 0.28f,
                      selected ? C2D_Color32f(0.97f, 0.99f, 1.0f, 1.0f) : C2D_Color32f(0.80f, 0.86f, 0.92f, 1.0f),
                      C2D_AlignCenter,
                      tab_names[i]);
     }
 
-    if (g_settings_tab == SETTINGS_TAB_VIEW) {
+    if(g_settings_tab==SETTINGS_TAB_LOCALE){
+        u32 white=C2D_Color32(242,249,255,255);
+        draw_ui_text(12,83,.45f,.45f,white,0,"Language");
+        C2D_DrawRectSolid(12,103,.2f,70,36,C2D_Color32(35,48,64,255));
+        C2D_DrawRectSolid(238,103,.2f,70,36,C2D_Color32(35,48,64,255));
+        draw_ui_text(47,112,.5f,.5f,white,C2D_AlignCenter,"<");
+        draw_ui_text(273,112,.5f,.5f,white,C2D_AlignCenter,">");
+        draw_ui_text(160,112,.5f,.5f,white,C2D_AlignCenter,intl_language_name(intl_language()));
+        C2D_DrawRectSolid(12,166,.2f,296,34,C2D_Color32(35,48,64,255));
+        draw_ui_text(23,174,.43f,.43f,white,0,"Music");
+        draw_ui_text(294,174,.43f,.43f,white,C2D_AlignRight,intl_music()?"ON":"OFF");
+        draw_ui_text(12,210,.30f,.30f,white,0,"Street View / StreetGuess");
+    } else if (g_settings_tab == SETTINGS_TAB_VIEW) {
         bool street_active = network_get_tile_source() == TILE_SOURCE_STREET;
         bool sat_active = network_get_tile_source() == TILE_SOURCE_SATELLITE;
         bool street_pressed = is_recent_settings_hit(SETTINGS_HIT_TILE_STREET, now_ms);
@@ -2790,34 +2832,37 @@ static void open_menu(void) {
     set_status_message("Settings open");
 }
 
+static bool saved_place_favorites;
+static int saved_place_selection;
+static void render_saved_place_panel(void){
+    u32 white=C2D_Color32(242,249,255,255);
+    C2D_DrawRectSolid(0,0,0,320,240,C2D_Color32(17,24,34,255));
+    draw_ui_text(12,10,.6f,.6f,white,0,saved_place_favorites?"Favorites":"Recents");
+    int count=saved_place_favorites?g_favorite_count:g_recent_count;
+    int first=saved_place_selection>2?saved_place_selection-2:0;
+    if(!count)draw_ui_text(12,60,.4f,.4f,white,0,"No saved places");
+    for(int i=first;i<count && i<first+4;i++){
+        int y=47+(i-first)*36;
+        C2D_DrawRectSolid(8,y,.2f,304,33,i==saved_place_selection?
+            C2D_Color32(31,74,91,255):C2D_Color32(30,42,58,255));
+        draw_ui_fit_line(15,y+7,.43f,white,saved_place_favorites?g_favorites[i].name:g_recents[i].name,288);
+    }
+    draw_control_text(12,203,.33f,.33f,white,0,"Up/Down: Select   A: Go   B: Back");
+    if(saved_place_favorites)draw_control_text(12,221,.33f,.33f,white,0,"Y: Add center   X: Delete");
+}
 static void open_favorites(void) {
-    int selected = 0;
-    begin_bottom_console_ui();
-    while (aptMainLoop() && !g_should_exit) {
-        consoleClear();
-        printf("=== Favorites ===\n");
-        control_printf("A = go  Y = add center\n");
-        control_printf("X = delete  B or R = back\n");
-        printf("START = exit\n\n");
-
-        if (g_favorite_count <= 0) {
-            printf("No favorites saved yet.\n");
-            control_printf("Press Y to add the current center.\n");
-        } else {
-            for (int i = 0; i < g_favorite_count; i++) {
-                printf("%c %d) %s\n", (i == selected) ? '>' : ' ', i + 1, g_favorites[i].name);
-            }
-        }
-
+    int selected=0;saved_place_selection=0;saved_place_favorites=true;
+    g_bottom_modal=render_saved_place_panel;
+    while(aptMainLoop() && !g_should_exit){
         hidScanInput();
         u32 kDown = input_remap_apply(REMAP_MAP,hidKeysDown());
         if (kDown & KEY_START) {
             g_should_exit = true;
-            end_bottom_console_ui(NULL);
+            g_bottom_modal=NULL;
             return;
         }
         if (kDown & (KEY_B | KEY_R)) {
-            end_bottom_console_ui("Closed favorites");
+            g_bottom_modal=NULL;
             return;
         }
         if (kDown & KEY_DUP) {
@@ -2828,7 +2873,7 @@ static void open_favorites(void) {
         }
         if ((kDown & KEY_A) && g_favorite_count > 0) {
             jump_to_location(g_favorites[selected].lat, g_favorites[selected].lon);
-            end_bottom_console_ui("Jumped to favorite");
+            g_bottom_modal=NULL;
             return;
         }
         if (kDown & KEY_Y) {
@@ -2854,9 +2899,10 @@ static void open_favorites(void) {
             favorites_save();
         }
 
-        svcSleepThread(60000000LL);
+        saved_place_selection=selected;
+        gps_update();map_tiles_process_downloads();render_map();
     }
-    end_bottom_console_ui(NULL);
+    g_bottom_modal=NULL;
 }
 
 typedef struct {
@@ -3905,73 +3951,20 @@ static void open_offline_regions(void) {
 }
 
 static void open_recents(void) {
-    if (g_recent_count <= 0) {
-        begin_bottom_console_ui();
-        consoleClear();
-        printf("No recents yet.\n\n");
-        control_printf("Run a SELECT address search first.\n\n");
-        control_printf("Press B or R to return\n");
-        while (aptMainLoop() && !g_should_exit) {
-            hidScanInput();
-            u32 kd = input_remap_apply(REMAP_MAP,hidKeysDown());
-            if (kd & KEY_START) {
-                g_should_exit = true;
-                end_bottom_console_ui(NULL);
-                return;
-            }
-            if (kd & (KEY_B | KEY_R)) {
-                end_bottom_console_ui("Closed recents");
-                return;
-            }
-            svcSleepThread(60000000LL);
+    saved_place_selection=0;saved_place_favorites=false;
+    g_bottom_modal=render_saved_place_panel;
+    while(aptMainLoop() && !g_should_exit){
+        hidScanInput();u32 keys=input_remap_apply(REMAP_MAP,hidKeysDown());
+        if(keys&KEY_START)g_should_exit=true;
+        if(keys&(KEY_START|KEY_B|KEY_R))break;
+        if((keys&KEY_DUP) && saved_place_selection>0)saved_place_selection--;
+        if((keys&KEY_DDOWN) && saved_place_selection+1<g_recent_count)saved_place_selection++;
+        if((keys&KEY_A) && g_recent_count){
+            jump_to_location(g_recents[saved_place_selection].lat,g_recents[saved_place_selection].lon);break;
         }
-        end_bottom_console_ui(NULL);
-        return;
+        gps_update();map_tiles_process_downloads();render_map();
     }
-
-    int selected = 0;
-    begin_bottom_console_ui();
-    while (aptMainLoop() && !g_should_exit) {
-        consoleClear();
-        printf("=== Recents ===\n");
-        control_printf("Up/Down = select  A = go\n");
-        control_printf("B or R = back  START = exit\n\n");
-
-        for (int i = 0; i < g_recent_count; i++) {
-            printf("%c %d) %s\n", (i == selected) ? '>' : ' ', i + 1, g_recents[i].name);
-        }
-
-        hidScanInput();
-        u32 kDown = input_remap_apply(REMAP_MAP,hidKeysDown());
-        if (kDown & KEY_START) {
-            g_should_exit = true;
-            end_bottom_console_ui(NULL);
-            return;
-        }
-        if (kDown & (KEY_B | KEY_R)) {
-            end_bottom_console_ui("Closed recents");
-            return;
-        }
-        if (kDown & KEY_DUP) {
-            if (selected > 0) selected--;
-        }
-        if (kDown & KEY_DDOWN) {
-            if (selected < g_recent_count - 1) selected++;
-        }
-        if (kDown & KEY_A) {
-            map_state.offset_x = 0;
-            map_state.offset_y = 0;
-            map_state.dragging = false;
-            map_state.gps_tracking = false;
-            set_camera_target(g_recents[selected].lat, g_recents[selected].lon, g_target_zoom, true);
-            g_last_interaction_ms = osGetTime();
-            end_bottom_console_ui("Jumped to recent");
-            return;
-        }
-
-        svcSleepThread(60000000LL);
-    }
-    end_bottom_console_ui(NULL);
+    g_bottom_modal=NULL;
 }
 
 static bool url_encode_component(const char* input, char* output, size_t output_size) {

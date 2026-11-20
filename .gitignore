@@ -65,3 +65,6 @@ tools/satellite_viewer.py
 
 # stb_image duplicate in include/
 include/stb_image.c
+
+# Bundled Unicode font used by the multilingual renderer
+!data/unicode_font.bin

@@ -76,3 +76,27 @@ Keep the same dataset version when comparing scores with friends. Changing the d
 The app has passed a clean RC3 CIA/3DSX build and its host regression suite. Genuine Azahar footage shows a loaded Panoramax panorama, linked-viewpoint movement, a Daily Challenge pin and result, and live terrain elsewhere in the app. These recordings used a separate capture-only network/clock configuration.
 
 Original 3DS and New 3DS hardware behavior, gyro and stereo responsiveness, and all online providers still need physical-console verification. For the full technical record, see [RC3 verification](release/rc3/verification.md), [image credits](datasets/streetguess-v2.json) and [provider information](release/rc1/provider-review.md).
+
+
+## Expanded dataset v3 and zoom detail
+
+The current curated pool has 113 panoramas across 33 countries, up from 32
+across 21. Version 3 retains the original entries and adds 81 independently
+identified panoramas with verified 2048×1024 SD images, photographer credits,
+licenses, hashes and country-boundary checks. Coverage follows contributed
+imagery and remains uneven; it is not worldwide imagery availability.
+See `docs/datasets/streetguess-v3.json` for the complete manifest. Version 2 is
+preserved unchanged. Dataset-specific friend codes from older versions are
+rejected with the existing different-dataset message; players need matching
+versions. Daily records use a separate v3 file so old daily scores remain intact.
+
+For the existing experimental Google tiled panorama provider, zoom detail now
+loads up to four visible 512×512 tiles, nearest the view center first. Only one
+image worker downloads and decodes at a time. The low-resolution base stays
+visible while detail arrives or a request fails. Auto quality selects zoom 2–4
+according to field of view. No full-resolution panorama is assembled in memory.
+Resident detail textures use at most 2 MiB, plus one replacement texture and
+bounded download/decode buffers during uploads. Panning and zooming evict older
+tiles; leaving the view frees the cache. This does not add tiled HD imagery to
+Panoramax: curated Panoramax rounds still use the existing SD image path.
+Console performance and visual seams require emulator/hardware verification.

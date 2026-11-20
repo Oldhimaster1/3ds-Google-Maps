@@ -41,7 +41,7 @@ jobs:
           cp "$(find "$tooling/rom" -type f -name makerom -print -quit)" "$tooling/makerom"
           chmod +x "$tooling/bannertool" "$tooling/makerom"
           docker run --rm -v "$PWD:/src" -v "$tooling:/tools:ro" -w /src devkitpro/devkitarm:latest bash -ec '
-            dkp-pacman -Syu --noconfirm --needed 3ds-dev 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson
+            dkp-pacman -Syu --noconfirm --needed 3ds-dev 3ds-curl 3ds-mbedtls 3ds-libpng 3ds-jansson 3ds-libfribidi
             make clean
             make -j2 cia BANNERTOOL=/tools/bannertool MAKEROM=/tools/makerom
           '

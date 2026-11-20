@@ -318,3 +318,25 @@ C table carries those credits into the application. The images are fetched at
 play time and are not distributed in this repository or saved to an SD imagery
 cache. See the manifest and `docs/release/rc1/provider-review.md` for source links,
 verification limits and separate provider-access obligations.
+
+## DejaVu Sans and FriBidi
+
+The bundled Unicode font is generated from DejaVu Sans 2.37. Its full license
+and notices are in [assets/fonts/LICENSE-DejaVu](assets/fonts/LICENSE-DejaVu).
+The original font is retained alongside it; regenerate the BCFNT with
+`python3 tools/build_unicode_font.py` in a devkitPro shell.
+
+Arabic joining, ligatures, mirroring and bidirectional ordering use
+[GNU FriBidi](https://github.com/fribidi/fribidi), LGPL-2.1-or-later.
+See [the full license](licenses/LGPL-2.1) and
+[copyright notices](licenses/FriBidi-notice). The tested 3DS port is
+`3ds-libfribidi 1.0.12-1`; its build recipe and upstream source references are
+available from [devkitPro 3ds_portlibs](https://github.com/devkitPro/3ds_portlibs).
+To rebuild this application with a modified FriBidi, replace the portlib's
+`libfribidi.a` and headers, then run `make clean && make` with devkitPro.
+Application sources and build instructions are available in this repository;
+no proprietary application objects are required to relink.
+
+The optional ambient music is an original synthesized composition in
+`source/ambient_music.c`, covered by this project's MIT license. It contains no
+Wii U or Nintendo recordings, samples, or melodies.
